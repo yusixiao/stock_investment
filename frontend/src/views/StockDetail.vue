@@ -16,6 +16,14 @@
           {{ p.label }}
         </button>
       </span>
+      <span class="period-toggles">
+        复权:
+        <button v-for="a in adjustOptions" :key="a.value"
+          :class="{ active: adjust === a.value }"
+          @click="adjust = a.value; loadData()">
+          {{ a.label }}
+        </button>
+      </span>
       <span class="indicator-toggles">
         指标:
         <label v-for="ind in indicatorOptions" :key="ind">
@@ -47,6 +55,11 @@ const periodOptions = [
   { value: 'weekly', label: '周线' },
   { value: 'monthly', label: '月线' },
 ]
+const adjust = ref('raw')
+const adjustOptions = [
+  { value: 'raw', label: '不复权' },
+  { value: 'qfq', label: '前复权' },
+]
 const selectedIndicators = ref(['ma', 'macd'])
 const indicatorOptions = ['ma', 'macd', 'kdj', 'boll']
 
@@ -58,7 +71,7 @@ const chartHeight = computed(() => {
 })
 
 async function loadData() {
-  const params = { period: period.value }
+  const params = { period: period.value, adjust: adjust.value }
   if (startDate.value) params.start_date = startDate.value
   if (endDate.value) params.end_date = endDate.value
   const { data } = await fetchKline(symbol, params)
@@ -71,7 +84,7 @@ async function loadIndicators() {
     indicators.value = {}
     return
   }
-  const params = { types: selectedIndicators.value.join(','), period: period.value }
+  const params = { types: selectedIndicators.value.join(','), period: period.value, adjust: adjust.value }
   if (startDate.value) params.start_date = startDate.value
   if (endDate.value) params.end_date = endDate.value
   const { data } = await fetchIndicators(symbol, params)

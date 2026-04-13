@@ -1,0 +1,61 @@
+import threading
+import uuid
+from datetime import datetime
+
+
+class TaskManager:
+    def __init__(self):
+        self._tasks: dict[str, dict] = {}
+        self._lock = threading.Lock()
+
+    def create_task(self) -> str:
+        task_id = str(uuid.uuid4())[:8]
+        with self._lock:
+            self._tasks[task_id] = {
+                "status": "running",
+                "result": None,
+                "error": None,
+                "created_at": datetime.now().isoformat(),
+            }
+        return task_id
+
+    def complete_task(self, task_id: str, result: dict):
+        with self._lock:
+            if task_id in self._tasks:
+                self._tasks[task_id]["status"] = "success"
+                self._tasks[task_id]["result"] = result
+
+    def fail_task(self, task_id: str, error: str):
+        with self._lock:
+            if task_id in self._tasks:
+                self._tasks[task_id]["status"] = "failed"
+                self._tasks[task_id]["error"] = error
+
+    def get_status(self, task_id: str) -> dict | None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return None
+            return {"task_id": task_id, "status": task["status"]}
+
+    def get_result(self, task_id: str) -> dict | None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return None
+            return {
+                "task_id": task_id,
+                "status": task["status"],
+                "result": task["result"],
+                "error": task["error"],
+            }
+
+    def list_tasks(self) -> list[dict]:
+        with self._lock:
+            return [
+                {"task_id": tid, "status": t["status"], "created_at": t["created_at"]}
+                for tid, t in sorted(self._tasks.items(), key=lambda x: x[1]["created_at"], reverse=True)
+            ]
+
+
+task_manager = TaskManager()

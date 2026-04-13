@@ -1,0 +1,69 @@
+import pytest
+from pathlib import Path
+from services.backtest.strategy_loader import (
+    load_strategy_from_file,
+    scan_strategies,
+)
+from services.backtest.base import ScreenerStrategy, TraderStrategy
+
+
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
+
+
+class TestLoadStrategyFromFile:
+    def test_load_screener(self):
+        filepath = EXAMPLES_DIR / "ma_cross_screener.py"
+        strategies = load_strategy_from_file(filepath)
+        assert len(strategies) >= 1
+        s = strategies[0]
+        assert isinstance(s, type)
+        assert issubclass(s, ScreenerStrategy)
+        assert s.name == "MA金叉选股"
+
+    def test_load_trader(self):
+        filepath = EXAMPLES_DIR / "equal_weight_trader.py"
+        strategies = load_strategy_from_file(filepath)
+        assert len(strategies) >= 1
+        s = strategies[0]
+        assert issubclass(s, TraderStrategy)
+        assert s.name == "等权买入持有"
+
+    def test_load_nonexistent_file(self):
+        filepath = Path("/nonexistent/file.py")
+        with pytest.raises(FileNotFoundError):
+            load_strategy_from_file(filepath)
+
+    def test_load_bad_syntax_file(self, tmp_path):
+        bad = tmp_path / "bad.py"
+        bad.write_text("def broken(:\n")
+        with pytest.raises(SyntaxError):
+            load_strategy_from_file(bad)
+
+
+class TestScanStrategies:
+    def test_scan_examples_dir(self):
+        results = scan_strategies(EXAMPLES_DIR)
+        assert len(results) >= 3
+        names = [r["name"] for r in results]
+        assert "MA金叉选股" in names
+        assert "等权买入持有" in names
+
+    def test_scan_returns_correct_structure(self):
+        results = scan_strategies(EXAMPLES_DIR)
+        for r in results:
+            assert "name" in r
+            assert "description" in r
+            assert "strategy_type" in r
+            assert "params" in r
+            assert "filepath" in r
+            assert r["strategy_type"] in ("screener", "trader")
+
+    def test_scan_empty_dir(self, tmp_path):
+        results = scan_strategies(tmp_path)
+        assert results == []
+
+    def test_scan_skips_bad_files(self, tmp_path):
+        bad = tmp_path / "bad.py"
+        bad.write_text("def broken(:\n")
+        results = scan_strategies(tmp_path)
+        assert results == []

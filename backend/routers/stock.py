@@ -6,7 +6,7 @@ from fastapi.responses import Response
 from pathlib import Path
 from typing import Optional
 
-from config import RAW_KLINE_DIR
+from config import RAW_KLINE_DIR, QFQ_KLINE_DIR
 from services.stock_data import list_stocks, get_kline, aggregate_kline
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
 
@@ -48,8 +48,10 @@ def api_get_kline(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     period: str = Query("daily", description="daily/weekly/monthly"),
+    adjust: str = Query("raw", description="raw/qfq"),
 ):
-    filepath = RAW_KLINE_DIR / f"{symbol}.parquet"
+    data_dir = QFQ_KLINE_DIR if adjust == "qfq" else RAW_KLINE_DIR
+    filepath = data_dir / f"{symbol}.parquet"
     if not filepath.exists():
         raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
     df = get_kline(filepath, start_date=start_date, end_date=end_date)
@@ -65,8 +67,10 @@ def api_get_indicators(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     period: str = Query("daily", description="daily/weekly/monthly"),
+    adjust: str = Query("raw", description="raw/qfq"),
 ):
-    filepath = RAW_KLINE_DIR / f"{symbol}.parquet"
+    data_dir = QFQ_KLINE_DIR if adjust == "qfq" else RAW_KLINE_DIR
+    filepath = data_dir / f"{symbol}.parquet"
     if not filepath.exists():
         raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
     df = get_kline(filepath, start_date=start_date, end_date=end_date)

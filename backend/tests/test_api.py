@@ -36,6 +36,14 @@ class TestStockRoutes:
         resp = client.get("/api/stocks/600028.SH/indicators?types=ma,macd")
         assert resp.status_code in [200, 404]
 
+    def test_get_kline_qfq(self):
+        resp = client.get("/api/stocks/600028.SH/kline?adjust=qfq")
+        assert resp.status_code in [200, 404]
+
+    def test_get_indicators_qfq(self):
+        resp = client.get("/api/stocks/600028.SH/indicators?types=ma&adjust=qfq")
+        assert resp.status_code in [200, 404]
+
 
 class TestDataUpdateRoutes:
     @patch("routers.data_update.run_update_task")

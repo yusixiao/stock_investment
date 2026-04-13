@@ -3,6 +3,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 RAW_KLINE_DIR = DATA_DIR / "kline" / "A" / "raw"
+QFQ_KLINE_DIR = DATA_DIR / "kline" / "A" / "qfq"
+STRATEGY_DIR = BASE_DIR / "strategies"
 LOG_DIR = DATA_DIR / "logs"
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
