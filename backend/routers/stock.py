@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import RAW_KLINE_DIR
-from services.stock_data import list_stocks, get_kline
+from services.stock_data import list_stocks, get_kline, aggregate_kline
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
 
 
@@ -47,11 +47,14 @@ def api_get_kline(
     symbol: str,
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    period: str = Query("daily", description="daily/weekly/monthly"),
 ):
     filepath = RAW_KLINE_DIR / f"{symbol}.parquet"
     if not filepath.exists():
         raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
     df = get_kline(filepath, start_date=start_date, end_date=end_date)
+    if period in ("weekly", "monthly"):
+        df = aggregate_kline(df, period=period)
     return df.to_dict(orient="records")
 
 
@@ -61,11 +64,14 @@ def api_get_indicators(
     types: str = Query("ma", description="Comma-separated: ma,macd,kdj,boll"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    period: str = Query("daily", description="daily/weekly/monthly"),
 ):
     filepath = RAW_KLINE_DIR / f"{symbol}.parquet"
     if not filepath.exists():
         raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
     df = get_kline(filepath, start_date=start_date, end_date=end_date)
+    if period in ("weekly", "monthly"):
+        df = aggregate_kline(df, period=period)
 
     indicator_types = [t.strip() for t in types.split(",")]
     result = {}

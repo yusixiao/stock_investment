@@ -8,6 +8,14 @@
     <div class="controls">
       <label>开始日期: <input v-model="startDate" type="date" @change="loadData" /></label>
       <label>结束日期: <input v-model="endDate" type="date" @change="loadData" /></label>
+      <span class="period-toggles">
+        周期:
+        <button v-for="p in periodOptions" :key="p.value"
+          :class="{ active: period === p.value }"
+          @click="period = p.value; loadData()">
+          {{ p.label }}
+        </button>
+      </span>
       <span class="indicator-toggles">
         指标:
         <label v-for="ind in indicatorOptions" :key="ind">
@@ -33,7 +41,13 @@ const klineData = ref([])
 const indicators = ref({})
 const startDate = ref('')
 const endDate = ref('')
-const selectedIndicators = ref(['ma'])
+const period = ref('daily')
+const periodOptions = [
+  { value: 'daily', label: '日线' },
+  { value: 'weekly', label: '周线' },
+  { value: 'monthly', label: '月线' },
+]
+const selectedIndicators = ref(['ma', 'macd'])
 const indicatorOptions = ['ma', 'macd', 'kdj', 'boll']
 
 const chartHeight = computed(() => {
@@ -44,7 +58,7 @@ const chartHeight = computed(() => {
 })
 
 async function loadData() {
-  const params = {}
+  const params = { period: period.value }
   if (startDate.value) params.start_date = startDate.value
   if (endDate.value) params.end_date = endDate.value
   const { data } = await fetchKline(symbol, params)
@@ -57,7 +71,7 @@ async function loadIndicators() {
     indicators.value = {}
     return
   }
-  const params = { types: selectedIndicators.value.join(',') }
+  const params = { types: selectedIndicators.value.join(','), period: period.value }
   if (startDate.value) params.start_date = startDate.value
   if (endDate.value) params.end_date = endDate.value
   const { data } = await fetchIndicators(symbol, params)
@@ -74,6 +88,9 @@ onMounted(loadData)
 .controls { margin: 16px 0; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .controls label { font-size: 14px; }
 .controls input[type="date"] { padding: 4px 8px; margin-left: 4px; }
+.period-toggles { display: flex; align-items: center; gap: 4px; }
+.period-toggles button { padding: 4px 10px; border: 1px solid #dcdfe6; border-radius: 4px; background: white; cursor: pointer; font-size: 13px; }
+.period-toggles button.active { background: #409eff; color: white; border-color: #409eff; }
 .indicator-toggles { display: flex; align-items: center; gap: 8px; }
 .indicator-toggles label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 </style>

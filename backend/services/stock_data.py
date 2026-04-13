@@ -36,6 +36,31 @@ def get_kline(
     return df
 
 
+def aggregate_kline(df: pd.DataFrame, period: str = "weekly") -> pd.DataFrame:
+    asc = df.sort_values("date").reset_index(drop=True)
+    asc["date_dt"] = pd.to_datetime(asc["date"])
+    if period == "weekly":
+        asc["period_key"] = asc["date_dt"].dt.to_period("W-FRI")
+    else:
+        asc["period_key"] = asc["date_dt"].dt.to_period("M")
+
+    grouped = asc.groupby("period_key", sort=True)
+    result = pd.DataFrame({
+        "date": grouped["date"].last(),
+        "open": grouped["open"].first(),
+        "high": grouped["high"].max(),
+        "low": grouped["low"].min(),
+        "close": grouped["close"].last(),
+        "volume": grouped["volume"].sum(),
+        "amount": grouped["amount"].sum(),
+    }).reset_index(drop=True)
+
+    is_desc = df.iloc[0]["date"] > df.iloc[-1]["date"] if len(df) > 1 else False
+    if is_desc:
+        result = result.sort_values("date", ascending=False).reset_index(drop=True)
+    return result
+
+
 def list_stocks(
     data_dir: Optional[Path] = None,
     search: Optional[str] = None,
