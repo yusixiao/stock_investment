@@ -6,6 +6,7 @@ RAW_KLINE_DIR = DATA_DIR / "kline" / "A" / "raw"
 QFQ_KLINE_DIR = DATA_DIR / "kline" / "A" / "qfq"
 STRATEGY_DIR = BASE_DIR / "strategies"
 LOG_DIR = DATA_DIR / "logs"
+PORTFOLIO_DB = DATA_DIR / "portfolio.db"
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
