@@ -49,8 +49,8 @@ class MaCrossScreener(ScreenerStrategy):
     description = "选出MA5上穿MA20的股票"
 
     params = {
-        "fast": {"default": 5, "min": 3, "max": 30, "step": 1},
-        "slow": {"default": 20, "min": 10, "max": 120, "step": 5},
+        "fast": {"default": 5},
+        "slow": {"default": 20},
         "period": {"default": "monthly"},
     }
 
@@ -80,14 +80,13 @@ class EqualWeightTrader(TraderStrategy):
     description = "对筛选出的股票等权分配资金买入"
 
     params = {
-        "rebalance_days": {"default": 20, "min": 5, "max": 60, "step": 5},
+        "rebalance_days": {"default": 20},
     }
 
     settings = {
         "initial_capital": 1_000_000,
         "commission_rate": 0.0003,
         "slippage": 0.002,
-        "benchmark": "000300.SH",
     }
 
     def on_bar(self, ctx):
@@ -107,7 +106,7 @@ class EqualWeightTrader(TraderStrategy):
 - `self.p` — 参数访问器，`self.p.fast` 返回当前参数值
 - `name` — 策略名称
 - `description` — 策略描述
-- `params` — 参数定义（含 default/min/max/step，用于参数优化）
+- `params` — 参数定义（含 default，前端可覆盖）
 
 ### Context API
 
@@ -216,7 +215,6 @@ class EqualWeightTrader(TraderStrategy):
 - **预加载**：引擎启动时一次性读取所有相关股票的 parquet 到内存
 - **指标缓存**：同一股票同一指标只计算一次，结果缓存在 dict 中
 - **筛选逐级缩小**：上游筛选后，下游只需处理更少的股票
-- **参数优化并行**：`concurrent.futures.ProcessPoolExecutor` 利用多核
 - **超时保护**：单次回测最大运行时间 5 分钟
 
 ## 绩效分析 (Analyzer)
@@ -234,22 +232,6 @@ class EqualWeightTrader(TraderStrategy):
 | 交易次数 | 总买卖成交笔数 |
 | 日均换手率 | 日均交易金额 / 日均总资产 |
 
-### 基准对比
-
-- 用户在 `settings.benchmark` 中指定基准（如 `"000300.SH"`）
-- 同步计算基准的收益曲线
-- 对比展示：策略 vs 基准的收益曲线、超额收益
-
-## 参数优化
-
-利用策略 `params` 中定义的 `min/max/step` 进行网格搜索：
-
-- 遍历所有参数组合，每组跑一次完整回测
-- `concurrent.futures.ProcessPoolExecutor` 并行加速
-- 返回结果按指定指标排序
-
-前端展示：参数优化结果表 + 热力图（选取两个参数为轴，颜色表示收益率）。
-
 ## 多策略对比
 
 用户选择多个已有的回测结果进行对比：
@@ -266,13 +248,11 @@ class EqualWeightTrader(TraderStrategy):
 | POST | `/api/backtest/run` | 运行回测管道（筛选+交易） |
 | GET | `/api/backtest/status/{task_id}` | 查询回测任务状态 |
 | GET | `/api/backtest/result/{task_id}` | 获取回测结果 |
-| POST | `/api/backtest/optimize` | 运行参数优化 |
-| GET | `/api/backtest/optimize/status/{task_id}` | 查询优化任务状态 |
-| GET | `/api/backtest/optimize/result/{task_id}` | 获取优化结果 |
+
 | POST | `/api/screener/run` | 运行纯选股管道 |
 | GET | `/api/screener/result` | 获取最近一次选股结果 |
 
-回测和优化为异步任务（后台线程），通过 `task_id` 轮询状态，结果缓存在内存中。
+回测为异步任务（后台线程），通过 `task_id` 轮询状态，结果缓存在内存中。
 
 ## 前端页面
 
@@ -282,12 +262,11 @@ class EqualWeightTrader(TraderStrategy):
 | `/screener` | ScreenerPage.vue | 选股：选择筛选管道、运行、查看选股结果 |
 | `/backtest` | BacktestPage.vue | 回测：组装管道、设置参数/日期、运行、查看结果 |
 | `/backtest/result/:id` | BacktestResult.vue | 回测结果详情：完整绩效报告和图表 |
-| `/optimize` | OptimizePage.vue | 参数优化：选策略、设置参数范围、运行、结果表+热力图 |
 | `/compare` | ComparePage.vue | 多策略对比：选多个回测结果、曲线叠加、指标对比表 |
 
 ### 导航
 
-顶部导航栏：`行情 | 策略 | 选股 | 回测 | 优化 | 对比`
+顶部导航栏：`行情 | 策略 | 选股 | 回测 | 对比`
 
 ### 关键组件
 
@@ -298,7 +277,7 @@ class EqualWeightTrader(TraderStrategy):
 - **TradeTable.vue** — 交易明细表
 - **BacktestKline.vue** — K线+买卖点标记
 - **MetricCards.vue** — 绩效指标摘要卡片
-- **HeatmapChart.vue** — 参数优化热力图
+
 
 ### K线展示增强
 
@@ -323,7 +302,6 @@ backend/
       broker.py                # Broker（撮合、T+1、涨跌停、费用）
       portfolio.py             # Portfolio（每日净值、持仓快照）
       analyzer.py              # 绩效分析
-      optimizer.py             # 参数优化（网格搜索+并行）
       strategy_loader.py       # importlib 加载策略文件
       task_manager.py          # 异步任务管理
   routers/
@@ -333,7 +311,6 @@ backend/
     test_broker.py
     test_engine.py
     test_analyzer.py
-    test_optimizer.py
     test_strategy_loader.py
     test_backtest_api.py
     test_screener_api.py
@@ -344,7 +321,6 @@ frontend/src/
     ScreenerPage.vue
     BacktestPage.vue
     BacktestResult.vue
-    OptimizePage.vue
     ComparePage.vue
   components/
     PipelineBuilder.vue
@@ -354,7 +330,6 @@ frontend/src/
     TradeTable.vue
     BacktestKline.vue
     MetricCards.vue
-    HeatmapChart.vue
 ```
 
 ## 错误处理
