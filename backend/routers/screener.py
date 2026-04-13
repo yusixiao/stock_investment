@@ -44,7 +44,7 @@ def api_run_screener(body: dict = Body(...)):
             stock_data[symbol] = df
 
     engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=None)
-    result = engine.run()
+    result = engine.run(mode="screen")
 
     _latest_result = {
         "screened_symbols": result["screened_symbols"],

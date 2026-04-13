@@ -80,6 +80,32 @@ class TestBacktestEngine:
         result = engine.run()
         assert len(result["screened_symbols"]) == 1
 
+    def test_screener_backtest_returns_match_dates(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[AlwaysPassScreener()],
+            trader=None,
+        )
+        result = engine.run()
+        assert "screened_symbols" in result
+        assert len(result["screened_symbols"]) > 0
+        item = result["screened_symbols"][0]
+        assert "symbol" in item
+        assert "match_dates" in item
+        assert len(item["match_dates"]) > 0
+
+    def test_screener_only_mode(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[AlwaysPassScreener()],
+            trader=None,
+        )
+        result = engine.run(mode="screen")
+        assert "screened_symbols" in result
+        assert isinstance(result["screened_symbols"][0], str)
+
     def test_full_backtest_returns_metrics(self):
         data = self._make_data()
         engine = BacktestEngine(

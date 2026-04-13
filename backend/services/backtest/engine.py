@@ -20,9 +20,11 @@ class BacktestEngine:
         self._trader = trader
         self._all_symbols = list(self._stock_data.keys())
 
-    def run(self) -> dict:
-        if self._trader is None:
+    def run(self, mode: str = "auto") -> dict:
+        if mode == "screen":
             return self._run_screener_only()
+        if self._trader is None:
+            return self._run_screener_backtest()
         return self._run_backtest()
 
     def _run_screener_only(self) -> dict:
@@ -34,6 +36,29 @@ class BacktestEngine:
             ctx = ScreenerContext(self._stock_data, last_idx)
             symbols = screener.screen(ctx, symbols)
         return {"screened_symbols": symbols}
+
+    def _run_screener_backtest(self) -> dict:
+        ref_sym = self._all_symbols[0]
+        ref_df = self._stock_data[ref_sym]
+        n_bars = len(ref_df)
+
+        match_history: dict[str, list[str]] = {}
+
+        for idx in range(n_bars):
+            symbols = list(self._all_symbols)
+            for screener in self._screeners:
+                ctx = ScreenerContext(self._stock_data, idx)
+                symbols = screener.screen(ctx, symbols)
+            if symbols:
+                current_date = ref_df.iloc[idx]["date"]
+                for sym in symbols:
+                    match_history.setdefault(sym, []).append(current_date)
+
+        result = []
+        for sym, dates in match_history.items():
+            result.append({"symbol": sym, "match_dates": dates})
+        result.sort(key=lambda x: x["match_dates"][-1], reverse=True)
+        return {"screened_symbols": result}
 
     def _run_backtest(self) -> dict:
         settings = self._trader.settings
