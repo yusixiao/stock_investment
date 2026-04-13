@@ -1,6 +1,7 @@
 <template>
   <div class="stock-list-page">
     <h1>A 股列表</h1>
+    <UpdateStatus />
     <SearchBar @search="onSearch" />
     <table class="stock-table">
       <thead>
@@ -33,6 +34,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchStocks } from '../api'
 import SearchBar from '../components/SearchBar.vue'
+import UpdateStatus from '../components/UpdateStatus.vue'
 
 const router = useRouter()
 const stocks = ref([])
