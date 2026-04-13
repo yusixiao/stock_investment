@@ -1,0 +1,6 @@
+data/kline/
+data/logs/
+node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
