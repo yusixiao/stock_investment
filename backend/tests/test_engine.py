@@ -69,10 +69,6 @@ class TestBacktestEngine:
         result = engine.run()
         assert "screened_symbols" in result
         assert len(result["screened_symbols"]) > 0
-        item = result["screened_symbols"][0]
-        assert "symbol" in item
-        assert "match_dates" in item
-        assert len(item["match_dates"]) > 0
 
     def test_screener_chain(self):
         data = self._make_data()
@@ -83,8 +79,6 @@ class TestBacktestEngine:
         )
         result = engine.run()
         assert len(result["screened_symbols"]) == 1
-        assert "symbol" in result["screened_symbols"][0]
-        assert "match_dates" in result["screened_symbols"][0]
 
     def test_full_backtest_returns_metrics(self):
         data = self._make_data()

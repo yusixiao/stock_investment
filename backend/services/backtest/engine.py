@@ -28,25 +28,12 @@ class BacktestEngine:
     def _run_screener_only(self) -> dict:
         ref_sym = self._all_symbols[0]
         ref_df = self._stock_data[ref_sym]
-        n_bars = len(ref_df)
-
-        match_history: dict[str, list[str]] = {}
-
-        for idx in range(n_bars):
-            symbols = list(self._all_symbols)
-            for screener in self._screeners:
-                ctx = ScreenerContext(self._stock_data, idx)
-                symbols = screener.screen(ctx, symbols)
-            if symbols:
-                current_date = ref_df.iloc[idx]["date"]
-                for sym in symbols:
-                    match_history.setdefault(sym, []).append(current_date)
-
-        result = []
-        for sym, dates in match_history.items():
-            result.append({"symbol": sym, "match_dates": dates})
-        result.sort(key=lambda x: x["match_dates"][-1], reverse=True)
-        return {"screened_symbols": result}
+        last_idx = len(ref_df) - 1
+        symbols = list(self._all_symbols)
+        for screener in self._screeners:
+            ctx = ScreenerContext(self._stock_data, last_idx)
+            symbols = screener.screen(ctx, symbols)
+        return {"screened_symbols": symbols}
 
     def _run_backtest(self) -> dict:
         settings = self._trader.settings

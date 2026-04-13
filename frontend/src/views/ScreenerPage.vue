@@ -8,22 +8,9 @@
     </button>
     <div v-if="result" class="result">
       <h2>选股结果 ({{ result.count }} 只)</h2>
-      <table class="result-table" v-if="result.count">
-        <thead>
-          <tr><th>股票代码</th><th>匹配次数</th><th>匹配日期</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="item in result.screened_symbols" :key="item.symbol">
-            <td>
-              <span class="symbol-link" @click="$router.push('/stock/' + item.symbol)">{{ item.symbol }}</span>
-            </td>
-            <td>{{ item.match_dates.length }}</td>
-            <td>
-              <span v-for="(d, i) in item.match_dates" :key="d" class="date-tag">{{ d }}<span v-if="i < item.match_dates.length - 1">、</span></span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="symbol-grid">
+        <span v-for="sym in result.screened_symbols" :key="sym" class="symbol-tag" @click="$router.push('/stock/' + sym)">{{ sym }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -65,10 +52,7 @@ onMounted(async () => {
 .run-btn { margin-top: 16px; padding: 10px 24px; background: #67c23a; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .run-btn:disabled { background: #c0c4cc; cursor: not-allowed; }
 .result { margin-top: 24px; }
-.result-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.result-table th { text-align: left; padding: 10px 8px; border-bottom: 2px solid #ebeef5; color: #909399; font-weight: normal; }
-.result-table td { padding: 10px 8px; border-bottom: 1px solid #ebeef5; }
-.symbol-link { color: #409eff; cursor: pointer; font-weight: bold; }
-.symbol-link:hover { text-decoration: underline; }
-.date-tag { font-size: 12px; color: #606266; }
+.symbol-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.symbol-tag { padding: 4px 12px; background: #ecf5ff; border: 1px solid #b3d8ff; border-radius: 4px; font-size: 13px; cursor: pointer; }
+.symbol-tag:hover { background: #409eff; color: white; }
 </style>
