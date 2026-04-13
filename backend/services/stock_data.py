@@ -1,0 +1,58 @@
+import pandas as pd
+from pathlib import Path
+from typing import Optional
+
+from config import RAW_KLINE_DIR
+
+
+def symbol_to_exchange(code: str) -> str:
+    if code.startswith("6"):
+        return "SH"
+    return "SZ"
+
+
+def symbol_to_filepath(code: str) -> Path:
+    exchange = symbol_to_exchange(code)
+    return RAW_KLINE_DIR / f"{code}.{exchange}.parquet"
+
+
+def get_latest_date(filepath: Path) -> Optional[str]:
+    df = pd.read_parquet(filepath, columns=["date"])
+    if df.empty:
+        return None
+    return df.iloc[0]["date"]
+
+
+def get_kline(
+    filepath: Path,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> pd.DataFrame:
+    df = pd.read_parquet(filepath)
+    if start_date:
+        df = df[df["date"] >= start_date]
+    if end_date:
+        df = df[df["date"] <= end_date]
+    return df
+
+
+def list_stocks(
+    data_dir: Optional[Path] = None,
+    search: Optional[str] = None,
+) -> list[dict]:
+    if data_dir is None:
+        data_dir = RAW_KLINE_DIR
+    results = []
+    for f in sorted(data_dir.glob("*.parquet")):
+        symbol = f.stem
+        if search and search.lower() not in symbol.lower():
+            continue
+        df = pd.read_parquet(f, columns=["date", "close", "volume"])
+        latest = df.iloc[0] if not df.empty else {}
+        results.append({
+            "symbol": symbol,
+            "latest_date": latest.get("date", ""),
+            "close": float(latest.get("close", 0)),
+            "volume": float(latest.get("volume", 0)),
+        })
+    return results
