@@ -138,3 +138,48 @@ class PortfolioManager:
             "total_value": total_value,
             "total_return": total_return,
         }
+
+    def take_snapshot(self, portfolio_id: int, date: str, current_prices: dict[str, float]):
+        summary = self.compute_summary(portfolio_id, current_prices)
+        if not summary:
+            return
+        self._conn.execute(
+            "INSERT OR REPLACE INTO snapshots (portfolio_id, date, total_value, cash, market_value) VALUES (?, ?, ?, ?, ?)",
+            (portfolio_id, date, summary["total_value"], summary["cash"], summary["market_value"]),
+        )
+        self._conn.commit()
+
+    def take_all_snapshots(self, date: str, current_prices: dict[str, float]):
+        portfolios = self.list_portfolios()
+        for p in portfolios:
+            self.take_snapshot(p["id"], date, current_prices)
+
+    def get_snapshots(self, portfolio_id: int) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM snapshots WHERE portfolio_id=? ORDER BY date",
+            (portfolio_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def import_from_backtest(self, backtest_result: dict, name: str) -> dict:
+        equity_curve = backtest_result["equity_curve"]
+        last_snap = equity_curve[-1]
+        total_value = last_snap["total_value"]
+        positions = last_snap.get("positions", {})
+        cash = last_snap["cash"]
+        trade_date = last_snap["date"]
+
+        p = self.create_portfolio(name, total_value, source="backtest")
+
+        for sym, pos in positions.items():
+            self.add_trade(
+                p["id"],
+                sym,
+                "buy",
+                pos["cost"],
+                pos["shares"],
+                trade_date,
+                commission=0.0,
+            )
+
+        return p

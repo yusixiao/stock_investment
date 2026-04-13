@@ -147,3 +147,69 @@ class TestComputeSummary:
         expected_total = s["cash"] + s["market_value"]
         assert s["total_value"] == pytest.approx(expected_total)
         assert s["total_return"] == pytest.approx((expected_total - 200000) / 200000)
+
+
+class TestTakeSnapshot:
+    def test_snapshot(self, mgr):
+        p = mgr.create_portfolio("test", 100000)
+        mgr.add_trade(p["id"], "600519.SH", "buy", 1800.0, 100, "2026-04-10")
+        mgr.take_snapshot(p["id"], "2026-04-10", {"600519.SH": 1850.0})
+        snaps = mgr.get_snapshots(p["id"])
+        assert len(snaps) == 1
+        assert snaps[0]["date"] == "2026-04-10"
+        assert snaps[0]["total_value"] > 0
+
+    def test_snapshot_upsert(self, mgr):
+        p = mgr.create_portfolio("test", 100000)
+        mgr.take_snapshot(p["id"], "2026-04-10", {})
+        mgr.take_snapshot(p["id"], "2026-04-10", {})
+        snaps = mgr.get_snapshots(p["id"])
+        assert len(snaps) == 1
+
+    def test_get_snapshots_ordered(self, mgr):
+        p = mgr.create_portfolio("test", 100000)
+        mgr.take_snapshot(p["id"], "2026-04-12", {})
+        mgr.take_snapshot(p["id"], "2026-04-10", {})
+        mgr.take_snapshot(p["id"], "2026-04-11", {})
+        snaps = mgr.get_snapshots(p["id"])
+        dates = [s["date"] for s in snaps]
+        assert dates == ["2026-04-10", "2026-04-11", "2026-04-12"]
+
+
+class TestTakeAllSnapshots:
+    def test_snapshots_all(self, mgr):
+        mgr.create_portfolio("a", 100000)
+        mgr.create_portfolio("b", 200000)
+        mgr.take_all_snapshots("2026-04-10", {})
+        snaps_a = mgr.get_snapshots(1)
+        snaps_b = mgr.get_snapshots(2)
+        assert len(snaps_a) == 1
+        assert len(snaps_b) == 1
+
+
+class TestImportFromBacktest:
+    def test_import(self, mgr):
+        backtest_result = {
+            "equity_curve": [
+                {"date": "2026-04-09", "total_value": 1000000, "cash": 900000, "market_value": 100000, "positions": {"600519.SH": {"shares": 100, "cost": 1000.0, "market_price": 1000.0}}},
+                {"date": "2026-04-10", "total_value": 1050000, "cash": 900000, "market_value": 150000, "positions": {"600519.SH": {"shares": 100, "cost": 1000.0, "market_price": 1500.0}}},
+            ],
+            "trades": [],
+        }
+        p = mgr.import_from_backtest(backtest_result, "imported")
+        assert p["source"] == "backtest"
+        assert p["initial_capital"] == 1050000
+        holdings = mgr.compute_holdings(p["id"])
+        assert holdings["600519.SH"]["shares"] == 100
+        assert holdings["600519.SH"]["avg_cost"] == 1000.0
+
+    def test_import_empty_positions(self, mgr):
+        backtest_result = {
+            "equity_curve": [
+                {"date": "2026-04-10", "total_value": 1000000, "cash": 1000000, "market_value": 0, "positions": {}},
+            ],
+            "trades": [],
+        }
+        p = mgr.import_from_backtest(backtest_result, "empty")
+        assert p["initial_capital"] == 1000000
+        assert mgr.compute_holdings(p["id"]) == {}
