@@ -5,6 +5,7 @@
       <router-link to="/strategies">策略</router-link>
       <router-link to="/screener">选股</router-link>
       <router-link to="/backtest">回测</router-link>
+      <router-link to="/portfolio">持仓</router-link>
       <router-link to="/compare">对比</router-link>
     </nav>
     <router-view />

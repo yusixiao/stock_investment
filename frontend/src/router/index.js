@@ -7,6 +7,8 @@ const routes = [
   { path: '/screener', name: 'ScreenerPage', component: () => import('../views/ScreenerPage.vue') },
   { path: '/backtest', name: 'BacktestPage', component: () => import('../views/BacktestPage.vue') },
   { path: '/backtest/result/:id', name: 'BacktestResult', component: () => import('../views/BacktestResult.vue') },
+  { path: '/portfolio', name: 'PortfolioList', component: () => import('../views/PortfolioList.vue') },
+  { path: '/portfolio/:id', name: 'PortfolioDetail', component: () => import('../views/PortfolioDetail.vue') },
   { path: '/compare', name: 'ComparePage', component: () => import('../views/ComparePage.vue') },
 ]
 

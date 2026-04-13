@@ -54,4 +54,40 @@ export function fetchBacktestTasks() {
   return api.get('/backtest/tasks')
 }
 
+export function createPortfolio(body) {
+  return api.post('/portfolio/', body)
+}
+
+export function listPortfolios() {
+  return api.get('/portfolio/')
+}
+
+export function getPortfolio(id) {
+  return api.get(`/portfolio/${id}`)
+}
+
+export function deletePortfolio(id) {
+  return api.delete(`/portfolio/${id}`)
+}
+
+export function addTrade(portfolioId, body) {
+  return api.post(`/portfolio/${portfolioId}/trades`, body)
+}
+
+export function getTrades(portfolioId) {
+  return api.get(`/portfolio/${portfolioId}/trades`)
+}
+
+export function getHoldings(portfolioId) {
+  return api.get(`/portfolio/${portfolioId}/holdings`)
+}
+
+export function getSnapshots(portfolioId) {
+  return api.get(`/portfolio/${portfolioId}/snapshots`)
+}
+
+export function importFromBacktest(taskId, body) {
+  return api.post(`/portfolio/import/${taskId}`, body)
+}
+
 export default api

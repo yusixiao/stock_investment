@@ -12,6 +12,8 @@ from scheduler import start_scheduler, shutdown_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from services.portfolio.db import init_db
+    init_db()
     start_scheduler()
     yield
     shutdown_scheduler()
