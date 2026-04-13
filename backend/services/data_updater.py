@@ -12,6 +12,7 @@ import pandas as pd
 from config import (
     RAW_KLINE_DIR,
     UPDATE_LOG_FILE,
+    UPDATE_PROGRESS_FILE,
     LOG_RETENTION_DAYS,
     RETRY_MAX_ATTEMPTS,
     RETRY_BACKOFF_CAP,
@@ -50,7 +51,7 @@ def map_spot_to_record(row: pd.Series, today_str: str) -> dict:
     }
 
 
-def retry_fetch_spot(max_attempts: int = RETRY_MAX_ATTEMPTS) -> pd.DataFrame:
+def retry_fetch_spot(max_attempts: int = RETRY_MAX_ATTEMPTS, progress_callback=None) -> pd.DataFrame:
     last_error = None
     for attempt in range(max_attempts):
         try:
@@ -59,9 +60,12 @@ def retry_fetch_spot(max_attempts: int = RETRY_MAX_ATTEMPTS) -> pd.DataFrame:
         except Exception as e:
             last_error = e
             wait = min(2 ** attempt, RETRY_BACKOFF_CAP)
-            logger.warning(f"API call failed (attempt {attempt+1}/{max_attempts}), retry in {wait}s: {e}")
+            msg = f"API 调用失败 (第{attempt+1}/{max_attempts}次), {wait}s 后重试: {e}"
+            logger.warning(msg)
+            if progress_callback:
+                progress_callback(msg)
             time.sleep(wait)
-    raise RuntimeError(f"20 次重试后仍然失败: {last_error}")
+    raise RuntimeError(f"{max_attempts} 次重试后仍然失败: {last_error}")
 
 
 def run_incremental_update(
@@ -76,11 +80,26 @@ def run_incremental_update(
 
     result = UpdateResult(trigger=trigger, started_at=datetime.now().isoformat())
 
-    t0 = time.time()
-    spot_df = retry_fetch_spot()
-    result.api_elapsed_sec = round(time.time() - t0, 2)
+    def _log_progress(msg: str):
+        ts = datetime.now().strftime("%H:%M:%S")
+        with open(UPDATE_PROGRESS_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {msg}\n")
 
-    for _, row in spot_df.iterrows():
+    UPDATE_PROGRESS_FILE.write_text("", encoding="utf-8")
+    _log_progress(f"开始更新 trigger={trigger} date={today_str}")
+
+    t0 = time.time()
+    _log_progress("正在调用 AKShare API 获取全量行情...")
+    try:
+        spot_df = retry_fetch_spot(progress_callback=_log_progress)
+    except RuntimeError as e:
+        _log_progress(f"API 调用最终失败: {e}")
+        raise
+    result.api_elapsed_sec = round(time.time() - t0, 2)
+    total = len(spot_df)
+    _log_progress(f"API 返回 {total} 只股票, 耗时 {result.api_elapsed_sec}s")
+
+    for idx, (_, row) in enumerate(spot_df.iterrows(), 1):
         try:
             record = map_spot_to_record(row, today_str)
             code = record.pop("_code")
@@ -107,7 +126,12 @@ def run_incremental_update(
             result.errors.append(f"{row.get('代码', '?')}: {e}")
             logger.error(f"Failed to update {row.get('代码', '?')}: {e}")
 
+        if idx % 500 == 0 or idx == total:
+            _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed}")
+
     result.finished_at = datetime.now().isoformat()
+    elapsed = round(time.time() - t0, 2)
+    _log_progress(f"完成! 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed} 总耗时:{elapsed}s")
     _save_log(result)
     return result
 

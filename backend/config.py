@@ -11,6 +11,7 @@ PORTFOLIO_DB = DATA_DIR / "portfolio.db"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 UPDATE_LOG_FILE = LOG_DIR / "update_log.json"
+UPDATE_PROGRESS_FILE = LOG_DIR / "update_progress.log"
 LOG_RETENTION_DAYS = 90
 
 SCHEDULER_HOUR = 15
