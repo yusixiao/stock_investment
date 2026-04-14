@@ -7,8 +7,8 @@ from services.backtest.base import ScreenerStrategy
 
 
 class MaTangleBreakoutScreener(ScreenerStrategy):
-    name = "月线均线缠绕突破"
-    description = "月线MA5/MA10/MA20纠缠后，MA20向下穿透MA5和MA10（多头突破信号）"
+    name = "月线均线缠绕"
+    description = "月线MA5/MA10/MA20在阈值范围内纠缠"
     frequency = "monthly"
 
     params = {
@@ -33,16 +33,10 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
             for w, col in [(self.p.fast, col_f), (self.p.mid, col_m), (self.p.slow, col_s)]:
                 df[col] = df["close"].rolling(window=w, min_periods=w).mean()
             df = df.dropna(subset=[col_f, col_m, col_s]).reset_index(drop=True)
-            if len(df) < self.p.tangle_months + 1:
-                continue
-            cur = df.iloc[-1]
-            prev = df.iloc[-2]
-            breakthrough_now = cur[col_s] < cur[col_f] and cur[col_s] < cur[col_m]
-            no_breakthrough_prev = prev[col_s] >= prev[col_f] or prev[col_s] >= prev[col_m]
-            if not (breakthrough_now and no_breakthrough_prev):
+            if len(df) < self.p.tangle_months:
                 continue
             tangle_count = 0
-            for i in range(len(df) - 2, -1, -1):
+            for i in range(len(df) - 1, -1, -1):
                 row = df.iloc[i]
                 avg = (row[col_f] + row[col_m] + row[col_s]) / 3.0
                 if avg == 0:

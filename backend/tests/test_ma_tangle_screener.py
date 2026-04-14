@@ -32,10 +32,8 @@ class TestMaTangleBreakoutScreener:
         ctx.get_history = MagicMock(side_effect=lambda sym, n: history_data.get(sym, [])[-n:])
         return ctx
 
-    def test_tangle_then_breakthrough_selected(self):
-        monthly_closes = [10.0] * 20
-        monthly_closes.extend([10.0, 10.0, 10.0])
-        monthly_closes.append(10.5)
+    def test_tangle_selected(self):
+        monthly_closes = [10.0] * 24
         records = _make_monthly_records(monthly_closes)
         ctx = self._make_ctx({"000001.SZ": records})
         s = MaTangleBreakoutScreener()
@@ -62,17 +60,9 @@ class TestMaTangleBreakoutScreener:
         assert s.p.threshold == 0.10
         assert s.p.tangle_months == 3
 
-    def test_no_breakthrough_not_selected(self):
-        monthly_closes = [10.0] * 24
-        records = _make_monthly_records(monthly_closes)
-        ctx = self._make_ctx({"000001.SZ": records})
-        s = MaTangleBreakoutScreener()
-        result = s.screen(ctx, ["000001.SZ"])
-        assert "000001.SZ" not in result
-
-    def test_breakthrough_without_enough_tangle(self):
+    def test_not_enough_tangle_months(self):
         monthly_closes = list(range(10, 33))
-        monthly_closes[-3] = monthly_closes[-2] = monthly_closes[-1] + 0.01
+        monthly_closes[-1] = monthly_closes[-2]
         records = _make_monthly_records(monthly_closes)
         ctx = self._make_ctx({"000001.SZ": records})
         s = MaTangleBreakoutScreener()
