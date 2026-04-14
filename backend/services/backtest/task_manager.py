@@ -22,13 +22,15 @@ def _init_table():
                 status TEXT NOT NULL,
                 task_type TEXT NOT NULL DEFAULT 'screener',
                 pipeline_info TEXT,
+                start_date TEXT,
+                end_date TEXT,
                 summary TEXT,
                 result TEXT,
                 error TEXT,
                 created_at TEXT NOT NULL
             )
         """)
-        for col, typedef in [("task_type", "TEXT NOT NULL DEFAULT 'screener'"), ("summary", "TEXT"), ("pipeline_info", "TEXT")]:
+        for col, typedef in [("task_type", "TEXT NOT NULL DEFAULT 'screener'"), ("summary", "TEXT"), ("pipeline_info", "TEXT"), ("start_date", "TEXT"), ("end_date", "TEXT")]:
             try:
                 conn.execute(f"ALTER TABLE backtest_tasks ADD COLUMN {col} {typedef}")
             except Exception:
@@ -46,14 +48,14 @@ class TaskManager:
         self._progress: dict[str, dict] = {}
         self._lock = threading.Lock()
 
-    def create_task(self, task_type: str = "screener", pipeline_info: list[dict] | None = None) -> str:
+    def create_task(self, task_type: str = "screener", pipeline_info: list[dict] | None = None, start_date: str | None = None, end_date: str | None = None) -> str:
         task_id = str(uuid.uuid4())[:8]
         pi_json = json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
         conn = _get_conn()
         try:
             conn.execute(
-                "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, created_at) VALUES (?, ?, ?, ?, ?)",
-                (task_id, "running", task_type, pi_json, datetime.now().isoformat()),
+                "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, start_date, end_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (task_id, "running", task_type, pi_json, start_date, end_date, datetime.now().isoformat()),
             )
             conn.commit()
         finally:
@@ -133,7 +135,7 @@ class TaskManager:
         conn = _get_conn()
         try:
             row = conn.execute(
-                "SELECT status, result, error, pipeline_info FROM backtest_tasks WHERE task_id = ?",
+                "SELECT status, result, error, pipeline_info, start_date, end_date FROM backtest_tasks WHERE task_id = ?",
                 (task_id,),
             ).fetchone()
         finally:
@@ -152,6 +154,10 @@ class TaskManager:
                 resp["pipeline_info"] = json.loads(row["pipeline_info"])
             except Exception:
                 pass
+        if row["start_date"]:
+            resp["start_date"] = row["start_date"]
+        if row["end_date"]:
+            resp["end_date"] = row["end_date"]
         return resp
 
     def list_tasks(self) -> list[dict]:

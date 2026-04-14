@@ -7,6 +7,7 @@
     </div>
     <div v-if="pipelineInfo && pipelineInfo.length" class="pipeline-info">
       <h3>策略配置</h3>
+      <p v-if="dateRange" class="date-range">回测区间: {{ dateRange }}</p>
       <div v-for="(s, i) in pipelineInfo" :key="i" class="pipeline-item">
         <span class="pi-step">{{ i + 1 }}.</span>
         <span :class="'pi-type pi-' + s.strategy_type">{{ s.strategy_type === 'screener' ? '筛选' : '交易' }}</span>
@@ -74,6 +75,7 @@ const router = useRouter()
 const taskId = route.params.id
 const result = ref(null)
 const pipelineInfo = ref(null)
+const dateRange = ref('')
 const loading = ref(true)
 const error = ref('')
 const freqMap = { daily: '日线', weekly: '周线', monthly: '月线' }
@@ -86,6 +88,9 @@ onMounted(async () => {
   try {
     const { data } = await fetchBacktestResult(taskId)
     pipelineInfo.value = data.pipeline_info || null
+    const sd = data.start_date || '最早'
+    const ed = data.end_date || '最新'
+    if (data.start_date || data.end_date) dateRange.value = `${sd} ~ ${ed}`
     if (data.status === 'success') {
       result.value = data.result
     } else if (data.status === 'failed') {
@@ -139,6 +144,7 @@ async function onImport() {
 .import-error { color: #f56c6c; margin-top: 8px; font-size: 13px; }
 .pipeline-info { margin-bottom: 20px; padding: 16px; background: #f5f7fa; border-radius: 6px; }
 .pipeline-info h3 { margin: 0 0 12px; font-size: 15px; color: #303133; }
+.date-range { font-size: 13px; color: #606266; margin: 0 0 10px; }
 .pipeline-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
 .pi-step { font-weight: bold; color: #409eff; }
 .pi-type { padding: 2px 6px; border-radius: 3px; font-size: 11px; color: white; }

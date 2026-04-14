@@ -80,7 +80,7 @@ def api_run_backtest(body: dict = Body(...)):
             merged = {**defaults, **overrides}
             info["params"] = merged
         pipeline_info.append(info)
-    task_id = task_manager.create_task(task_type=task_type, pipeline_info=pipeline_info)
+    task_id = task_manager.create_task(task_type=task_type, pipeline_info=pipeline_info, start_date=start_date, end_date=end_date)
 
     def on_progress(current, total, phase):
         task_manager.update_progress(task_id, current, total, phase)
