@@ -55,7 +55,7 @@ const periodOptions = [
   { value: 'weekly', label: '周线' },
   { value: 'monthly', label: '月线' },
 ]
-const adjust = ref('raw')
+const adjust = ref('qfq')
 const adjustOptions = [
   { value: 'raw', label: '不复权' },
   { value: 'qfq', label: '前复权' },
