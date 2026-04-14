@@ -25,7 +25,10 @@
     <div v-if="loading" class="loading">加载中...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="result && result.screened_symbols">
-      <h2>选股回测结果 ({{ result.screened_symbols.length }} 只)</h2>
+      <div class="screener-result-header">
+        <h2>选股回测结果 ({{ result.screened_symbols.length }} 只)</h2>
+        <button v-if="result.screened_symbols.length" class="btn-chain" @click="$router.push({ path: '/backtest', query: { source_task_id: taskId } })">以此结果进行下一步回测</button>
+      </div>
       <table class="result-table" v-if="result.screened_symbols.length">
         <thead>
           <tr><th>股票代码</th><th>匹配次数</th><th>匹配日期</th></tr>
@@ -43,9 +46,6 @@
         </tbody>
       </table>
       <div v-else class="empty">无匹配结果</div>
-    </div>
-    <div v-if="result && result.screened_symbols && result.screened_symbols.length" class="chain-actions">
-      <button class="btn-chain" @click="$router.push({ path: '/backtest', query: { source_task_id: taskId } })">以此结果进行下一步回测</button>
     </div>
     <div v-else-if="result">
       <MetricCards :metrics="result.metrics" />
@@ -169,7 +169,8 @@ async function onImport() {
 .source-info { font-size: 13px; color: #606266; margin-bottom: 12px; }
 .source-link { color: #409eff; cursor: pointer; }
 .source-link:hover { text-decoration: underline; }
-.chain-actions { margin-top: 16px; }
-.btn-chain { background: #409eff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+.screener-result-header { display: flex; align-items: center; gap: 16px; margin-bottom: 4px; }
+.screener-result-header h2 { margin: 0; }
+.btn-chain { background: #409eff; color: white; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .btn-chain:hover { background: #66b1ff; }
 </style>
