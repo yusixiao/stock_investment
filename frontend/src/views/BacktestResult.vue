@@ -18,6 +18,10 @@
         </span>
       </div>
     </div>
+    <div v-if="sourceTaskId" class="source-info">
+      来源任务:
+      <span class="source-link" @click="$router.push('/backtest/result/' + sourceTaskId)">{{ sourceTaskId }}</span>
+    </div>
     <div v-if="loading" class="loading">加载中...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="result && result.screened_symbols">
@@ -39,6 +43,9 @@
         </tbody>
       </table>
       <div v-else class="empty">无匹配结果</div>
+    </div>
+    <div v-if="result && result.screened_symbols && result.screened_symbols.length" class="chain-actions">
+      <button class="btn-chain" @click="$router.push({ path: '/backtest', query: { source_task_id: taskId } })">以此结果进行下一步回测</button>
     </div>
     <div v-else-if="result">
       <MetricCards :metrics="result.metrics" />
@@ -83,11 +90,13 @@ function freqLabel(f) { return freqMap[f] || f }
 const showImport = ref(false)
 const importName = ref('')
 const importError = ref('')
+const sourceTaskId = ref(null)
 
 onMounted(async () => {
   try {
     const { data } = await fetchBacktestResult(taskId)
     pipelineInfo.value = data.pipeline_info || null
+    sourceTaskId.value = data.source_task_id || null
     const sd = data.start_date || '最早'
     const ed = data.end_date || '最新'
     if (data.start_date || data.end_date) dateRange.value = `${sd} ~ ${ed}`
@@ -157,4 +166,10 @@ async function onImport() {
 .pi-name { font-size: 14px; font-weight: 500; }
 .pi-params { display: flex; gap: 8px; margin-left: 8px; }
 .pi-param { font-size: 12px; color: #606266; background: #e4e7ed; padding: 2px 8px; border-radius: 3px; }
+.source-info { font-size: 13px; color: #606266; margin-bottom: 12px; }
+.source-link { color: #409eff; cursor: pointer; }
+.source-link:hover { text-decoration: underline; }
+.chain-actions { margin-top: 16px; }
+.btn-chain { background: #409eff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+.btn-chain:hover { background: #66b1ff; }
 </style>
