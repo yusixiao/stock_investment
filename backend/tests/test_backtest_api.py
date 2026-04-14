@@ -64,3 +64,31 @@ class TestBacktestStatus:
     def test_nonexistent_result(self):
         resp = client.get("/api/backtest/result/nonexistent")
         assert resp.status_code == 404
+
+
+class TestTaskManagerSourceTask:
+    def setup_method(self):
+        from services.backtest.task_manager import TaskManager
+        self.tm = TaskManager()
+
+    def test_create_task_with_source_task_id(self):
+        tid = self.tm.create_task(
+            task_type="screener",
+            source_task_id="src123",
+        )
+        result = self.tm.get_result(tid)
+        assert result["source_task_id"] == "src123"
+
+    def test_create_task_without_source_task_id(self):
+        tid = self.tm.create_task(task_type="screener")
+        result = self.tm.get_result(tid)
+        assert result.get("source_task_id") is None
+
+    def test_list_tasks_includes_source_task_id(self):
+        tid = self.tm.create_task(
+            task_type="screener",
+            source_task_id="src456",
+        )
+        tasks = self.tm.list_tasks()
+        task = next(t for t in tasks if t["task_id"] == tid)
+        assert task["source_task_id"] == "src456"
