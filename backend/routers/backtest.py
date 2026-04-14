@@ -63,7 +63,8 @@ def api_run_backtest(body: dict = Body(...)):
         elif isinstance(instance, ScreenerStrategy):
             screeners.append(instance)
 
-    task_id = task_manager.create_task()
+    task_type = "backtest" if trader else "screener"
+    task_id = task_manager.create_task(task_type=task_type)
 
     def on_progress(current, total, phase):
         task_manager.update_progress(task_id, current, total, phase)

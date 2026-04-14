@@ -1,76 +1,174 @@
+import json
+import sqlite3
 import threading
 import uuid
 from datetime import datetime
 
+from config import PORTFOLIO_DB
+
+
+def _get_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(PORTFOLIO_DB), timeout=10)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _init_table():
+    conn = _get_conn()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS backtest_tasks (
+                task_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                task_type TEXT NOT NULL DEFAULT 'screener',
+                summary TEXT,
+                result TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        for col, typedef in [("task_type", "TEXT NOT NULL DEFAULT 'screener'"), ("summary", "TEXT")]:
+            try:
+                conn.execute(f"ALTER TABLE backtest_tasks ADD COLUMN {col} {typedef}")
+            except Exception:
+                pass
+        conn.commit()
+    finally:
+        conn.close()
+
+
+_init_table()
+
 
 class TaskManager:
     def __init__(self):
-        self._tasks: dict[str, dict] = {}
+        self._progress: dict[str, dict] = {}
         self._lock = threading.Lock()
 
-    def create_task(self) -> str:
+    def create_task(self, task_type: str = "screener") -> str:
         task_id = str(uuid.uuid4())[:8]
+        conn = _get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO backtest_tasks (task_id, status, task_type, created_at) VALUES (?, ?, ?, ?)",
+                (task_id, "running", task_type, datetime.now().isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
         with self._lock:
-            self._tasks[task_id] = {
-                "status": "running",
-                "result": None,
-                "error": None,
-                "progress": None,
-                "created_at": datetime.now().isoformat(),
-            }
+            self._progress[task_id] = None
         return task_id
 
     def update_progress(self, task_id: str, current: int, total: int, phase: str = ""):
         with self._lock:
-            if task_id in self._tasks:
-                self._tasks[task_id]["progress"] = {
-                    "current": current,
-                    "total": total,
-                    "phase": phase,
-                }
-
-    def complete_task(self, task_id: str, result: dict):
-        with self._lock:
-            if task_id in self._tasks:
-                self._tasks[task_id]["status"] = "success"
-                self._tasks[task_id]["result"] = result
-                self._tasks[task_id]["progress"] = None
-
-    def fail_task(self, task_id: str, error: str):
-        with self._lock:
-            if task_id in self._tasks:
-                self._tasks[task_id]["status"] = "failed"
-                self._tasks[task_id]["error"] = error
-                self._tasks[task_id]["progress"] = None
-
-    def get_status(self, task_id: str) -> dict | None:
-        with self._lock:
-            task = self._tasks.get(task_id)
-            if task is None:
-                return None
-            resp = {"task_id": task_id, "status": task["status"]}
-            if task["progress"]:
-                resp["progress"] = task["progress"]
-            return resp
-
-    def get_result(self, task_id: str) -> dict | None:
-        with self._lock:
-            task = self._tasks.get(task_id)
-            if task is None:
-                return None
-            return {
-                "task_id": task_id,
-                "status": task["status"],
-                "result": task["result"],
-                "error": task["error"],
+            self._progress[task_id] = {
+                "current": current,
+                "total": total,
+                "phase": phase,
             }
 
-    def list_tasks(self) -> list[dict]:
+    def _build_summary(self, result: dict) -> str:
+        if "screened_symbols" in result:
+            items = result["screened_symbols"]
+            count = len(items)
+            return json.dumps({"screened_count": count}, ensure_ascii=False)
+        if "metrics" in result:
+            m = result["metrics"]
+            return json.dumps({
+                "total_return": m.get("total_return"),
+                "annual_return": m.get("annual_return"),
+                "max_drawdown": m.get("max_drawdown"),
+                "trade_count": m.get("trade_count"),
+            }, ensure_ascii=False)
+        return ""
+
+    def complete_task(self, task_id: str, result: dict):
+        summary = self._build_summary(result)
+        conn = _get_conn()
+        try:
+            conn.execute(
+                "UPDATE backtest_tasks SET status = ?, result = ?, summary = ? WHERE task_id = ?",
+                ("success", json.dumps(result, ensure_ascii=False), summary, task_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
         with self._lock:
-            return [
-                {"task_id": tid, "status": t["status"], "created_at": t["created_at"]}
-                for tid, t in sorted(self._tasks.items(), key=lambda x: x[1]["created_at"], reverse=True)
-            ]
+            self._progress.pop(task_id, None)
+
+    def fail_task(self, task_id: str, error: str):
+        conn = _get_conn()
+        try:
+            conn.execute(
+                "UPDATE backtest_tasks SET status = ?, error = ? WHERE task_id = ?",
+                ("failed", error, task_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        with self._lock:
+            self._progress.pop(task_id, None)
+
+    def get_status(self, task_id: str) -> dict | None:
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT status FROM backtest_tasks WHERE task_id = ?", (task_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        resp = {"task_id": task_id, "status": row["status"]}
+        with self._lock:
+            prog = self._progress.get(task_id)
+            if prog:
+                resp["progress"] = prog
+        return resp
+
+    def get_result(self, task_id: str) -> dict | None:
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT status, result, error FROM backtest_tasks WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        result = json.loads(row["result"]) if row["result"] else None
+        return {
+            "task_id": task_id,
+            "status": row["status"],
+            "result": result,
+            "error": row["error"],
+        }
+
+    def list_tasks(self) -> list[dict]:
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT task_id, status, task_type, summary, created_at FROM backtest_tasks ORDER BY created_at DESC"
+            ).fetchall()
+        finally:
+            conn.close()
+        result = []
+        for r in rows:
+            item = {
+                "task_id": r["task_id"],
+                "status": r["status"],
+                "task_type": r["task_type"],
+                "created_at": r["created_at"],
+            }
+            if r["summary"]:
+                try:
+                    item["summary"] = json.loads(r["summary"])
+                except Exception:
+                    pass
+            result.append(item)
+        return result
 
 
 task_manager = TaskManager()
