@@ -5,6 +5,18 @@
       <h1>回测结果</h1>
       <button v-if="result && result.equity_curve" class="btn-import" @click="showImport = true">导入持仓</button>
     </div>
+    <div v-if="pipelineInfo && pipelineInfo.length" class="pipeline-info">
+      <h3>策略配置</h3>
+      <div v-for="(s, i) in pipelineInfo" :key="i" class="pipeline-item">
+        <span class="pi-step">{{ i + 1 }}.</span>
+        <span :class="'pi-type pi-' + s.strategy_type">{{ s.strategy_type === 'screener' ? '筛选' : '交易' }}</span>
+        <span v-if="s.frequency" :class="'pi-freq pi-freq-' + s.frequency">{{ freqLabel(s.frequency) }}</span>
+        <span class="pi-name">{{ s.name }}</span>
+        <span v-if="s.params && Object.keys(s.params).length" class="pi-params">
+          <span v-for="(v, k) in s.params" :key="k" class="pi-param">{{ k }}={{ v }}</span>
+        </span>
+      </div>
+    </div>
     <div v-if="loading" class="loading">加载中...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="result && result.screened_symbols">
@@ -61,8 +73,11 @@ const route = useRoute()
 const router = useRouter()
 const taskId = route.params.id
 const result = ref(null)
+const pipelineInfo = ref(null)
 const loading = ref(true)
 const error = ref('')
+const freqMap = { daily: '日线', weekly: '周线', monthly: '月线' }
+function freqLabel(f) { return freqMap[f] || f }
 const showImport = ref(false)
 const importName = ref('')
 const importError = ref('')
@@ -70,6 +85,7 @@ const importError = ref('')
 onMounted(async () => {
   try {
     const { data } = await fetchBacktestResult(taskId)
+    pipelineInfo.value = data.pipeline_info || null
     if (data.status === 'success') {
       result.value = data.result
     } else if (data.status === 'failed') {
@@ -121,4 +137,18 @@ async function onImport() {
 .input { width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
 .import-actions { display: flex; gap: 8px; margin-top: 16px; }
 .import-error { color: #f56c6c; margin-top: 8px; font-size: 13px; }
+.pipeline-info { margin-bottom: 20px; padding: 16px; background: #f5f7fa; border-radius: 6px; }
+.pipeline-info h3 { margin: 0 0 12px; font-size: 15px; color: #303133; }
+.pipeline-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.pi-step { font-weight: bold; color: #409eff; }
+.pi-type { padding: 2px 6px; border-radius: 3px; font-size: 11px; color: white; }
+.pi-screener { background: #67c23a; }
+.pi-trader { background: #e6a23c; }
+.pi-freq { padding: 2px 6px; border-radius: 3px; font-size: 10px; color: white; }
+.pi-freq-daily { background: #909399; }
+.pi-freq-weekly { background: #409eff; }
+.pi-freq-monthly { background: #e6a23c; }
+.pi-name { font-size: 14px; font-weight: 500; }
+.pi-params { display: flex; gap: 8px; margin-left: 8px; }
+.pi-param { font-size: 12px; color: #606266; background: #e4e7ed; padding: 2px 8px; border-radius: 3px; }
 </style>

@@ -21,13 +21,14 @@ def _init_table():
                 task_id TEXT PRIMARY KEY,
                 status TEXT NOT NULL,
                 task_type TEXT NOT NULL DEFAULT 'screener',
+                pipeline_info TEXT,
                 summary TEXT,
                 result TEXT,
                 error TEXT,
                 created_at TEXT NOT NULL
             )
         """)
-        for col, typedef in [("task_type", "TEXT NOT NULL DEFAULT 'screener'"), ("summary", "TEXT")]:
+        for col, typedef in [("task_type", "TEXT NOT NULL DEFAULT 'screener'"), ("summary", "TEXT"), ("pipeline_info", "TEXT")]:
             try:
                 conn.execute(f"ALTER TABLE backtest_tasks ADD COLUMN {col} {typedef}")
             except Exception:
@@ -45,13 +46,14 @@ class TaskManager:
         self._progress: dict[str, dict] = {}
         self._lock = threading.Lock()
 
-    def create_task(self, task_type: str = "screener") -> str:
+    def create_task(self, task_type: str = "screener", pipeline_info: list[dict] | None = None) -> str:
         task_id = str(uuid.uuid4())[:8]
+        pi_json = json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
         conn = _get_conn()
         try:
             conn.execute(
-                "INSERT INTO backtest_tasks (task_id, status, task_type, created_at) VALUES (?, ?, ?, ?)",
-                (task_id, "running", task_type, datetime.now().isoformat()),
+                "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, created_at) VALUES (?, ?, ?, ?, ?)",
+                (task_id, "running", task_type, pi_json, datetime.now().isoformat()),
             )
             conn.commit()
         finally:
@@ -131,7 +133,7 @@ class TaskManager:
         conn = _get_conn()
         try:
             row = conn.execute(
-                "SELECT status, result, error FROM backtest_tasks WHERE task_id = ?",
+                "SELECT status, result, error, pipeline_info FROM backtest_tasks WHERE task_id = ?",
                 (task_id,),
             ).fetchone()
         finally:
@@ -139,12 +141,18 @@ class TaskManager:
         if row is None:
             return None
         result = json.loads(row["result"]) if row["result"] else None
-        return {
+        resp = {
             "task_id": task_id,
             "status": row["status"],
             "result": result,
             "error": row["error"],
         }
+        if row["pipeline_info"]:
+            try:
+                resp["pipeline_info"] = json.loads(row["pipeline_info"])
+            except Exception:
+                pass
+        return resp
 
     def list_tasks(self) -> list[dict]:
         conn = _get_conn()

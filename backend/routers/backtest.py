@@ -64,7 +64,23 @@ def api_run_backtest(body: dict = Body(...)):
             screeners.append(instance)
 
     task_type = "backtest" if trader else "screener"
-    task_id = task_manager.create_task(task_type=task_type)
+    pipeline_info = []
+    for item in pipeline:
+        cls_name = item["class_name"]
+        overrides = param_overrides.get(cls_name, {})
+        classes = load_strategy_from_file(Path(item["filepath"]))
+        cls = next((c for c in classes if c.__name__ == cls_name), None)
+        info = {"class_name": cls_name}
+        if cls:
+            info["name"] = getattr(cls, "name", cls_name)
+            info["strategy_type"] = getattr(cls, "strategy_type", "")
+            if hasattr(cls, "frequency"):
+                info["frequency"] = cls.frequency
+            defaults = {k: v["default"] for k, v in getattr(cls, "params", {}).items()}
+            merged = {**defaults, **overrides}
+            info["params"] = merged
+        pipeline_info.append(info)
+    task_id = task_manager.create_task(task_type=task_type, pipeline_info=pipeline_info)
 
     def on_progress(current, total, phase):
         task_manager.update_progress(task_id, current, total, phase)
