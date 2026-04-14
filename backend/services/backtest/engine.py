@@ -103,6 +103,7 @@ class BacktestEngine:
                 self._report(idx + 1, n_bars, "选股回测中")
             current_date = ref_df.iloc[idx]["date"]
             symbols = list(self._all_symbols)
+            any_executed = False
 
             for si, screener in enumerate(self._screeners):
                 freq = getattr(screener, "frequency", "daily")
@@ -114,10 +115,11 @@ class BacktestEngine:
                     symbols = screener.screen(ctx, symbols)
                     screener_cache[si] = list(symbols)
                     prev_period_keys[si] = pk
+                    any_executed = True
                 else:
                     symbols = [s for s in symbols if s in screener_cache.get(si, [])]
 
-            if symbols:
+            if any_executed and symbols:
                 for sym in symbols:
                     match_history.setdefault(sym, []).append(current_date)
 
