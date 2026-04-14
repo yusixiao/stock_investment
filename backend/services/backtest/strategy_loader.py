@@ -36,12 +36,15 @@ def scan_strategies(directory: Path) -> list[dict]:
         except Exception:
             continue
         for cls in classes:
-            results.append({
+            info = {
                 "name": cls.name,
                 "description": cls.description,
                 "strategy_type": cls.strategy_type,
                 "params": cls.params,
                 "filepath": str(filepath),
                 "class_name": cls.__name__,
-            })
+            }
+            if hasattr(cls, "frequency"):
+                info["frequency"] = cls.frequency
+            results.append(info)
     return results

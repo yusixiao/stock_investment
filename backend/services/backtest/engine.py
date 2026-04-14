@@ -1,8 +1,11 @@
+from typing import Callable
+
 import pandas as pd
 from services.backtest.base import ScreenerStrategy, TraderStrategy
 from services.backtest.broker import Broker
 from services.backtest.context import ScreenerContext, TraderContext
 from services.backtest.analyzer import compute_metrics
+from services.stock_data import aggregate_kline
 
 
 class BacktestEngine:
@@ -11,6 +14,7 @@ class BacktestEngine:
         stock_data: dict[str, pd.DataFrame],
         screeners: list[ScreenerStrategy],
         trader: TraderStrategy | None = None,
+        on_progress: Callable[[int, int, str], None] | None = None,
     ):
         self._stock_data = {}
         for sym, df in stock_data.items():
@@ -19,6 +23,42 @@ class BacktestEngine:
         self._screeners = screeners
         self._trader = trader
         self._all_symbols = list(self._stock_data.keys())
+        self._on_progress = on_progress
+
+        self._weekly_data: dict[str, pd.DataFrame] = {}
+        self._monthly_data: dict[str, pd.DataFrame] = {}
+        self._precompute_periods()
+
+    def _report(self, current: int, total: int, phase: str):
+        if self._on_progress:
+            self._on_progress(current, total, phase)
+
+    def _precompute_periods(self):
+        needs_weekly = any(
+            getattr(s, "frequency", "daily") == "weekly" for s in self._screeners
+        )
+        needs_monthly = any(
+            getattr(s, "frequency", "daily") == "monthly" for s in self._screeners
+        )
+        total = len(self._stock_data)
+        count = 0
+        for sym, df in self._stock_data.items():
+            if needs_weekly:
+                self._weekly_data[sym] = aggregate_kline(df, period="weekly")
+            if needs_monthly:
+                self._monthly_data[sym] = aggregate_kline(df, period="monthly")
+            count += 1
+            if count % 500 == 0 or count == total:
+                self._report(count, total, "预计算周期数据")
+
+    def _make_screener_ctx(self, screener: ScreenerStrategy, idx: int) -> ScreenerContext:
+        return ScreenerContext(
+            stock_data=self._stock_data,
+            current_idx=idx,
+            frequency=getattr(screener, "frequency", "daily"),
+            weekly_data=self._weekly_data,
+            monthly_data=self._monthly_data,
+        )
 
     def run(self, mode: str = "auto") -> dict:
         if mode == "screen":
@@ -32,8 +72,10 @@ class BacktestEngine:
         ref_df = self._stock_data[ref_sym]
         last_idx = len(ref_df) - 1
         symbols = list(self._all_symbols)
-        for screener in self._screeners:
-            ctx = ScreenerContext(self._stock_data, last_idx)
+        total = len(self._screeners)
+        for i, screener in enumerate(self._screeners):
+            self._report(i + 1, total, f"选股中 ({screener.__class__.__name__})")
+            ctx = self._make_screener_ctx(screener, last_idx)
             symbols = screener.screen(ctx, symbols)
         return {"screened_symbols": symbols}
 
@@ -45,9 +87,11 @@ class BacktestEngine:
         match_history: dict[str, list[str]] = {}
 
         for idx in range(n_bars):
+            if idx % 10 == 0 or idx == n_bars - 1:
+                self._report(idx + 1, n_bars, "选股回测中")
             symbols = list(self._all_symbols)
             for screener in self._screeners:
-                ctx = ScreenerContext(self._stock_data, idx)
+                ctx = self._make_screener_ctx(screener, idx)
                 symbols = screener.screen(ctx, symbols)
             if symbols:
                 current_date = ref_df.iloc[idx]["date"]
@@ -77,6 +121,8 @@ class BacktestEngine:
         prev_closes: dict[str, float] = {}
 
         for idx in range(n_bars):
+            if idx % 10 == 0 or idx == n_bars - 1:
+                self._report(idx + 1, n_bars, "回测中")
             current_bars = {}
             current_prices = {}
             for sym, df in self._stock_data.items():
@@ -96,7 +142,7 @@ class BacktestEngine:
             available_symbols = [s for s in self._all_symbols if s in current_bars]
             symbols = list(available_symbols)
             for screener in self._screeners:
-                ctx = ScreenerContext(self._stock_data, idx)
+                ctx = self._make_screener_ctx(screener, idx)
                 symbols = screener.screen(ctx, symbols)
 
             trader_ctx = TraderContext(
@@ -106,6 +152,8 @@ class BacktestEngine:
                 broker_submit=broker.submit_order,
                 selected_symbols=symbols,
                 days_since_rebalance=days_since_rebalance,
+                weekly_data=self._weekly_data,
+                monthly_data=self._monthly_data,
             )
 
             try:

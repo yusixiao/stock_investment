@@ -6,25 +6,10 @@ import pandas as pd
 from services.backtest.base import ScreenerStrategy
 
 
-def _monthly_ma(daily_records, windows):
-    if len(daily_records) < 2:
-        return pd.DataFrame()
-    df = pd.DataFrame(daily_records).sort_values("date").reset_index(drop=True)
-    df["date_dt"] = pd.to_datetime(df["date"])
-    df["period_key"] = df["date_dt"].dt.to_period("M")
-    grouped = df.groupby("period_key", sort=True)
-    monthly = pd.DataFrame({
-        "date": grouped["date"].last(),
-        "close": grouped["close"].last(),
-    }).reset_index(drop=True)
-    for w in windows:
-        monthly[f"ma{w}"] = monthly["close"].rolling(window=w, min_periods=w).mean()
-    return monthly
-
-
 class MaTangleBreakoutScreener(ScreenerStrategy):
     name = "月线均线缠绕突破"
     description = "月线MA5/MA10/MA20纠缠后，MA20向下穿透MA5和MA10（多头突破信号）"
+    frequency = "monthly"
 
     params = {
         "fast": {"default": 5},
@@ -36,29 +21,29 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
 
     def screen(self, ctx, symbols):
         result = []
-        lookback = (self.p.slow + self.p.tangle_months + 2) * 30
+        need_bars = self.p.slow + self.p.tangle_months + 2
         for sym in symbols:
-            history = ctx.get_history(sym, lookback)
-            if len(history) < 2:
+            history = ctx.get_history(sym, need_bars)
+            if len(history) < self.p.slow + self.p.tangle_months + 1:
                 continue
-            monthly = _monthly_ma(history, [self.p.fast, self.p.mid, self.p.slow])
-            if len(monthly) < self.p.slow + self.p.tangle_months + 1:
-                continue
+            df = pd.DataFrame(history)
             col_f = f"ma{self.p.fast}"
             col_m = f"ma{self.p.mid}"
             col_s = f"ma{self.p.slow}"
-            monthly = monthly.dropna(subset=[col_f, col_m, col_s]).reset_index(drop=True)
-            if len(monthly) < self.p.tangle_months + 1:
+            for w, col in [(self.p.fast, col_f), (self.p.mid, col_m), (self.p.slow, col_s)]:
+                df[col] = df["close"].rolling(window=w, min_periods=w).mean()
+            df = df.dropna(subset=[col_f, col_m, col_s]).reset_index(drop=True)
+            if len(df) < self.p.tangle_months + 1:
                 continue
-            cur = monthly.iloc[-1]
-            prev = monthly.iloc[-2]
+            cur = df.iloc[-1]
+            prev = df.iloc[-2]
             breakthrough_now = cur[col_s] < cur[col_f] and cur[col_s] < cur[col_m]
             no_breakthrough_prev = prev[col_s] >= prev[col_f] or prev[col_s] >= prev[col_m]
             if not (breakthrough_now and no_breakthrough_prev):
                 continue
             tangle_count = 0
-            for i in range(len(monthly) - 2, -1, -1):
-                row = monthly.iloc[i]
+            for i in range(len(df) - 2, -1, -1):
+                row = df.iloc[i]
                 avg = (row[col_f] + row[col_m] + row[col_s]) / 3.0
                 if avg == 0:
                     break

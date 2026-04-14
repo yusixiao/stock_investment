@@ -4,6 +4,7 @@
       <h3>可用策略</h3>
       <div v-for="s in availableStrategies" :key="s.class_name" class="strategy-card" @click="addToPipeline(s)">
         <span :class="'badge ' + s.strategy_type">{{ s.strategy_type === 'screener' ? '筛选' : '交易' }}</span>
+        <span v-if="s.frequency" :class="'freq-badge freq-' + s.frequency">{{ freqLabel(s.frequency) }}</span>
         <span class="name">{{ s.name }}</span>
       </div>
     </div>
@@ -12,6 +13,7 @@
       <div v-for="(item, idx) in pipeline" :key="idx" class="pipeline-item">
         <span class="step">{{ idx + 1 }}.</span>
         <span :class="'badge ' + item.strategy_type">{{ item.strategy_type === 'screener' ? '筛选' : '交易' }}</span>
+        <span v-if="item.frequency" :class="'freq-badge freq-' + item.frequency">{{ freqLabel(item.frequency) }}</span>
         <span class="name">{{ item.name }}</span>
         <button class="remove-btn" @click="removeFromPipeline(idx)">✕</button>
       </div>
@@ -54,6 +56,9 @@ function addToPipeline(strategy) {
   }
 }
 
+const freqMap = { daily: '日线', weekly: '周线', monthly: '月线' }
+function freqLabel(f) { return freqMap[f] || f }
+
 function removeFromPipeline(idx) {
   const newPipeline = props.pipeline.filter((_, i) => i !== idx)
   emit('update:pipeline', newPipeline)
@@ -73,5 +78,9 @@ function removeFromPipeline(idx) {
 .badge.screener { background: #67c23a; }
 .badge.trader { background: #e6a23c; }
 .name { font-size: 13px; }
+.freq-badge { padding: 2px 6px; border-radius: 3px; font-size: 10px; color: white; }
+.freq-daily { background: #909399; }
+.freq-weekly { background: #409eff; }
+.freq-monthly { background: #e6a23c; }
 .remove-btn { margin-left: auto; border: none; background: none; color: #f56c6c; cursor: pointer; font-size: 14px; }
 </style>

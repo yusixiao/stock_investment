@@ -14,8 +14,8 @@ export function fetchIndicators(symbol, params = {}) {
   return api.get(`/stocks/${symbol}/indicators`, { params })
 }
 
-export function triggerUpdate() {
-  return api.post('/data/update')
+export function triggerUpdate(date) {
+  return api.post('/data/update', date ? { date } : {})
 }
 
 export function fetchUpdateStatus() {

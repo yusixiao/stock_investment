@@ -28,6 +28,7 @@ class BaseStrategy:
 
 class ScreenerStrategy(BaseStrategy):
     strategy_type = "screener"
+    frequency: str = "daily"
 
     def screen(self, ctx, symbols: list[str]) -> list[str]:
         raise NotImplementedError

@@ -1,58 +1,80 @@
 import math
 import pandas as pd
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
-from services.stock_data import aggregate_kline
 from services.backtest.portfolio import Portfolio
 
 
 class ScreenerContext:
-    def __init__(self, stock_data: dict[str, pd.DataFrame], current_idx: int):
-        self._stock_data = stock_data
+    def __init__(
+        self,
+        stock_data: dict[str, pd.DataFrame],
+        current_idx: int,
+        frequency: str = "daily",
+        weekly_data: dict[str, pd.DataFrame] | None = None,
+        monthly_data: dict[str, pd.DataFrame] | None = None,
+    ):
+        self._daily_data = stock_data
+        self._weekly_data = weekly_data or {}
+        self._monthly_data = monthly_data or {}
         self._current_idx = current_idx
+        self._frequency = frequency
         self._indicator_cache: dict[str, pd.DataFrame] = {}
+
         ref_sym = next(iter(stock_data))
         self._current_date = stock_data[ref_sym].iloc[current_idx]["date"]
+
+        self._period_idx_cache: dict[str, int] = {}
+
+    def _get_data_for_freq(self, symbol: str, freq: str | None = None) -> tuple[pd.DataFrame | None, int]:
+        f = freq or self._frequency
+        if f == "daily":
+            df = self._daily_data.get(symbol)
+            return df, self._current_idx
+        source = self._weekly_data if f == "weekly" else self._monthly_data
+        df = source.get(symbol)
+        if df is None or df.empty:
+            return None, -1
+        cache_key = f"{symbol}_{f}"
+        if cache_key in self._period_idx_cache:
+            return df, self._period_idx_cache[cache_key]
+        mask = df["date"] <= self._current_date
+        if not mask.any():
+            self._period_idx_cache[cache_key] = -1
+            return df, -1
+        idx = mask.values.nonzero()[0][-1]
+        self._period_idx_cache[cache_key] = idx
+        return df, idx
 
     @property
     def current_date(self) -> str:
         return self._current_date
 
     def get_price(self, symbol: str) -> dict | None:
-        if symbol not in self._stock_data:
+        df, idx = self._get_data_for_freq(symbol)
+        if df is None or idx < 0 or idx >= len(df):
             return None
-        df = self._stock_data[symbol]
-        if self._current_idx >= len(df):
-            return None
-        row = df.iloc[self._current_idx]
-        return row.to_dict()
+        return df.iloc[idx].to_dict()
 
     def get_history(self, symbol: str, n: int) -> list[dict]:
-        if symbol not in self._stock_data:
+        df, idx = self._get_data_for_freq(symbol)
+        if df is None or idx < 0:
             return []
-        df = self._stock_data[symbol]
-        start = max(0, self._current_idx - n + 1)
-        end = self._current_idx + 1
+        start = max(0, idx - n + 1)
+        end = idx + 1
         return df.iloc[start:end].to_dict(orient="records")
 
-    def indicator(self, symbol: str, ind_type: str, *args, period: str = "daily") -> float | None:
-        if symbol not in self._stock_data:
+    def indicator(self, symbol: str, ind_type: str, *args, period: str | None = None) -> float | None:
+        freq = period or self._frequency
+        df, idx = self._get_data_for_freq(symbol, freq)
+        if df is None or idx < 0:
             return None
-        df = self._stock_data[symbol]
-        data_up_to = df.iloc[: self._current_idx + 1]
+        data_up_to = df.iloc[: idx + 1]
         if len(data_up_to) < 2:
             return None
 
-        if period in ("weekly", "monthly"):
-            cache_key = f"{symbol}_{period}_agg"
-            if cache_key not in self._indicator_cache:
-                self._indicator_cache[cache_key] = aggregate_kline(data_up_to, period=period)
-            data_up_to = self._indicator_cache[cache_key]
-            if len(data_up_to) < 2:
-                return None
-
         if ind_type == "ma":
             window = args[0] if args else 5
-            cache_key = f"{symbol}_{period}_ma_{window}"
+            cache_key = f"{symbol}_{freq}_ma_{window}"
             if cache_key not in self._indicator_cache:
                 self._indicator_cache[cache_key] = calc_ma(data_up_to, windows=[window])
             result_df = self._indicator_cache[cache_key]
@@ -65,7 +87,7 @@ class ScreenerContext:
 
         elif ind_type == "macd":
             field_name = args[0] if args else "dif"
-            cache_key = f"{symbol}_{period}_macd"
+            cache_key = f"{symbol}_{freq}_macd"
             if cache_key not in self._indicator_cache:
                 self._indicator_cache[cache_key] = calc_macd(data_up_to)
             result_df = self._indicator_cache[cache_key]
@@ -77,7 +99,7 @@ class ScreenerContext:
 
         elif ind_type == "kdj":
             field_name = args[0] if args else "k"
-            cache_key = f"{symbol}_{period}_kdj"
+            cache_key = f"{symbol}_{freq}_kdj"
             if cache_key not in self._indicator_cache:
                 self._indicator_cache[cache_key] = calc_kdj(data_up_to)
             result_df = self._indicator_cache[cache_key]
@@ -89,7 +111,7 @@ class ScreenerContext:
 
         elif ind_type == "boll":
             field_name = args[0] if args else "boll_mid"
-            cache_key = f"{symbol}_{period}_boll"
+            cache_key = f"{symbol}_{freq}_boll"
             if cache_key not in self._indicator_cache:
                 self._indicator_cache[cache_key] = calc_boll(data_up_to)
             result_df = self._indicator_cache[cache_key]
@@ -111,8 +133,10 @@ class TraderContext(ScreenerContext):
         broker_submit,
         selected_symbols: list[str],
         days_since_rebalance: int = 0,
+        weekly_data: dict[str, pd.DataFrame] | None = None,
+        monthly_data: dict[str, pd.DataFrame] | None = None,
     ):
-        super().__init__(stock_data, current_idx)
+        super().__init__(stock_data, current_idx, "daily", weekly_data, monthly_data)
         self._portfolio = portfolio
         self._broker_submit = broker_submit
         self.selected_symbols = selected_symbols

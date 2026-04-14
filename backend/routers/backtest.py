@@ -65,10 +65,15 @@ def api_run_backtest(body: dict = Body(...)):
 
     task_id = task_manager.create_task()
 
+    def on_progress(current, total, phase):
+        task_manager.update_progress(task_id, current, total, phase)
+
     def run_task():
         try:
+            task_manager.update_progress(task_id, 0, 0, "加载数据中...")
             stock_data = _load_stock_data(start_date, end_date)
-            engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=trader)
+            task_manager.update_progress(task_id, len(stock_data), len(stock_data), f"数据加载完成 ({len(stock_data)} 只)")
+            engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=trader, on_progress=on_progress)
             result = engine.run()
             result = _safe_json(result)
             task_manager.complete_task(task_id, result)

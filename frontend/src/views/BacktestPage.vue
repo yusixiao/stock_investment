@@ -12,6 +12,13 @@
     </button>
     <div v-if="taskId" class="status">
       <p>任务ID: {{ taskId }} | 状态: {{ status }}</p>
+      <div v-if="progress && status === 'running'" class="progress-info">
+        <p class="progress-phase">{{ progress.phase }}</p>
+        <div v-if="progress.total > 0" class="progress-bar-wrap">
+          <div class="progress-bar" :style="{ width: progressPct + '%' }"></div>
+        </div>
+        <p v-if="progress.total > 0" class="progress-text">{{ progress.current }} / {{ progress.total }} ({{ progressPct }}%)</p>
+      </div>
       <button v-if="status === 'success'" class="view-btn" @click="$router.push('/backtest/result/' + taskId)">查看结果</button>
       <p v-if="status === 'failed'" class="error">回测失败</p>
     </div>
@@ -19,7 +26,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { fetchStrategies, runBacktest, fetchBacktestStatus } from '../api'
 import PipelineBuilder from '../components/PipelineBuilder.vue'
 import ParamEditor from '../components/ParamEditor.vue'
@@ -32,10 +39,16 @@ const endDate = ref('')
 const taskId = ref('')
 const status = ref('')
 const running = ref(false)
+const progress = ref(null)
+const progressPct = computed(() => {
+  if (!progress.value || !progress.value.total) return 0
+  return Math.round((progress.value.current / progress.value.total) * 100)
+})
 let pollTimer = null
 
 async function runBacktestPipeline() {
   running.value = true
+  progress.value = null
   const body = {
     pipeline: pipeline.value.map(s => ({ filepath: s.filepath, class_name: s.class_name })),
     param_overrides: overrides.value,
@@ -50,10 +63,19 @@ async function runBacktestPipeline() {
 
 async function pollStatus() {
   if (!taskId.value) return
-  const { data } = await fetchBacktestStatus(taskId.value)
-  status.value = data.status
-  if (data.status !== 'running') {
+  try {
+    const { data } = await fetchBacktestStatus(taskId.value)
+    status.value = data.status
+    progress.value = data.progress || null
+    if (data.status !== 'running') {
+      running.value = false
+      progress.value = null
+      clearInterval(pollTimer)
+    }
+  } catch {
+    status.value = 'failed'
     running.value = false
+    progress.value = null
     clearInterval(pollTimer)
   }
 }
@@ -76,4 +98,9 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .status { margin-top: 16px; padding: 12px; background: #f5f7fa; border-radius: 4px; }
 .view-btn { margin-top: 8px; padding: 6px 16px; background: #67c23a; color: white; border: none; border-radius: 4px; cursor: pointer; }
 .error { color: #f56c6c; }
+.progress-info { margin-top: 8px; }
+.progress-phase { font-size: 13px; color: #606266; margin: 0 0 6px; }
+.progress-bar-wrap { width: 100%; height: 16px; background: #e4e7ed; border-radius: 8px; overflow: hidden; }
+.progress-bar { height: 100%; background: #409eff; border-radius: 8px; transition: width 0.3s ease; }
+.progress-text { font-size: 12px; color: #909399; margin: 4px 0 0; }
 </style>
