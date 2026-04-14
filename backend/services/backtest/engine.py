@@ -79,22 +79,45 @@ class BacktestEngine:
             symbols = screener.screen(ctx, symbols)
         return {"screened_symbols": symbols}
 
+    def _period_key(self, date_str: str, freq: str) -> str:
+        if freq == "monthly":
+            return date_str[:7]
+        if freq == "weekly":
+            from datetime import date as _date
+            dt = _date.fromisoformat(date_str)
+            yr, wk, _ = dt.isocalendar()
+            return f"{yr}-W{wk:02d}"
+        return date_str
+
     def _run_screener_backtest(self) -> dict:
         ref_sym = self._all_symbols[0]
         ref_df = self._stock_data[ref_sym]
         n_bars = len(ref_df)
 
         match_history: dict[str, list[str]] = {}
+        screener_cache: dict[int, list[str]] = {}
+        prev_period_keys: dict[int, str] = {}
 
         for idx in range(n_bars):
             if idx % 10 == 0 or idx == n_bars - 1:
                 self._report(idx + 1, n_bars, "选股回测中")
+            current_date = ref_df.iloc[idx]["date"]
             symbols = list(self._all_symbols)
-            for screener in self._screeners:
-                ctx = self._make_screener_ctx(screener, idx)
-                symbols = screener.screen(ctx, symbols)
+
+            for si, screener in enumerate(self._screeners):
+                freq = getattr(screener, "frequency", "daily")
+                pk = self._period_key(current_date, freq)
+                need_run = (si not in prev_period_keys) or (pk != prev_period_keys[si])
+
+                if need_run:
+                    ctx = self._make_screener_ctx(screener, idx)
+                    symbols = screener.screen(ctx, symbols)
+                    screener_cache[si] = list(symbols)
+                    prev_period_keys[si] = pk
+                else:
+                    symbols = [s for s in symbols if s in screener_cache.get(si, [])]
+
             if symbols:
-                current_date = ref_df.iloc[idx]["date"]
                 for sym in symbols:
                     match_history.setdefault(sym, []).append(current_date)
 
@@ -119,6 +142,8 @@ class BacktestEngine:
         equity_curve = []
         days_since_rebalance = 0
         prev_closes: dict[str, float] = {}
+        bt_screener_cache: dict[int, list[str]] = {}
+        bt_prev_keys: dict[int, str] = {}
 
         for idx in range(n_bars):
             if idx % 10 == 0 or idx == n_bars - 1:
@@ -141,9 +166,18 @@ class BacktestEngine:
 
             available_symbols = [s for s in self._all_symbols if s in current_bars]
             symbols = list(available_symbols)
-            for screener in self._screeners:
-                ctx = self._make_screener_ctx(screener, idx)
-                symbols = screener.screen(ctx, symbols)
+            current_date = ref_df.iloc[idx]["date"]
+            for si, screener in enumerate(self._screeners):
+                freq = getattr(screener, "frequency", "daily")
+                pk = self._period_key(current_date, freq)
+                need_run = (si not in bt_prev_keys) or (pk != bt_prev_keys[si])
+                if need_run:
+                    ctx = self._make_screener_ctx(screener, idx)
+                    symbols = screener.screen(ctx, symbols)
+                    bt_screener_cache[si] = list(symbols)
+                    bt_prev_keys[si] = pk
+                else:
+                    symbols = [s for s in symbols if s in bt_screener_cache.get(si, [])]
 
             trader_ctx = TraderContext(
                 stock_data=self._stock_data,
