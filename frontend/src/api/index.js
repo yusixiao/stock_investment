@@ -50,8 +50,12 @@ export function fetchScreenerResult() {
   return api.get('/screener/result')
 }
 
-export function fetchBacktestTasks() {
-  return api.get('/backtest/tasks')
+export function fetchBacktestTasks(showDeleted = false) {
+  return api.get('/backtest/tasks', { params: showDeleted ? { show_deleted: true } : {} })
+}
+
+export function deleteBacktestTask(taskId) {
+  return api.delete(`/backtest/tasks/${taskId}`)
 }
 
 export function createPortfolio(body) {

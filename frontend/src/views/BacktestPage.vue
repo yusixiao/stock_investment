@@ -32,13 +32,19 @@
       <p v-if="status === 'failed'" class="error">回测失败</p>
     </div>
     <div class="task-history">
-      <h3>历史任务</h3>
+      <div class="task-list-header">
+        <h3>历史任务</h3>
+        <label class="show-deleted-label">
+          <input type="checkbox" v-model="showDeleted" />
+          显示已删除的任务
+        </label>
+      </div>
       <table v-if="tasks.length" class="task-table">
         <thead>
           <tr><th>任务ID</th><th>类型</th><th>状态</th><th>摘要</th><th>创建时间</th><th>操作</th></tr>
         </thead>
         <tbody>
-          <tr v-for="t in tasks" :key="t.task_id">
+          <tr v-for="t in tasks" :key="t.task_id" :class="{ 'row-deleted': t.deleted }">
             <td>{{ t.task_id }}</td>
             <td><span :class="'type-badge type-' + t.task_type">{{ t.task_type === 'screener' ? '选股' : '回测' }}</span></td>
             <td><span :class="'task-status ' + t.status">{{ taskStatusText(t.status) }}</span></td>
@@ -46,6 +52,7 @@
             <td>{{ t.created_at }}</td>
             <td>
               <button v-if="t.status === 'success'" class="view-btn" @click="$router.push('/backtest/result/' + t.task_id)">查看结果</button>
+              <button class="btn-delete" @click="onDeleteTask(t.task_id)" :disabled="t.deleted">删除</button>
             </td>
           </tr>
         </tbody>
@@ -56,9 +63,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { fetchStrategies, runBacktest, fetchBacktestStatus, fetchBacktestTasks, fetchBacktestResult } from '../api'
+import { fetchStrategies, runBacktest, fetchBacktestStatus, fetchBacktestTasks, fetchBacktestResult, deleteBacktestTask } from '../api'
 import PipelineBuilder from '../components/PipelineBuilder.vue'
 import ParamEditor from '../components/ParamEditor.vue'
 
@@ -73,6 +80,7 @@ const taskId = ref('')
 const status = ref('')
 const running = ref(false)
 const tasks = ref([])
+const showDeleted = ref(false)
 const progress = ref(null)
 const sourceTaskId = ref(null)
 const sourceInfo = ref(null)
@@ -99,10 +107,17 @@ function formatSummary(t) {
 
 async function loadTasks() {
   try {
-    const { data } = await fetchBacktestTasks()
+    const { data } = await fetchBacktestTasks(showDeleted.value)
     tasks.value = data
   } catch {}
 }
+
+async function onDeleteTask(taskId) {
+  await deleteBacktestTask(taskId)
+  await loadTasks()
+}
+
+watch(showDeleted, () => loadTasks())
 
 async function runBacktestPipeline() {
   running.value = true
@@ -211,4 +226,10 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .source-dates { color: #606266; }
 .btn-clear-source { background: transparent; border: 1px solid #dcdfe6; color: #606266; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .btn-clear-source:hover { border-color: #409eff; color: #409eff; }
+.task-list-header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.task-list-header h3 { margin: 0; font-size: 16px; color: #303133; }
+.show-deleted-label { font-size: 13px; color: #606266; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.btn-delete { background: #f56c6c; color: white; border: none; padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 12px; margin-left: 6px; }
+.btn-delete:disabled { background: #dcdfe6; color: #909399; cursor: not-allowed; }
+.row-deleted td { color: #c0c4cc; text-decoration: line-through; }
 </style>
