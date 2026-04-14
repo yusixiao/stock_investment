@@ -1,6 +1,7 @@
 import math
 import pandas as pd
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
+from services.indicator_store import load_indicators
 from services.backtest.portfolio import Portfolio
 
 
@@ -19,6 +20,7 @@ class ScreenerContext:
         self._current_idx = current_idx
         self._frequency = frequency
         self._indicator_cache: dict[str, pd.DataFrame] = {}
+        self._precomputed_cache: dict[str, pd.DataFrame | None] = {}
 
         ref_sym = next(iter(stock_data))
         self._current_date = stock_data[ref_sym].iloc[current_idx]["date"]
@@ -63,8 +65,51 @@ class ScreenerContext:
         end = idx + 1
         return df.iloc[start:end].to_dict(orient="records")
 
+    def _get_precomputed(self, symbol: str, freq: str) -> pd.DataFrame | None:
+        cache_key = f"{symbol}_{freq}"
+        if cache_key not in self._precomputed_cache:
+            self._precomputed_cache[cache_key] = load_indicators(symbol, freq)
+        return self._precomputed_cache[cache_key]
+
+    def _precomputed_value(self, symbol: str, freq: str, col: str) -> float | None:
+        df, idx = self._get_data_for_freq(symbol, freq)
+        if df is None or idx < 0:
+            return None
+        current_date = df.iloc[idx]["date"]
+        pre_df = self._get_precomputed(symbol, freq)
+        if pre_df is None or col not in pre_df.columns:
+            return None
+        pre_sorted = pre_df.sort_values("date")
+        mask = pre_sorted["date"] <= current_date
+        if not mask.any():
+            return None
+        val = pre_sorted.loc[mask, col].iloc[-1]
+        return None if (isinstance(val, float) and math.isnan(val)) else float(val)
+
     def indicator(self, symbol: str, ind_type: str, *args, period: str | None = None) -> float | None:
         freq = period or self._frequency
+
+        if ind_type == "ma":
+            window = args[0] if args else 5
+            val = self._precomputed_value(symbol, freq, f"ma{window}")
+            if val is not None:
+                return val
+        elif ind_type == "macd":
+            field_name = args[0] if args else "dif"
+            val = self._precomputed_value(symbol, freq, field_name)
+            if val is not None:
+                return val
+        elif ind_type == "kdj":
+            field_name = args[0] if args else "k"
+            val = self._precomputed_value(symbol, freq, field_name)
+            if val is not None:
+                return val
+        elif ind_type == "boll":
+            field_name = args[0] if args else "boll_mid"
+            val = self._precomputed_value(symbol, freq, field_name)
+            if val is not None:
+                return val
+
         df, idx = self._get_data_for_freq(symbol, freq)
         if df is None or idx < 0:
             return None
@@ -81,8 +126,7 @@ class ScreenerContext:
             col = f"ma{window}"
             if col not in result_df.columns:
                 return None
-            sorted_df = result_df.sort_values("date")
-            val = sorted_df[col].iloc[-1]
+            val = result_df.sort_values("date")[col].iloc[-1]
             return None if (isinstance(val, float) and math.isnan(val)) else float(val)
 
         elif ind_type == "macd":
@@ -93,8 +137,7 @@ class ScreenerContext:
             result_df = self._indicator_cache[cache_key]
             if field_name not in result_df.columns:
                 return None
-            sorted_df = result_df.sort_values("date")
-            val = sorted_df[field_name].iloc[-1]
+            val = result_df.sort_values("date")[field_name].iloc[-1]
             return None if (isinstance(val, float) and math.isnan(val)) else float(val)
 
         elif ind_type == "kdj":
@@ -105,8 +148,7 @@ class ScreenerContext:
             result_df = self._indicator_cache[cache_key]
             if field_name not in result_df.columns:
                 return None
-            sorted_df = result_df.sort_values("date")
-            val = sorted_df[field_name].iloc[-1]
+            val = result_df.sort_values("date")[field_name].iloc[-1]
             return None if (isinstance(val, float) and math.isnan(val)) else float(val)
 
         elif ind_type == "boll":
@@ -117,8 +159,7 @@ class ScreenerContext:
             result_df = self._indicator_cache[cache_key]
             if field_name not in result_df.columns:
                 return None
-            sorted_df = result_df.sort_values("date")
-            val = sorted_df[field_name].iloc[-1]
+            val = result_df.sort_values("date")[field_name].iloc[-1]
             return None if (isinstance(val, float) and math.isnan(val)) else float(val)
 
         return None

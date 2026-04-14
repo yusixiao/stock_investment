@@ -4,6 +4,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 RAW_KLINE_DIR = DATA_DIR / "kline" / "A" / "raw"
 QFQ_KLINE_DIR = DATA_DIR / "kline" / "A" / "qfq"
+INDICATOR_DIR = DATA_DIR / "indicators" / "A"
 STRATEGY_DIR = BASE_DIR / "strategies"
 LOG_DIR = DATA_DIR / "logs"
 PORTFOLIO_DB = DATA_DIR / "portfolio.db"

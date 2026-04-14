@@ -11,6 +11,7 @@ import pandas as pd
 
 from config import (
     RAW_KLINE_DIR,
+    QFQ_KLINE_DIR,
     UPDATE_LOG_FILE,
     UPDATE_PROGRESS_FILE,
     LOG_RETENTION_DAYS,
@@ -18,6 +19,7 @@ from config import (
     RETRY_BACKOFF_CAP,
 )
 from services.stock_data import symbol_to_exchange
+from services.indicator_store import compute_and_save
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +81,7 @@ def run_incremental_update(
         today_str = date.today().strftime("%Y-%m-%d")
 
     result = UpdateResult(trigger=trigger, started_at=datetime.now().isoformat())
+    updated_symbols: list[str] = []
 
     def _log_progress(msg: str):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -117,10 +120,12 @@ def run_incremental_update(
                 merged = pd.concat([new_row, existing], ignore_index=True)
                 merged.to_parquet(filepath, index=False)
                 result.updated += 1
+                updated_symbols.append(f"{code}.{exchange}")
             else:
                 new_df = pd.DataFrame([record])
                 new_df.to_parquet(filepath, index=False)
                 result.new_stocks += 1
+                updated_symbols.append(f"{code}.{exchange}")
         except Exception as e:
             result.failed += 1
             result.errors.append(f"{row.get('代码', '?')}: {e}")
@@ -128,6 +133,21 @@ def run_incremental_update(
 
         if idx % 500 == 0 or idx == total:
             _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed}")
+
+    if updated_symbols:
+        _log_progress(f"开始更新 {len(updated_symbols)} 只股票的技术指标...")
+        ind_count = 0
+        for symbol in updated_symbols:
+            qfq_path = QFQ_KLINE_DIR / f"{symbol}.parquet"
+            if not qfq_path.exists():
+                continue
+            try:
+                df = pd.read_parquet(qfq_path)
+                compute_and_save(symbol, df)
+                ind_count += 1
+            except Exception as e:
+                logger.error(f"指标预计算失败 {symbol}: {e}")
+        _log_progress(f"技术指标更新完成，共更新 {ind_count} 只")
 
     result.finished_at = datetime.now().isoformat()
     elapsed = round(time.time() - t0, 2)

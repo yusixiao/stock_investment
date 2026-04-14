@@ -41,6 +41,10 @@ class TaskManager:
                     conn.execute(f"ALTER TABLE backtest_tasks ADD COLUMN {col} {typedef}")
                 except Exception:
                     pass
+            conn.execute(
+                "UPDATE backtest_tasks SET status = ?, error = ? WHERE status = ?",
+                ("failed", "服务重启，任务中断", "running"),
+            )
             conn.commit()
         finally:
             conn.close()

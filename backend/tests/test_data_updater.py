@@ -70,9 +70,10 @@ class TestRetryFetchSpot:
 
 
 class TestRunIncrementalUpdate:
+    @patch("services.data_updater.compute_and_save")
     @patch("services.data_updater._save_log")
     @patch("services.data_updater.retry_fetch_spot")
-    def test_appends_new_data(self, mock_fetch, mock_save_log, tmp_path):
+    def test_appends_new_data(self, mock_fetch, mock_save_log, mock_compute, tmp_path):
         existing_df = pd.DataFrame({
             "date": ["2026-04-10", "2026-04-09"],
             "open": [5.83, 5.89], "high": [5.84, 5.94],
@@ -98,9 +99,10 @@ class TestRunIncrementalUpdate:
         assert len(updated_df) == 3
         assert updated_df.iloc[0]["date"] == "2026-04-11"
 
+    @patch("services.data_updater.compute_and_save")
     @patch("services.data_updater._save_log")
     @patch("services.data_updater.retry_fetch_spot")
-    def test_skips_when_already_updated(self, mock_fetch, mock_save_log, tmp_path):
+    def test_skips_when_already_updated(self, mock_fetch, mock_save_log, mock_compute, tmp_path):
         existing_df = pd.DataFrame({
             "date": ["2026-04-11", "2026-04-10"],
             "open": [5.83, 5.89], "high": [5.84, 5.94],
@@ -122,9 +124,10 @@ class TestRunIncrementalUpdate:
         assert result.updated == 0
         assert result.skipped == 1
 
+    @patch("services.data_updater.compute_and_save")
     @patch("services.data_updater._save_log")
     @patch("services.data_updater.retry_fetch_spot")
-    def test_creates_new_stock_file(self, mock_fetch, mock_save_log, tmp_path):
+    def test_creates_new_stock_file(self, mock_fetch, mock_save_log, mock_compute, tmp_path):
         mock_fetch.return_value = pd.DataFrame({
             "代码": ["688001"],
             "今开": [10.0], "最高": [10.5], "最低": [9.8],
