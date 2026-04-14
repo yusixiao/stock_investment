@@ -30,6 +30,14 @@ def _safe_json(obj):
     return _clean_obj(obj)
 
 
+def _extract_symbols(screened_symbols: list) -> list[str]:
+    if not screened_symbols:
+        return []
+    if isinstance(screened_symbols[0], str):
+        return list(screened_symbols)
+    return [item["symbol"] for item in screened_symbols]
+
+
 @router.get("/strategies")
 def api_list_strategies():
     if not STRATEGY_DIR.exists():
@@ -43,9 +51,28 @@ def api_run_backtest(body: dict = Body(...)):
     start_date = body.get("start_date")
     end_date = body.get("end_date")
     param_overrides = body.get("param_overrides", {})
+    source_task_id = body.get("source_task_id")
 
     if not pipeline:
         raise HTTPException(status_code=400, detail="Pipeline cannot be empty")
+
+    symbols = None
+    if source_task_id:
+        src_result = task_manager.get_result(source_task_id)
+        if src_result is None:
+            raise HTTPException(status_code=400, detail=f"源任务 {source_task_id} 不存在")
+        if src_result["status"] != "success":
+            raise HTTPException(status_code=400, detail=f"源任务 {source_task_id} 未成功完成")
+        result_data = src_result.get("result") or {}
+        screened = result_data.get("screened_symbols")
+        if screened is None:
+            raise HTTPException(status_code=400, detail=f"源任务 {source_task_id} 不是选股任务，无选股结果")
+        syms = _extract_symbols(screened)
+        if not syms:
+            raise HTTPException(status_code=400, detail=f"源任务 {source_task_id} 未选出任何股票")
+        symbols = syms
+        start_date = src_result.get("start_date") or start_date
+        end_date = src_result.get("end_date") or end_date
 
     screeners = []
     trader = None
@@ -80,7 +107,7 @@ def api_run_backtest(body: dict = Body(...)):
             merged = {**defaults, **overrides}
             info["params"] = merged
         pipeline_info.append(info)
-    task_id = task_manager.create_task(task_type=task_type, pipeline_info=pipeline_info, start_date=start_date, end_date=end_date)
+    task_id = task_manager.create_task(task_type=task_type, pipeline_info=pipeline_info, start_date=start_date, end_date=end_date, source_task_id=source_task_id)
 
     def on_progress(current, total, phase):
         task_manager.update_progress(task_id, current, total, phase)
@@ -88,7 +115,7 @@ def api_run_backtest(body: dict = Body(...)):
     def run_task():
         try:
             task_manager.update_progress(task_id, 0, 0, "加载数据中...")
-            stock_data = _load_stock_data(start_date, end_date)
+            stock_data = _load_stock_data(start_date, end_date, symbols)
             task_manager.update_progress(task_id, len(stock_data), len(stock_data), f"数据加载完成 ({len(stock_data)} 只)")
             engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=trader, on_progress=on_progress)
             result = engine.run()
@@ -123,9 +150,14 @@ def api_list_tasks():
     return task_manager.list_tasks()
 
 
-def _load_stock_data(start_date: str = None, end_date: str = None) -> dict[str, pd.DataFrame]:
+def _load_stock_data(start_date: str = None, end_date: str = None, symbols: list[str] = None) -> dict[str, pd.DataFrame]:
     stock_data = {}
-    for filepath in QFQ_KLINE_DIR.glob("*.parquet"):
+    if symbols is not None:
+        filepaths = [QFQ_KLINE_DIR / f"{s}.parquet" for s in symbols]
+        filepaths = [f for f in filepaths if f.exists()]
+    else:
+        filepaths = list(QFQ_KLINE_DIR.glob("*.parquet"))
+    for filepath in filepaths:
         symbol = filepath.stem
         df = pd.read_parquet(filepath)
         if start_date:
