@@ -188,7 +188,7 @@ class TestChainBacktest:
         mock_load.assert_called_once_with("2024-01-01", "2024-12-31", ["000001", "600036"])
 
     @patch("routers.backtest._load_stock_data")
-    def test_chain_backtest_flat_symbol_list(self, mock_load):
+    def test_chain_backtest_flat_symbol_list(self, mock_load):  # noqa: E302
         import pandas as pd
         import numpy as np
         n = 30
@@ -215,3 +215,32 @@ class TestChainBacktest:
         })
         assert resp.status_code == 200
         mock_load.assert_called_once_with(None, None, ["000001", "600036"])
+
+
+class TestSoftDeleteApi:
+    def test_delete_task(self, isolated_task_manager):
+        task_id = isolated_task_manager.create_task(task_type="screener")
+        resp = client.delete(f"/api/backtest/tasks/{task_id}")
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+    def test_deleted_task_hidden_by_default(self, isolated_task_manager):
+        task_id = isolated_task_manager.create_task(task_type="screener")
+        isolated_task_manager.delete_task(task_id)
+        resp = client.get("/api/backtest/tasks")
+        ids = [t["task_id"] for t in resp.json()]
+        assert task_id not in ids
+
+    def test_deleted_task_visible_with_show_deleted(self, isolated_task_manager):
+        task_id = isolated_task_manager.create_task(task_type="screener")
+        isolated_task_manager.delete_task(task_id)
+        resp = client.get("/api/backtest/tasks?show_deleted=true")
+        ids = [t["task_id"] for t in resp.json()]
+        assert task_id in ids
+
+    def test_deleted_task_has_deleted_flag(self, isolated_task_manager):
+        task_id = isolated_task_manager.create_task(task_type="screener")
+        isolated_task_manager.delete_task(task_id)
+        resp = client.get("/api/backtest/tasks?show_deleted=true")
+        match = next(t for t in resp.json() if t["task_id"] == task_id)
+        assert match["deleted"] is True

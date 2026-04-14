@@ -146,8 +146,14 @@ def api_backtest_result(task_id: str):
 
 
 @router.get("/tasks")
-def api_list_tasks():
-    return task_manager.list_tasks()
+def api_list_tasks(show_deleted: bool = False):
+    return task_manager.list_tasks(show_deleted=show_deleted)
+
+
+@router.delete("/tasks/{task_id}")
+def api_delete_task(task_id: str):
+    task_manager.delete_task(task_id)
+    return {"ok": True}
 
 
 def _load_stock_data(start_date: str = None, end_date: str = None, symbols: list[str] = None) -> dict[str, pd.DataFrame]:
