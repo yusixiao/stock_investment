@@ -89,6 +89,20 @@ class BacktestEngine:
             return f"{yr}-W{wk:02d}"
         return date_str
 
+    def _period_date(self, current_date: str, freq: str) -> str:
+        if freq == "daily":
+            return current_date
+        source = self._weekly_data if freq == "weekly" else self._monthly_data
+        ref_sym = self._all_symbols[0]
+        df = source.get(ref_sym)
+        if df is None or df.empty:
+            return current_date
+        mask = df["date"] <= current_date
+        if not mask.any():
+            return current_date
+        idx = mask.values.nonzero()[0][-1]
+        return df.iloc[idx]["date"]
+
     def _run_screener_backtest(self) -> dict:
         ref_sym = self._all_symbols[0]
         ref_df = self._stock_data[ref_sym]
@@ -98,12 +112,15 @@ class BacktestEngine:
         screener_cache: dict[int, list[str]] = {}
         prev_period_keys: dict[int, str] = {}
 
+        freq_order = {"daily": 0, "weekly": 1, "monthly": 2}
+
         for idx in range(n_bars):
             if idx % 10 == 0 or idx == n_bars - 1:
                 self._report(idx + 1, n_bars, "选股回测中")
             current_date = ref_df.iloc[idx]["date"]
             symbols = list(self._all_symbols)
             any_executed = False
+            executed_freqs = []
 
             for si, screener in enumerate(self._screeners):
                 freq = getattr(screener, "frequency", "daily")
@@ -116,12 +133,17 @@ class BacktestEngine:
                     screener_cache[si] = list(symbols)
                     prev_period_keys[si] = pk
                     any_executed = True
+                    executed_freqs.append(freq)
                 else:
                     symbols = [s for s in symbols if s in screener_cache.get(si, [])]
 
             if any_executed and symbols:
+                lowest_freq = max(executed_freqs, key=lambda f: freq_order.get(f, 0))
+                record_date = self._period_date(current_date, lowest_freq)
                 for sym in symbols:
-                    match_history.setdefault(sym, []).append(current_date)
+                    history = match_history.setdefault(sym, [])
+                    if not history or history[-1] != record_date:
+                        history.append(record_date)
 
         result = []
         for sym, dates in match_history.items():
