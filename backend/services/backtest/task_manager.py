@@ -7,51 +7,48 @@ from datetime import datetime
 from config import PORTFOLIO_DB
 
 
-def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(PORTFOLIO_DB), timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _init_table():
-    conn = _get_conn()
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS backtest_tasks (
-                task_id TEXT PRIMARY KEY,
-                status TEXT NOT NULL,
-                task_type TEXT NOT NULL DEFAULT 'screener',
-                pipeline_info TEXT,
-                start_date TEXT,
-                end_date TEXT,
-                summary TEXT,
-                result TEXT,
-                error TEXT,
-                created_at TEXT NOT NULL
-            )
-        """)
-        for col, typedef in [("task_type", "TEXT NOT NULL DEFAULT 'screener'"), ("summary", "TEXT"), ("pipeline_info", "TEXT"), ("start_date", "TEXT"), ("end_date", "TEXT"), ("source_task_id", "TEXT")]:
-            try:
-                conn.execute(f"ALTER TABLE backtest_tasks ADD COLUMN {col} {typedef}")
-            except Exception:
-                pass
-        conn.commit()
-    finally:
-        conn.close()
-
-
-_init_table()
-
-
 class TaskManager:
-    def __init__(self):
+    def __init__(self, db_path: str | None = None):
+        self._db_path = db_path or str(PORTFOLIO_DB)
         self._progress: dict[str, dict] = {}
         self._lock = threading.Lock()
+        self._init_table()
+
+    def _get_conn(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_table(self):
+        conn = self._get_conn()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS backtest_tasks (
+                    task_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    task_type TEXT NOT NULL DEFAULT 'screener',
+                    pipeline_info TEXT,
+                    start_date TEXT,
+                    end_date TEXT,
+                    summary TEXT,
+                    result TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            for col, typedef in [("task_type", "TEXT NOT NULL DEFAULT 'screener'"), ("summary", "TEXT"), ("pipeline_info", "TEXT"), ("start_date", "TEXT"), ("end_date", "TEXT"), ("source_task_id", "TEXT")]:
+                try:
+                    conn.execute(f"ALTER TABLE backtest_tasks ADD COLUMN {col} {typedef}")
+                except Exception:
+                    pass
+            conn.commit()
+        finally:
+            conn.close()
 
     def create_task(self, task_type: str = "screener", pipeline_info: list[dict] | None = None, start_date: str | None = None, end_date: str | None = None, source_task_id: str | None = None) -> str:
         task_id = str(uuid.uuid4())[:8]
         pi_json = json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
-        conn = _get_conn()
+        conn = self._get_conn()
         try:
             conn.execute(
                 "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, start_date, end_date, source_task_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -89,7 +86,7 @@ class TaskManager:
 
     def complete_task(self, task_id: str, result: dict):
         summary = self._build_summary(result)
-        conn = _get_conn()
+        conn = self._get_conn()
         try:
             conn.execute(
                 "UPDATE backtest_tasks SET status = ?, result = ?, summary = ? WHERE task_id = ?",
@@ -102,7 +99,7 @@ class TaskManager:
             self._progress.pop(task_id, None)
 
     def fail_task(self, task_id: str, error: str):
-        conn = _get_conn()
+        conn = self._get_conn()
         try:
             conn.execute(
                 "UPDATE backtest_tasks SET status = ?, error = ? WHERE task_id = ?",
@@ -115,7 +112,7 @@ class TaskManager:
             self._progress.pop(task_id, None)
 
     def get_status(self, task_id: str) -> dict | None:
-        conn = _get_conn()
+        conn = self._get_conn()
         try:
             row = conn.execute(
                 "SELECT status FROM backtest_tasks WHERE task_id = ?", (task_id,)
@@ -132,7 +129,7 @@ class TaskManager:
         return resp
 
     def get_result(self, task_id: str) -> dict | None:
-        conn = _get_conn()
+        conn = self._get_conn()
         try:
             row = conn.execute(
                 "SELECT status, result, error, pipeline_info, start_date, end_date, source_task_id FROM backtest_tasks WHERE task_id = ?",
@@ -163,7 +160,7 @@ class TaskManager:
         return resp
 
     def list_tasks(self) -> list[dict]:
-        conn = _get_conn()
+        conn = self._get_conn()
         try:
             rows = conn.execute(
                 "SELECT task_id, status, task_type, summary, created_at, source_task_id FROM backtest_tasks ORDER BY created_at DESC"
