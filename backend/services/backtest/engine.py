@@ -89,17 +89,17 @@ class BacktestEngine:
             return f"{yr}-W{wk:02d}"
         return date_str
 
-    def _period_date(self, current_date: str, freq: str) -> str:
+    def _period_date(self, current_date: str, freq: str) -> str | None:
         if freq == "daily":
             return current_date
         source = self._weekly_data if freq == "weekly" else self._monthly_data
         ref_sym = self._all_symbols[0]
         df = source.get(ref_sym)
         if df is None or df.empty:
-            return current_date
+            return None
         mask = df["date"] <= current_date
         if not mask.any():
-            return current_date
+            return None
         idx = mask.values.nonzero()[0][-1]
         return df.iloc[idx]["date"]
 
@@ -112,15 +112,15 @@ class BacktestEngine:
         screener_cache: dict[int, list[str]] = {}
         prev_period_keys: dict[int, str] = {}
 
-        freq_order = {"daily": 0, "weekly": 1, "monthly": 2}
+        last_si = len(self._screeners) - 1
+        last_freq = getattr(self._screeners[last_si], "frequency", "daily")
 
         for idx in range(n_bars):
             if idx % 10 == 0 or idx == n_bars - 1:
                 self._report(idx + 1, n_bars, "选股回测中")
             current_date = ref_df.iloc[idx]["date"]
             symbols = list(self._all_symbols)
-            any_executed = False
-            executed_freqs = []
+            last_executed = False
 
             for si, screener in enumerate(self._screeners):
                 freq = getattr(screener, "frequency", "daily")
@@ -132,14 +132,15 @@ class BacktestEngine:
                     symbols = screener.screen(ctx, symbols)
                     screener_cache[si] = list(symbols)
                     prev_period_keys[si] = pk
-                    any_executed = True
-                    executed_freqs.append(freq)
+                    if si == last_si:
+                        last_executed = True
                 else:
                     symbols = [s for s in symbols if s in screener_cache.get(si, [])]
 
-            if any_executed and symbols:
-                lowest_freq = max(executed_freqs, key=lambda f: freq_order.get(f, 0))
-                record_date = self._period_date(current_date, lowest_freq)
+            if last_executed and symbols:
+                record_date = self._period_date(current_date, last_freq)
+                if record_date is None:
+                    continue
                 for sym in symbols:
                     history = match_history.setdefault(sym, [])
                     if not history or history[-1] != record_date:

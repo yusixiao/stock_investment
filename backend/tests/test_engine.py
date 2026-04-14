@@ -163,3 +163,82 @@ class TestBacktestEngine:
         )
         result = engine.run()
         assert result["trades"] == []
+
+    def test_mixed_freq_daily_then_monthly_match_dates_are_monthly(self):
+        class DailyScreener(ScreenerStrategy):
+            name = "daily-pass"
+            description = ""
+            params = {}
+            frequency = "daily"
+            def screen(self, ctx, symbols):
+                return symbols
+
+        class MonthlyScreener(ScreenerStrategy):
+            name = "monthly-pass"
+            description = ""
+            params = {}
+            frequency = "monthly"
+            def screen(self, ctx, symbols):
+                return symbols
+
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[DailyScreener(), MonthlyScreener()],
+            trader=None,
+        )
+        result = engine.run()
+        assert "screened_symbols" in result
+        items = result["screened_symbols"]
+        assert len(items) > 0
+        for item in items:
+            for d in item["match_dates"]:
+                parsed = pd.Timestamp(d)
+                next_day = parsed + pd.Timedelta(days=1)
+                assert next_day.month != parsed.month or next_day.day == 1 or pd.Timestamp(d + " 23:59") == pd.Timestamp(d + " 23:59")
+
+        ref_sym = list(data.keys())[0]
+        monthly_dates = set(
+            pd.to_datetime(data[ref_sym]["date"]).to_frame()
+            .assign(ym=lambda df: df["date"].dt.to_period("M"))
+            .groupby("ym")["date"]
+            .max()
+            .dt.strftime("%Y-%m-%d")
+            .tolist()
+        )
+        for item in items:
+            for d in item["match_dates"]:
+                assert d in monthly_dates, f"{d} is not a month-end trading date"
+
+    def test_mixed_freq_monthly_then_daily_match_dates_are_daily(self):
+        class DailyScreener(ScreenerStrategy):
+            name = "daily-pass"
+            description = ""
+            params = {}
+            frequency = "daily"
+            def screen(self, ctx, symbols):
+                return symbols
+
+        class MonthlyScreener(ScreenerStrategy):
+            name = "monthly-pass"
+            description = ""
+            params = {}
+            frequency = "monthly"
+            def screen(self, ctx, symbols):
+                return symbols
+
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[MonthlyScreener(), DailyScreener()],
+            trader=None,
+        )
+        result = engine.run()
+        assert "screened_symbols" in result
+        items = result["screened_symbols"]
+        assert len(items) > 0
+        all_dates = set(data[list(data.keys())[0]]["date"].tolist())
+        for item in items:
+            assert len(item["match_dates"]) > 0
+            for d in item["match_dates"]:
+                assert d in all_dates, f"{d} is not a daily trading date"
