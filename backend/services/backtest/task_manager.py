@@ -36,7 +36,7 @@ class TaskManager:
                     created_at TEXT NOT NULL
                 )
             """)
-            for col, typedef in [("task_type", "TEXT NOT NULL DEFAULT 'screener'"), ("summary", "TEXT"), ("pipeline_info", "TEXT"), ("start_date", "TEXT"), ("end_date", "TEXT"), ("source_task_id", "TEXT")]:
+            for col, typedef in [("task_type", "TEXT NOT NULL DEFAULT 'screener'"), ("summary", "TEXT"), ("pipeline_info", "TEXT"), ("start_date", "TEXT"), ("end_date", "TEXT"), ("source_task_id", "TEXT"), ("deleted", "INTEGER NOT NULL DEFAULT 0")]:
                 try:
                     conn.execute(f"ALTER TABLE backtest_tasks ADD COLUMN {col} {typedef}")
                 except Exception:
@@ -102,6 +102,17 @@ class TaskManager:
         with self._lock:
             self._progress.pop(task_id, None)
 
+    def delete_task(self, task_id: str):
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                "UPDATE backtest_tasks SET deleted = 1 WHERE task_id = ?",
+                (task_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def fail_task(self, task_id: str, error: str):
         conn = self._get_conn()
         try:
@@ -163,12 +174,17 @@ class TaskManager:
             resp["source_task_id"] = row["source_task_id"]
         return resp
 
-    def list_tasks(self) -> list[dict]:
+    def list_tasks(self, show_deleted: bool = False) -> list[dict]:
         conn = self._get_conn()
         try:
-            rows = conn.execute(
-                "SELECT task_id, status, task_type, summary, created_at, source_task_id FROM backtest_tasks ORDER BY created_at DESC"
-            ).fetchall()
+            if show_deleted:
+                rows = conn.execute(
+                    "SELECT task_id, status, task_type, summary, created_at, source_task_id, deleted FROM backtest_tasks ORDER BY created_at DESC"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT task_id, status, task_type, summary, created_at, source_task_id, deleted FROM backtest_tasks WHERE deleted = 0 ORDER BY created_at DESC"
+                ).fetchall()
         finally:
             conn.close()
         result = []
@@ -178,6 +194,7 @@ class TaskManager:
                 "status": r["status"],
                 "task_type": r["task_type"],
                 "created_at": r["created_at"],
+                "deleted": bool(r["deleted"]),
             }
             if r["source_task_id"]:
                 item["source_task_id"] = r["source_task_id"]
