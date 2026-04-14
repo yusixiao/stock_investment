@@ -30,10 +30,17 @@
           <input type="checkbox" v-model="selectedIndicators" :value="ind" @change="loadIndicators" />
           {{ ind.toUpperCase() }}
         </label>
+        <span class="ma-toggles" v-if="selectedIndicators.includes('ma')">
+          MA:
+          <label v-for="line in maLineOptions" :key="line">
+            <input type="checkbox" v-model="selectedMaLines" :value="line" />
+            {{ line.toUpperCase() }}
+          </label>
+        </span>
       </span>
     </div>
 
-    <KlineChart :kline-data="klineData" :indicators="indicators" :height="chartHeight" />
+    <KlineChart :kline-data="klineData" :indicators="indicators" :ma-lines="selectedMaLines" :height="chartHeight" />
   </div>
 </template>
 
@@ -62,6 +69,8 @@ const adjustOptions = [
 ]
 const selectedIndicators = ref(['ma', 'macd'])
 const indicatorOptions = ['ma', 'macd', 'kdj', 'boll']
+const selectedMaLines = ref(['ma5', 'ma10', 'ma20', 'ma60'])
+const maLineOptions = ['ma5', 'ma10', 'ma20', 'ma60']
 
 const chartHeight = computed(() => {
   let h = 500
@@ -104,6 +113,8 @@ onMounted(loadData)
 .period-toggles { display: flex; align-items: center; gap: 4px; }
 .period-toggles button { padding: 4px 10px; border: 1px solid #dcdfe6; border-radius: 4px; background: white; cursor: pointer; font-size: 13px; }
 .period-toggles button.active { background: #409eff; color: white; border-color: #409eff; }
-.indicator-toggles { display: flex; align-items: center; gap: 8px; }
+.indicator-toggles { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .indicator-toggles label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.ma-toggles { display: flex; align-items: center; gap: 6px; border-left: 1px solid #dcdfe6; padding-left: 8px; }
+.ma-toggles label { display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px; }
 </style>

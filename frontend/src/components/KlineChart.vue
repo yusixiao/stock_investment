@@ -9,6 +9,7 @@ import * as echarts from 'echarts'
 const props = defineProps({
   klineData: { type: Array, default: () => [] },
   indicators: { type: Object, default: () => ({}) },
+  maLines: { type: Array, default: () => ['ma5', 'ma10', 'ma20', 'ma60'] },
   height: { type: Number, default: 700 },
 })
 
@@ -44,10 +45,11 @@ function buildOption() {
 
   let subGridIdx = 2
 
-  if (props.indicators.ma) {
+  if (props.indicators.ma && props.maLines.length) {
     const maData = [...props.indicators.ma].sort((a, b) => a.date.localeCompare(b.date))
     const maColors = { ma5: '#ff9800', ma10: '#2196f3', ma20: '#9c27b0', ma60: '#4caf50' }
     for (const key of ['ma5', 'ma10', 'ma20', 'ma60']) {
+      if (!props.maLines.includes(key)) continue
       series.push({
         name: key.toUpperCase(), type: 'line', data: maData.map(d => d[key]),
         xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
@@ -128,5 +130,5 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
 })
 
-watch(() => [props.klineData, props.indicators], renderChart, { deep: true })
+watch(() => [props.klineData, props.indicators, props.maLines], renderChart, { deep: true })
 </script>
