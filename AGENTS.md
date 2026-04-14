@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a personal A-share stock investment comprehensive platform (综合平台) with Web UI. The project is built incrementally as sub-projects. Sub-projects 1 (Data Management + K-line Visualization), 2 (Screener + Backtest System), and 3 (Portfolio Management) are complete. Currently enhancing the backtest engine with multi-frequency strategy support, progress reporting, and task persistence.
+Build a personal A-share stock investment comprehensive platform (综合平台) with Web UI. The project is built incrementally as sub-projects. Sub-projects 1 (Data Management + K-line Visualization), 2 (Screener + Backtest System), and 3 (Portfolio Management) are complete. Enhancements include multi-frequency strategy support, progress reporting, task persistence, and chain backtest (linking previous screener results as input to new backtests).
 
 ## Instructions
 
@@ -27,6 +27,7 @@ Build a personal A-share stock investment comprehensive platform (综合平台) 
 - **Strategy frequency**: Each ScreenerStrategy declares `frequency = "daily" | "weekly" | "monthly"`. Engine precomputes weekly/monthly K-line caches at startup. Context auto-selects data by frequency.
 - **Mixed-frequency pipeline**: Iterate at daily granularity. Each screener only re-executes when its own frequency period changes; otherwise cached result is reused. Match dates only recorded when at least one screener actually executed (`any_executed` flag).
 - **Pipeline order**: Maintained as user defines in UI — NOT auto-sorted by frequency.
+- **Chain backtest**: `POST /api/backtest/run` accepts optional `source_task_id`. Backend resolves the source task's `screened_symbols`, extracts symbol list, only loads those parquet files, and inherits `start_date`/`end_date`. `backtest_tasks` table has `source_task_id TEXT` column for traceability.
 
 ## Discoveries
 
@@ -74,6 +75,15 @@ Build a personal A-share stock investment comprehensive platform (综合平台) 
 
 11. **Updated ma_tangle_breakout_screener**: Uses `frequency = "monthly"`, removed internal `_monthly_ma` aggregation (ctx.get_history() now returns monthly data directly).
 
+12. **Chain backtest (source_task_id)**:
+    - `POST /api/backtest/run` accepts optional `source_task_id` field
+    - Backend resolves source task's `screened_symbols`, extracts symbol list (handles both `list[str]` and `list[dict]` formats)
+    - `_load_stock_data()` accepts `symbols` param — only loads specified parquet files instead of globbing all ~5200
+    - Inherits `start_date`/`end_date` from source task
+    - `backtest_tasks` table has `source_task_id TEXT` column for traceability
+    - BacktestResult.vue shows「以此结果进行下一步回测」button on screener results, and source task link
+    - BacktestPage.vue reads `?source_task_id` from URL, displays source info card, locks date range, includes `source_task_id` in request
+
 ## Relevant files / directories
 
 ```
@@ -85,7 +95,7 @@ stock_investment/
 │   ├── routers/
 │   │   ├── stock.py
 │   │   ├── data_update.py              # POST accepts optional {date} body
-│   │   ├── backtest.py                 # Builds pipeline_info, passes task_type/start_date/end_date to TaskManager
+│   │   ├── backtest.py                 # Builds pipeline_info, passes task_type/start_date/end_date to TaskManager; chain backtest via source_task_id
 │   │   ├── screener.py
 │   │   └── portfolio.py
 │   ├── services/
@@ -100,7 +110,7 @@ stock_investment/
 │   │   │   ├── portfolio.py
 │   │   │   ├── analyzer.py
 │   │   │   ├── strategy_loader.py      # Returns frequency in scan results
-│   │   │   └── task_manager.py         # SQLite-backed, pipeline_info/start_date/end_date/summary columns
+│   │   │   └── task_manager.py         # SQLite-backed, pipeline_info/start_date/end_date/summary/source_task_id columns
 │   │   └── portfolio/
 │   │       ├── db.py
 │   │       └── manager.py
@@ -110,7 +120,7 @@ stock_investment/
 │       ├── test_portfolio_db.py
 │       ├── test_portfolio_manager.py
 │       ├── test_portfolio_api.py
-│       └── ... (168 tests total, all passing)
+│       └── ... (177 tests total, all passing)
 ├── strategies/examples/
 │   ├── ma_cross_screener.py            # frequency defaults to "daily"
 │   ├── macd_screener.py                # frequency defaults to "daily"
@@ -152,3 +162,7 @@ python -m pytest backend/tests/ -x -q
 ```
 
 168 tests, all passing.
+
+## Update (2026-04-14)
+
+177 tests, all passing (added 9 tests for chain backtest feature).
