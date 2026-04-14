@@ -1,11 +1,20 @@
 <template>
   <div class="backtest-page">
     <h1>回测</h1>
+    <div v-if="sourceInfo" class="source-card">
+      <div class="source-card-content">
+        <span>基于任务 <b>{{ sourceTaskId }}</b> 的选股结果（{{ sourceInfo.count }} 只股票）</span>
+        <span v-if="sourceInfo.start_date || sourceInfo.end_date" class="source-dates">
+          ，日期范围 {{ sourceInfo.start_date || '最早' }} ~ {{ sourceInfo.end_date || '最新' }}
+        </span>
+      </div>
+      <button class="btn-clear-source" @click="clearSource">清除来源</button>
+    </div>
     <PipelineBuilder :strategies="strategies" v-model:pipeline="pipeline" mode="backtest" />
     <ParamEditor :pipeline="pipeline" @update:overrides="overrides = $event" />
     <div class="date-range">
-      <label>开始日期: <input v-model="startDate" type="date" /></label>
-      <label>结束日期: <input v-model="endDate" type="date" /></label>
+      <label>开始日期: <input v-model="startDate" type="date" :disabled="!!sourceInfo" /></label>
+      <label>结束日期: <input v-model="endDate" type="date" :disabled="!!sourceInfo" /></label>
     </div>
     <button class="run-btn" @click="runBacktestPipeline" :disabled="!pipeline.length || running">
       {{ running ? '回测运行中...' : '运行回测' }}
@@ -48,9 +57,12 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { fetchStrategies, runBacktest, fetchBacktestStatus, fetchBacktestTasks } from '../api'
+import { useRoute } from 'vue-router'
+import { fetchStrategies, runBacktest, fetchBacktestStatus, fetchBacktestTasks, fetchBacktestResult } from '../api'
 import PipelineBuilder from '../components/PipelineBuilder.vue'
 import ParamEditor from '../components/ParamEditor.vue'
+
+const route = useRoute()
 
 const strategies = ref([])
 const pipeline = ref([])
@@ -62,6 +74,8 @@ const status = ref('')
 const running = ref(false)
 const tasks = ref([])
 const progress = ref(null)
+const sourceTaskId = ref(null)
+const sourceInfo = ref(null)
 const progressPct = computed(() => {
   if (!progress.value || !progress.value.total) return 0
   return Math.round((progress.value.current / progress.value.total) * 100)
@@ -97,12 +111,23 @@ async function runBacktestPipeline() {
     pipeline: pipeline.value.map(s => ({ filepath: s.filepath, class_name: s.class_name })),
     param_overrides: overrides.value,
   }
-  if (startDate.value) body.start_date = startDate.value
-  if (endDate.value) body.end_date = endDate.value
+  if (sourceTaskId.value) {
+    body.source_task_id = sourceTaskId.value
+  } else {
+    if (startDate.value) body.start_date = startDate.value
+    if (endDate.value) body.end_date = endDate.value
+  }
   const { data } = await runBacktest(body)
   taskId.value = data.task_id
   status.value = 'running'
   pollTimer = setInterval(pollStatus, 2000)
+}
+
+function clearSource() {
+  sourceTaskId.value = null
+  sourceInfo.value = null
+  startDate.value = ''
+  endDate.value = ''
 }
 
 async function pollStatus() {
@@ -129,6 +154,24 @@ onMounted(async () => {
   const { data } = await fetchStrategies()
   strategies.value = data
   loadTasks()
+  const srcId = route.query.source_task_id
+  if (srcId) {
+    try {
+      const { data: srcData } = await fetchBacktestResult(srcId)
+      if (srcData.status === 'success' && srcData.result && srcData.result.screened_symbols) {
+        sourceTaskId.value = srcId
+        const syms = srcData.result.screened_symbols
+        const count = Array.isArray(syms) ? syms.length : 0
+        sourceInfo.value = {
+          count,
+          start_date: srcData.start_date,
+          end_date: srcData.end_date,
+        }
+        if (srcData.start_date) startDate.value = srcData.start_date
+        if (srcData.end_date) endDate.value = srcData.end_date
+      }
+    } catch {}
+  }
 })
 
 onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
@@ -163,4 +206,9 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .type-backtest { background: #409eff; }
 .summary-cell { font-size: 12px; color: #606266; }
 .empty { color: #c0c4cc; font-size: 13px; }
+.source-card { display: flex; align-items: center; justify-content: space-between; background: #ecf5ff; border: 1px solid #b3d8ff; border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; }
+.source-card-content { font-size: 14px; color: #303133; }
+.source-dates { color: #606266; }
+.btn-clear-source { background: transparent; border: 1px solid #dcdfe6; color: #606266; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.btn-clear-source:hover { border-color: #409eff; color: #409eff; }
 </style>
