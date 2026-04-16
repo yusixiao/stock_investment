@@ -49,5 +49,7 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
                 else:
                     break
             if tangle_count >= self.p.tangle_months:
-                result.append(sym)
+                last = df.iloc[-1]
+                if last[col_s] < last[col_f] and last[col_s] < last[col_m]:
+                    result.append(sym)
         return result
