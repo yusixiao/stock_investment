@@ -8,7 +8,7 @@ from services.backtest.base import ScreenerStrategy
 
 class MaTangleBreakoutScreener(ScreenerStrategy):
     name = "月线均线缠绕"
-    description = "月线均线缠绕后发散：缠绕N月（MA20最低）→ 之后M月内均线发散且MA5>MA10>MA20且成交量连续阳线"
+    description = "月线均线缠绕后发散：缠绕N月（MA20<MA5）→ 之后M月内MA5/MA20发散且MA5>MA10>MA20且成交量连续阳线"
     frequency = "monthly"
 
     params = {
@@ -18,7 +18,7 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
         "threshold": {"default": 0.05},
         "tangle_months": {"default": 2},
         "spread_months": {"default": 6},
-        "spread_threshold": {"default": 0.05},
+        "spread_threshold": {"default": 0.01},
         "vol_red_bars": {"default": 4},
     }
 
@@ -72,7 +72,7 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
                     continue
 
                 tangle_last = df.iloc[end]
-                if not (tangle_last[col_s] < tangle_last[col_f] and tangle_last[col_s] < tangle_last[col_m]):
+                if not (tangle_last[col_s] < tangle_last[col_f]):
                     continue
 
                 spread_rows = df.iloc[end + 1: end + 1 + sm]
@@ -86,7 +86,6 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
                         spread_ok = False
                         break
                     if (abs(row[col_f] - avg) / avg <= self.p.spread_threshold or
-                            abs(row[col_m] - avg) / avg <= self.p.spread_threshold or
                             abs(row[col_s] - avg) / avg <= self.p.spread_threshold):
                         spread_ok = False
                         break
