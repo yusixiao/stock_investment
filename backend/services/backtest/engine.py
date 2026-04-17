@@ -162,7 +162,7 @@ class BacktestEngine:
                 for sym in symbols:
                     date_to_record = last_custom_dates.get(sym, record_date)
                     history = match_history.setdefault(sym, [])
-                    if not history or history[-1] != date_to_record:
+                    if date_to_record not in history:
                         history.append(date_to_record)
 
         result = []

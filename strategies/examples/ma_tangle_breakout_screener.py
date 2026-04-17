@@ -65,10 +65,10 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
 
     def screen(self, ctx, symbols):
         result = []
-        need_bars = self.p.slow + self.p.tangle_months + self.p.spread_months + 2
+        min_bars = self.p.slow + self.p.tangle_months + 1
         for sym in symbols:
-            history = ctx.get_history(sym, need_bars)
-            if len(history) < self.p.slow + self.p.tangle_months + 1:
+            history = ctx.get_history(sym, 99999)
+            if len(history) < min_bars:
                 continue
             df = pd.DataFrame(history)
             col_f = f"ma{self.p.fast}"
@@ -84,15 +84,22 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
             if n < tm + 1:
                 continue
 
-            for tangle_end in range(max(tm - 1, n - sm - tm), n - 1):
+            last_idx = n - 1
+            latest_match_date = None
+            skip_until = -1
+
+            for tangle_end in range(tm - 1, n - 1):
+                if tangle_end <= skip_until:
+                    continue
                 if not self._is_tangle(df, tangle_end, col_f, col_m, col_s):
                     continue
 
                 spread_start = tangle_end + 1
-                spread_rows = df.iloc[spread_start:n]
-                if len(spread_rows) == 0 or len(spread_rows) > sm:
+                spread_window_end = min(spread_start + sm, n)
+                if last_idx < spread_start:
                     continue
 
+                spread_rows = df.iloc[spread_start:spread_window_end]
                 all_spread = all(
                     self._check_spread_bar(spread_rows.iloc[j], col_f, col_m, col_s)
                     for j in range(len(spread_rows))
@@ -102,7 +109,10 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
 
                 first_red_date = self._find_first_red_run(spread_rows, self.p.vol_red_bars)
                 if first_red_date is not None:
-                    result.append({"symbol": sym, "match_date": first_red_date})
-                    break
+                    latest_match_date = first_red_date
+                    skip_until = spread_window_end - 1
+
+            if latest_match_date is not None:
+                result.append({"symbol": sym, "match_date": latest_match_date})
 
         return result
