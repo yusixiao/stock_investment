@@ -8,6 +8,19 @@ from services.backtest.analyzer import compute_metrics
 from services.stock_data import aggregate_kline
 
 
+def _parse_screen_result(result):
+    symbols = []
+    match_date_map = {}
+    for item in result:
+        if isinstance(item, dict):
+            symbols.append(item["symbol"])
+            if "match_date" in item:
+                match_date_map[item["symbol"]] = item["match_date"]
+        else:
+            symbols.append(item)
+    return symbols, match_date_map
+
+
 class BacktestEngine:
     def __init__(
         self,
@@ -76,7 +89,8 @@ class BacktestEngine:
         for i, screener in enumerate(self._screeners):
             self._report(i + 1, total, f"选股中 ({screener.__class__.__name__})")
             ctx = self._make_screener_ctx(screener, last_idx)
-            symbols = screener.screen(ctx, symbols)
+            raw_result = screener.screen(ctx, symbols)
+            symbols, _ = _parse_screen_result(raw_result)
         return {"screened_symbols": symbols}
 
     def _period_key(self, date_str: str, freq: str) -> str:
@@ -114,6 +128,7 @@ class BacktestEngine:
 
         last_si = len(self._screeners) - 1
         last_freq = getattr(self._screeners[last_si], "frequency", "daily")
+        last_custom_dates: dict[str, str] = {}
 
         for idx in range(n_bars):
             if idx % 10 == 0 or idx == n_bars - 1:
@@ -129,8 +144,11 @@ class BacktestEngine:
 
                 if need_run:
                     ctx = self._make_screener_ctx(screener, idx)
-                    symbols = screener.screen(ctx, symbols)
+                    raw_result = screener.screen(ctx, symbols)
+                    symbols, custom_dates = _parse_screen_result(raw_result)
                     screener_cache[si] = list(symbols)
+                    if si == last_si:
+                        last_custom_dates = custom_dates
                     prev_period_keys[si] = pk
                     if si == last_si:
                         last_executed = True
@@ -142,9 +160,10 @@ class BacktestEngine:
                 if record_date is None:
                     continue
                 for sym in symbols:
+                    date_to_record = last_custom_dates.get(sym, record_date)
                     history = match_history.setdefault(sym, [])
-                    if not history or history[-1] != record_date:
-                        history.append(record_date)
+                    if not history or history[-1] != date_to_record:
+                        history.append(date_to_record)
 
         result = []
         for sym, dates in match_history.items():
@@ -198,7 +217,8 @@ class BacktestEngine:
                 need_run = (si not in bt_prev_keys) or (pk != bt_prev_keys[si])
                 if need_run:
                     ctx = self._make_screener_ctx(screener, idx)
-                    symbols = screener.screen(ctx, symbols)
+                    raw_result = screener.screen(ctx, symbols)
+                    symbols, _ = _parse_screen_result(raw_result)
                     bt_screener_cache[si] = list(symbols)
                     bt_prev_keys[si] = pk
                 else:

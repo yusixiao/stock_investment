@@ -22,16 +22,21 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
         "vol_red_bars": {"default": 4},
     }
 
-    def _max_consecutive_red(self, rows):
-        max_run = 0
+    def _find_first_red_run(self, rows, min_run):
         cur_run = 0
-        for _, row in rows.iterrows():
+        start_idx = None
+        for i in range(len(rows)):
+            row = rows.iloc[i]
             if row["close"] >= row["open"]:
+                if cur_run == 0:
+                    start_idx = i
                 cur_run += 1
-                max_run = max(max_run, cur_run)
+                if cur_run >= min_run:
+                    return rows.iloc[start_idx]["date"]
             else:
                 cur_run = 0
-        return max_run
+                start_idx = None
+        return None
 
     def _is_tangle(self, df, end, col_f, col_m, col_s):
         tm = self.p.tangle_months
@@ -79,7 +84,6 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
             if n < tm + 1:
                 continue
 
-            matched = False
             for tangle_end in range(max(tm - 1, n - sm - tm), n - 1):
                 if not self._is_tangle(df, tangle_end, col_f, col_m, col_s):
                     continue
@@ -96,10 +100,9 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
                 if not all_spread:
                     continue
 
-                if self._max_consecutive_red(spread_rows) >= self.p.vol_red_bars:
-                    matched = True
+                first_red_date = self._find_first_red_run(spread_rows, self.p.vol_red_bars)
+                if first_red_date is not None:
+                    result.append({"symbol": sym, "match_date": first_red_date})
                     break
 
-            if matched:
-                result.append(sym)
         return result

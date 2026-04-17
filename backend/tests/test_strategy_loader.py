@@ -12,13 +12,13 @@ EXAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "strategies" / "e
 
 class TestLoadStrategyFromFile:
     def test_load_screener(self):
-        filepath = EXAMPLES_DIR / "ma_cross_screener.py"
+        filepath = EXAMPLES_DIR / "ma_tangle_breakout_screener.py"
         strategies = load_strategy_from_file(filepath)
         assert len(strategies) >= 1
         s = strategies[0]
         assert isinstance(s, type)
         assert issubclass(s, ScreenerStrategy)
-        assert s.name == "MA金叉选股"
+        assert s.name == "月线均线缠绕"
 
     def test_load_trader(self):
         filepath = EXAMPLES_DIR / "equal_weight_trader.py"
@@ -45,7 +45,7 @@ class TestScanStrategies:
         results = scan_strategies(EXAMPLES_DIR)
         assert len(results) >= 3
         names = [r["name"] for r in results]
-        assert "MA金叉选股" in names
+        assert "月线均线缠绕" in names
         assert "等权买入持有" in names
 
     def test_scan_returns_correct_structure(self):

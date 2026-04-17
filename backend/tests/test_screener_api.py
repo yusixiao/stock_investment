@@ -36,10 +36,10 @@ class TestScreenerRoutes:
 
         from pathlib import Path
         strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
-        screener_path = str(strategies_dir / "ma_cross_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
 
         resp = client.post("/api/screener/run", json={
-            "pipeline": [{"filepath": screener_path, "class_name": "MaCrossScreener"}],
+            "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
         })
         assert resp.status_code == 200
         data = resp.json()

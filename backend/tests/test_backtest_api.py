@@ -47,10 +47,10 @@ class TestBacktestRun:
 
         from pathlib import Path
         strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
-        screener_path = str(strategies_dir / "ma_cross_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
 
         resp = client.post("/api/backtest/run", json={
-            "pipeline": [{"filepath": screener_path, "class_name": "MaCrossScreener"}],
+            "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
         })
         assert resp.status_code == 200
         assert "task_id" in resp.json()
@@ -102,9 +102,9 @@ class TestChainBacktest:
     def test_source_task_not_found(self):
         from pathlib import Path
         strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
-        screener_path = str(strategies_dir / "ma_cross_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
         resp = client.post("/api/backtest/run", json={
-            "pipeline": [{"filepath": screener_path, "class_name": "MaCrossScreener"}],
+            "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
             "source_task_id": "nonexistent",
         })
         assert resp.status_code == 400
@@ -115,9 +115,9 @@ class TestChainBacktest:
         self.tm.fail_task(tid, "test error")
         from pathlib import Path
         strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
-        screener_path = str(strategies_dir / "ma_cross_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
         resp = client.post("/api/backtest/run", json={
-            "pipeline": [{"filepath": screener_path, "class_name": "MaCrossScreener"}],
+            "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
             "source_task_id": tid,
         })
         assert resp.status_code == 400
@@ -128,9 +128,9 @@ class TestChainBacktest:
         self.tm.complete_task(tid, {"metrics": {"total_return": 0.1}})
         from pathlib import Path
         strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
-        screener_path = str(strategies_dir / "ma_cross_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
         resp = client.post("/api/backtest/run", json={
-            "pipeline": [{"filepath": screener_path, "class_name": "MaCrossScreener"}],
+            "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
             "source_task_id": tid,
         })
         assert resp.status_code == 400
@@ -141,9 +141,9 @@ class TestChainBacktest:
         self.tm.complete_task(tid, {"screened_symbols": []})
         from pathlib import Path
         strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
-        screener_path = str(strategies_dir / "ma_cross_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
         resp = client.post("/api/backtest/run", json={
-            "pipeline": [{"filepath": screener_path, "class_name": "MaCrossScreener"}],
+            "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
             "source_task_id": tid,
         })
         assert resp.status_code == 400
@@ -177,9 +177,9 @@ class TestChainBacktest:
 
         from pathlib import Path
         strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
-        screener_path = str(strategies_dir / "ma_cross_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
         resp = client.post("/api/backtest/run", json={
-            "pipeline": [{"filepath": screener_path, "class_name": "MaCrossScreener"}],
+            "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
             "source_task_id": src_tid,
         })
         assert resp.status_code == 200
@@ -208,9 +208,9 @@ class TestChainBacktest:
 
         from pathlib import Path
         strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
-        screener_path = str(strategies_dir / "ma_cross_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
         resp = client.post("/api/backtest/run", json={
-            "pipeline": [{"filepath": screener_path, "class_name": "MaCrossScreener"}],
+            "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
             "source_task_id": src_tid,
         })
         assert resp.status_code == 200
