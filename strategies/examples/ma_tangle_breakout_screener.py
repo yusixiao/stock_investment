@@ -33,12 +33,37 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
                 cur_run = 0
         return max_run
 
+    def _is_tangle(self, df, end, col_f, col_m, col_s):
+        tm = self.p.tangle_months
+        if end < tm - 1:
+            return False
+        for i in range(end - tm + 1, end + 1):
+            row = df.iloc[i]
+            avg = (row[col_f] + row[col_m] + row[col_s]) / 3.0
+            if avg == 0:
+                return False
+            if (abs(row[col_f] - avg) / avg > self.p.threshold or
+                    abs(row[col_m] - avg) / avg > self.p.threshold or
+                    abs(row[col_s] - avg) / avg > self.p.threshold):
+                return False
+        last = df.iloc[end]
+        return last[col_s] < last[col_f]
+
+    def _check_spread_bar(self, row, col_f, col_m, col_s):
+        avg = (row[col_f] + row[col_m] + row[col_s]) / 3.0
+        if avg == 0:
+            return False
+        if (abs(row[col_f] - avg) / avg <= self.p.spread_threshold or
+                abs(row[col_s] - avg) / avg <= self.p.spread_threshold):
+            return False
+        return row[col_f] > row[col_m] > row[col_s]
+
     def screen(self, ctx, symbols):
         result = []
         need_bars = self.p.slow + self.p.tangle_months + self.p.spread_months + 2
         for sym in symbols:
             history = ctx.get_history(sym, need_bars)
-            if len(history) < need_bars - 1:
+            if len(history) < self.p.slow + self.p.tangle_months + 1:
                 continue
             df = pd.DataFrame(history)
             col_f = f"ma{self.p.fast}"
@@ -51,54 +76,30 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
             n = len(df)
             tm = self.p.tangle_months
             sm = self.p.spread_months
-            if n < tm + sm:
+            if n < tm + 1:
                 continue
 
-            found = False
-            for end in range(tm - 1, n - sm):
-                tangle_ok = True
-                for i in range(end - tm + 1, end + 1):
-                    row = df.iloc[i]
-                    avg = (row[col_f] + row[col_m] + row[col_s]) / 3.0
-                    if avg == 0:
-                        tangle_ok = False
-                        break
-                    if (abs(row[col_f] - avg) / avg > self.p.threshold or
-                            abs(row[col_m] - avg) / avg > self.p.threshold or
-                            abs(row[col_s] - avg) / avg > self.p.threshold):
-                        tangle_ok = False
-                        break
-                if not tangle_ok:
+            matched = False
+            for tangle_end in range(max(tm - 1, n - sm - tm), n - 1):
+                if not self._is_tangle(df, tangle_end, col_f, col_m, col_s):
                     continue
 
-                tangle_last = df.iloc[end]
-                if not (tangle_last[col_s] < tangle_last[col_f]):
+                spread_start = tangle_end + 1
+                spread_rows = df.iloc[spread_start:n]
+                if len(spread_rows) == 0 or len(spread_rows) > sm:
                     continue
 
-                spread_rows = df.iloc[end + 1: end + 1 + sm]
-                if len(spread_rows) < sm:
-                    continue
-
-                spread_ok = True
-                for _, row in spread_rows.iterrows():
-                    avg = (row[col_f] + row[col_m] + row[col_s]) / 3.0
-                    if avg == 0:
-                        spread_ok = False
-                        break
-                    if (abs(row[col_f] - avg) / avg <= self.p.spread_threshold or
-                            abs(row[col_s] - avg) / avg <= self.p.spread_threshold):
-                        spread_ok = False
-                        break
-                    if not (row[col_f] > row[col_m] > row[col_s]):
-                        spread_ok = False
-                        break
-                if not spread_ok:
+                all_spread = all(
+                    self._check_spread_bar(spread_rows.iloc[j], col_f, col_m, col_s)
+                    for j in range(len(spread_rows))
+                )
+                if not all_spread:
                     continue
 
                 if self._max_consecutive_red(spread_rows) >= self.p.vol_red_bars:
-                    found = True
+                    matched = True
                     break
 
-            if found:
+            if matched:
                 result.append(sym)
         return result
