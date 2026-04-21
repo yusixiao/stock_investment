@@ -1,7 +1,7 @@
 <template>
   <div class="update-status">
     <div class="status-row">
-      <span class="status-label">数据更新:</span>
+      <span class="status-label">行情数据:</span>
       <span :class="['status-badge', statusClass]">{{ statusText }}</span>
       <label class="date-pick">日期: <input type="date" v-model="targetDate" :disabled="status === 'running'" /></label>
       <button :disabled="status === 'running'" @click="triggerUpdate">
@@ -15,17 +15,59 @@
       <span>新增: {{ result.new_stocks }}</span>
       <span v-if="result.finished_at">完成于: {{ result.finished_at }}</span>
     </div>
+
+    <div class="status-row" style="margin-top: 12px;">
+      <span class="status-label">估值数据:</span>
+      <span :class="['status-badge', valStatusClass]">{{ valStatusText }}</span>
+      <button :disabled="valStatus === 'running'" @click="triggerValUpdate('full')">全量拉取</button>
+      <button :disabled="valStatus === 'running'" @click="triggerValUpdate('incremental')">增量更新</button>
+    </div>
+    <div v-if="valProgress && valStatus === 'running'" class="status-detail">
+      <span>{{ valProgress.phase }}: {{ valProgress.current }}/{{ valProgress.total }}</span>
+      <span>({{ Math.round(valProgress.current / valProgress.total * 100) }}%)</span>
+    </div>
+    <div v-if="valResult && valStatus !== 'running'" class="status-detail">
+      <span>成功: {{ valResult.success }}</span>
+      <span>跳过: {{ valResult.skipped }}</span>
+      <span>失败: {{ valResult.failed }}</span>
+    </div>
+
+    <div class="status-row" style="margin-top: 12px;">
+      <span class="status-label">分红数据:</span>
+      <span :class="['status-badge', divStatusClass]">{{ divStatusText }}</span>
+      <button :disabled="divStatus === 'running'" @click="triggerDivUpdate('full')">全量拉取</button>
+      <button :disabled="divStatus === 'running'" @click="triggerDivUpdate('incremental')">增量更新</button>
+    </div>
+    <div v-if="divProgress && divStatus === 'running'" class="status-detail">
+      <span>{{ divProgress.phase }}: {{ divProgress.current }}/{{ divProgress.total }}</span>
+      <span>({{ Math.round(divProgress.current / divProgress.total * 100) }}%)</span>
+    </div>
+    <div v-if="divResult && divStatus !== 'running'" class="status-detail">
+      <span>成功: {{ divResult.success }}</span>
+      <span>跳过: {{ divResult.skipped }}</span>
+      <span>失败: {{ divResult.failed }}</span>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { fetchUpdateStatus, triggerUpdate as apiTriggerUpdate } from '../api'
+import { fetchUpdateStatus, triggerUpdate as apiTriggerUpdate, triggerValuationUpdate, fetchValuationStatus, triggerDividendUpdate, fetchDividendStatus } from '../api'
 
 const status = ref('idle')
 const result = ref(null)
 const targetDate = ref(new Date().toISOString().slice(0, 10))
 let timer = null
+
+const valStatus = ref('idle')
+const valProgress = ref(null)
+const valResult = ref(null)
+let valTimer = null
+
+const divStatus = ref('idle')
+const divProgress = ref(null)
+const divResult = ref(null)
+let divTimer = null
 
 const statusText = computed(() => {
   const map = { idle: '空闲', running: '进行中', success: '成功', failed: '失败' }
@@ -33,6 +75,20 @@ const statusText = computed(() => {
 })
 
 const statusClass = computed(() => status.value)
+
+const valStatusText = computed(() => {
+  const map = { idle: '空闲', running: '进行中', success: '成功', failed: '失败' }
+  return map[valStatus.value] || valStatus.value
+})
+
+const valStatusClass = computed(() => valStatus.value)
+
+const divStatusText = computed(() => {
+  const map = { idle: '空闲', running: '进行中', success: '成功', failed: '失败' }
+  return map[divStatus.value] || divStatus.value
+})
+
+const divStatusClass = computed(() => divStatus.value)
 
 async function pollStatus() {
   try {
@@ -50,12 +106,66 @@ async function triggerUpdate() {
   }
 }
 
+async function pollValStatus() {
+  try {
+    const { data } = await fetchValuationStatus()
+    valStatus.value = data.status
+    valProgress.value = data.progress
+    if (data.status !== 'running') {
+      valResult.value = data.result
+      if (valTimer) {
+        clearInterval(valTimer)
+        valTimer = null
+      }
+    }
+  } catch {}
+}
+
+async function triggerValUpdate(mode) {
+  await triggerValuationUpdate(mode)
+  valStatus.value = 'running'
+  valProgress.value = null
+  valResult.value = null
+  if (!valTimer) {
+    valTimer = setInterval(pollValStatus, 2000)
+  }
+}
+
+async function pollDivStatus() {
+  try {
+    const { data } = await fetchDividendStatus()
+    divStatus.value = data.status
+    divProgress.value = data.progress
+    if (data.status !== 'running') {
+      divResult.value = data.result
+      if (divTimer) {
+        clearInterval(divTimer)
+        divTimer = null
+      }
+    }
+  } catch {}
+}
+
+async function triggerDivUpdate(mode) {
+  await triggerDividendUpdate(mode)
+  divStatus.value = 'running'
+  divProgress.value = null
+  divResult.value = null
+  if (!divTimer) {
+    divTimer = setInterval(pollDivStatus, 2000)
+  }
+}
+
 onMounted(() => {
   pollStatus()
+  pollValStatus()
+  pollDivStatus()
 })
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
+  if (valTimer) clearInterval(valTimer)
+  if (divTimer) clearInterval(divTimer)
 })
 </script>
 

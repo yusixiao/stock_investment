@@ -26,6 +26,22 @@ export function fetchUpdateLogs(limit = 20) {
   return api.get('/data/update/logs', { params: { limit } })
 }
 
+export function triggerValuationUpdate(mode = 'full', force = false) {
+  return api.post('/valuation/update', { mode, force })
+}
+
+export function fetchValuationStatus() {
+  return api.get('/valuation/update/status')
+}
+
+export function triggerDividendUpdate(mode = 'full', force = false) {
+  return api.post('/dividend/update', { mode, force })
+}
+
+export function fetchDividendStatus() {
+  return api.get('/dividend/update/status')
+}
+
 export function fetchStrategies() {
   return api.get('/backtest/strategies')
 }
