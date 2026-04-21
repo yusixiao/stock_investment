@@ -51,12 +51,25 @@ def _call_sina_api(symbol: str) -> pd.DataFrame:
     return ak.stock_history_dividend_detail(symbol=symbol, indicator="分红")
 
 
+def _run_with_timeout(fn, *args):
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(fn, *args)
+        return future.result(timeout=API_TIMEOUT)
+    except FutureTimeout:
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    except Exception:
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        executor.shutdown(wait=False)
+
+
 def fetch_dividend_em(symbol: str) -> pd.DataFrame | None:
     for attempt in range(MAX_RETRIES):
         try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_call_em_api, symbol)
-                df = future.result(timeout=API_TIMEOUT)
+            df = _run_with_timeout(_call_em_api, symbol)
             for col in EM_COLUMNS:
                 if col not in df.columns:
                     df[col] = None
@@ -75,9 +88,7 @@ def fetch_dividend_em(symbol: str) -> pd.DataFrame | None:
 def fetch_dividend_sina(symbol: str) -> pd.DataFrame | None:
     for attempt in range(MAX_RETRIES):
         try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_call_sina_api, symbol)
-                df = future.result(timeout=API_TIMEOUT)
+            df = _run_with_timeout(_call_sina_api, symbol)
             return df
         except FutureTimeout:
             logger.warning(f"新浪 {symbol} 超时 (第{attempt+1}次)")
