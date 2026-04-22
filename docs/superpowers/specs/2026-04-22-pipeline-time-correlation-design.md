@@ -232,6 +232,58 @@ daily < weekly < monthly < quarterly < semi-annual < yearly
 - 现有 match_date 格式为 `YYYY-MM-DD`（daily 频率），与新格式兼容
 - 现有策略无需修改，`frequency` 默认为 `"daily"`
 
+## 日志要求
+
+引擎在 pipeline 处理过程中需要输出详细的 DEBUG 级别日志，用于校验数据处理的正确性。
+
+### 逐对处理日志
+
+每对 screener 处理时记录：
+- join_mode 和两个 screener 的频率
+- 独立对：并集前各 screener 的结果数量，并集后的结果数量
+- 关联对：交集前各 screener 的结果数量，最粗频率，交集后的结果数量
+
+示例：
+```
+[Pair 0] A(daily) ∪ B(monthly) independent: A=3 matches, B=4 matches, union=7 matches
+[Pair 1] (A∪B)(mixed) ∩ C(monthly) correlated(coarse=monthly): prev=7 matches, C=3 matches, intersection=5 matches
+```
+
+### 关联匹配明细日志
+
+关联对做交集时，对每个股票的每个 match_date 记录匹配或排除的原因：
+
+示例：
+```
+[Pair 1] 000001.SZ: "2024-09-04" belongs_to "2024-09" (C) → keep
+[Pair 1] 000001.SZ: "2024-11-30" not in C months [2024-08, 2024-09, 2024-10] → discard
+```
+
+### 最终输出频率过滤日志
+
+最终输出统一为最细频率时，对被丢弃的粗粒度日期逐条记录：
+
+示例：
+```
+[Output] 000001.SZ: "2024-08" (monthly) discarded — cannot refine to daily (pipeline finest=daily)
+[Output] 000001.SZ: "2024-09" (monthly) discarded — cannot refine to daily (pipeline finest=daily)
+[Output] 000001.SZ: "2024-09-04" (daily) kept
+[Output] 000001.SZ: "2024-09-11" (daily) kept
+```
+
+### match_date 格式转换日志
+
+引擎对策略返回的 match_date 做频率格式转换时记录：
+
+示例：
+```
+[Format] MaTangleBreakoutScreener(monthly): 000001.SZ match_date "2024-09-30" → "2024-09"
+```
+
+### 日志级别
+
+以上日志均使用 `logger.debug()`，不影响正常运行时的日志输出。用户可通过调整日志级别查看详细处理过程。
+
 ## 本次不做
 
 - 引擎数据源重构（保持现有 `_precompute_periods()` 的 weekly/monthly 聚合逻辑）
