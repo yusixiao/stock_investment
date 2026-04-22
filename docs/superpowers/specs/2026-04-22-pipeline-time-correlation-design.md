@@ -6,7 +6,7 @@
 
 ## 背景
 
-当前 pipeline 中多个 screener 按顺序做级联过滤（cascading AND）：screener N+1 只看 screener N 通过的股票。但在时间维度上没有交集概念 — match_dates 只由最后一个 screener 的执行周期决定。
+当前 pipeline 中多个 screener 按顺序做级联过滤（cascading AND）：screener N+1 只看 screener N 通过的股票。但在时间维度上没有交集概念，也没有独立/关联的区分。新设计中，最终 match_dates 由所有 screener 中最细粒度的频率来决定。
 
 用户需要两种组合模式：
 - **独立（independent）**：不要求策略在同一时间点满足，只做股票集合的级联过滤
