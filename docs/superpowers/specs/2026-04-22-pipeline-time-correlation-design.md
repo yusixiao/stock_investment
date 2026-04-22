@@ -211,6 +211,20 @@ daily < weekly < monthly < quarterly < semi-annual < yearly
 - `format_match_date("2024-12-15", "semi-annual")` → `"2024-H2"`
 - `format_match_date("2024-12-15", "yearly")` → `"2024"`
 
+## match_date 格式转换责任
+
+**引擎负责统一转换**，策略无需关心日期格式规范。
+
+引擎在记录 match_date 时（无论来源是策略自定义的 match_date 还是引擎默认的 period_date），统一调用 `format_match_date(date, screener.frequency)` 转换为对应频率格式。
+
+- monthly 策略返回的 `2024-09-30` → 引擎转换为 `2024-09`
+- daily 策略返回的 `2024-09-04` → 引擎保持 `2024-09-04`
+
+好处：
+- 策略作者不需要知道格式约定，零修改成本
+- 单一转换点，格式一致性有引擎保证
+- 现有策略（MaTangleBreakoutScreener、MonthlyVolumeRedScreener）无需改动
+
 ## 向后兼容
 
 - `join_modes` 缺失且只有一个 screener 时，行为与现有一致
