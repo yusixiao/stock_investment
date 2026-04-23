@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 from services.backtest.engine import BacktestEngine
 from services.backtest.base import ScreenerStrategy, TraderStrategy
+from services.backtest.date_utils import detect_frequency
 
 
 def _make_stock_df(n=100, seed=42, base_price=100.0):
@@ -52,6 +53,54 @@ class BuyAndHoldTrader(TraderStrategy):
                 ctx.order_target_percent(sym, 0.9)
 
 
+class OddMonthScreener(ScreenerStrategy):
+    name = "odd-month"
+    description = ""
+    params = {}
+    frequency = "monthly"
+
+    def screen(self, ctx, symbols):
+        month = int(ctx.current_date[5:7])
+        if month % 2 == 1:
+            return symbols
+        return []
+
+
+class EvenMonthScreener(ScreenerStrategy):
+    name = "even-month"
+    description = ""
+    params = {}
+    frequency = "monthly"
+
+    def screen(self, ctx, symbols):
+        month = int(ctx.current_date[5:7])
+        if month % 2 == 0:
+            return symbols
+        return []
+
+
+class FirstHalfScreener(ScreenerStrategy):
+    name = "first-half"
+    description = ""
+    params = {}
+    frequency = "daily"
+
+    def screen(self, ctx, symbols):
+        mid = max(1, len(symbols) // 2)
+        return symbols[:mid]
+
+
+class SecondHalfScreener(ScreenerStrategy):
+    name = "second-half"
+    description = ""
+    params = {}
+    frequency = "daily"
+
+    def screen(self, ctx, symbols):
+        mid = max(1, len(symbols) // 2)
+        return symbols[mid:]
+
+
 class TestBacktestEngine:
     def _make_data(self):
         return {
@@ -78,7 +127,7 @@ class TestBacktestEngine:
             trader=None,
         )
         result = engine.run()
-        assert len(result["screened_symbols"]) == 1
+        assert len(result["screened_symbols"]) == 2
 
     def test_screener_backtest_returns_match_dates(self):
         data = self._make_data()
@@ -164,7 +213,7 @@ class TestBacktestEngine:
         result = engine.run()
         assert result["trades"] == []
 
-    def test_mixed_freq_daily_then_monthly_match_dates_are_monthly(self):
+    def test_mixed_freq_daily_then_monthly_match_dates_are_daily(self):
         class DailyScreener(ScreenerStrategy):
             name = "daily-pass"
             description = ""
@@ -193,22 +242,7 @@ class TestBacktestEngine:
         assert len(items) > 0
         for item in items:
             for d in item["match_dates"]:
-                parsed = pd.Timestamp(d)
-                next_day = parsed + pd.Timedelta(days=1)
-                assert next_day.month != parsed.month or next_day.day == 1 or pd.Timestamp(d + " 23:59") == pd.Timestamp(d + " 23:59")
-
-        ref_sym = list(data.keys())[0]
-        monthly_dates = set(
-            pd.to_datetime(data[ref_sym]["date"]).to_frame()
-            .assign(ym=lambda df: df["date"].dt.to_period("M"))
-            .groupby("ym")["date"]
-            .max()
-            .dt.strftime("%Y-%m-%d")
-            .tolist()
-        )
-        for item in items:
-            for d in item["match_dates"]:
-                assert d in monthly_dates, f"{d} is not a month-end trading date"
+                assert detect_frequency(d) == "daily"
 
     def test_mixed_freq_monthly_then_daily_match_dates_are_daily(self):
         class DailyScreener(ScreenerStrategy):
@@ -241,4 +275,164 @@ class TestBacktestEngine:
         for item in items:
             assert len(item["match_dates"]) > 0
             for d in item["match_dates"]:
+                assert detect_frequency(d) == "daily"
                 assert d in all_dates, f"{d} is not a daily trading date"
+
+
+class TestJoinModesScreenerBacktest:
+    def _make_data(self):
+        return {
+            "AAA.SH": _make_stock_df(100, seed=42, base_price=50.0),
+            "BBB.SZ": _make_stock_df(100, seed=43, base_price=100.0),
+        }
+
+    def test_independent_union(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[OddMonthScreener(), EvenMonthScreener()],
+            join_modes=["independent"],
+        )
+        result = engine.run()
+        items = result["screened_symbols"]
+        assert len(items) == 2
+        all_months = set()
+        for item in items:
+            for d in item["match_dates"]:
+                all_months.add(d)
+        assert len(all_months) > 1
+
+    def test_correlated_no_overlap(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[OddMonthScreener(), EvenMonthScreener()],
+            join_modes=["correlated"],
+        )
+        result = engine.run()
+        items = result["screened_symbols"]
+        assert len(items) == 0
+
+    def test_default_is_independent(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[OddMonthScreener(), EvenMonthScreener()],
+        )
+        result = engine.run()
+        items = result["screened_symbols"]
+        assert len(items) == 2
+
+    def test_frequency_format(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[OddMonthScreener()],
+        )
+        result = engine.run()
+        items = result["screened_symbols"]
+        assert len(items) > 0
+        for item in items:
+            for d in item["match_dates"]:
+                assert detect_frequency(d) == "monthly"
+
+    def test_mixed_freq_finest_output(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[AlwaysPassScreener(), OddMonthScreener()],
+            join_modes=["independent"],
+        )
+        result = engine.run()
+        items = result["screened_symbols"]
+        assert len(items) > 0
+        for item in items:
+            for d in item["match_dates"]:
+                assert detect_frequency(d) == "daily"
+
+
+class TestJoinModesScreenerOnly:
+    def _make_data(self):
+        return {
+            "AAA.SH": _make_stock_df(100, seed=42, base_price=50.0),
+            "BBB.SZ": _make_stock_df(100, seed=43, base_price=100.0),
+        }
+
+    def test_independent_union(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[FirstHalfScreener(), SecondHalfScreener()],
+            join_modes=["independent"],
+        )
+        result = engine.run(mode="screen")
+        assert len(result["screened_symbols"]) == 2
+
+    def test_correlated_intersection(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[FirstHalfScreener(), SecondHalfScreener()],
+            join_modes=["correlated"],
+        )
+        result = engine.run(mode="screen")
+        assert len(result["screened_symbols"]) == 0
+
+    def test_correlated_overlap(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[AlwaysPassScreener(), TopOneScreener()],
+            join_modes=["correlated"],
+        )
+        result = engine.run(mode="screen")
+        assert len(result["screened_symbols"]) == 1
+
+    def test_default_is_independent(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[FirstHalfScreener(), SecondHalfScreener()],
+        )
+        result = engine.run(mode="screen")
+        assert len(result["screened_symbols"]) == 2
+
+
+class TestJoinModesFullBacktest:
+    def _make_data(self):
+        return {
+            "AAA.SH": _make_stock_df(100, seed=42, base_price=50.0),
+            "BBB.SZ": _make_stock_df(100, seed=43, base_price=100.0),
+        }
+
+    def test_independent_has_trades(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[FirstHalfScreener(), SecondHalfScreener()],
+            trader=BuyAndHoldTrader(),
+            join_modes=["independent"],
+        )
+        result = engine.run()
+        assert len(result["trades"]) > 0
+
+    def test_correlated_no_overlap_no_trades(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[FirstHalfScreener(), SecondHalfScreener()],
+            trader=BuyAndHoldTrader(),
+            join_modes=["correlated"],
+        )
+        result = engine.run()
+        assert len(result["trades"]) == 0
+
+    def test_default_is_independent(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[FirstHalfScreener(), SecondHalfScreener()],
+            trader=BuyAndHoldTrader(),
+        )
+        result = engine.run()
+        assert len(result["trades"]) > 0

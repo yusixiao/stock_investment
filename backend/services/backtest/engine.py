@@ -1,3 +1,4 @@
+import logging
 from typing import Callable
 
 import pandas as pd
@@ -5,7 +6,10 @@ from services.backtest.base import ScreenerStrategy, TraderStrategy
 from services.backtest.broker import Broker
 from services.backtest.context import ScreenerContext, TraderContext
 from services.backtest.analyzer import compute_metrics
+from services.backtest.date_utils import format_match_date, date_belongs_to, detect_frequency, FREQ_ORDER
 from services.stock_data import aggregate_kline
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_screen_result(result):
@@ -28,6 +32,7 @@ class BacktestEngine:
         screeners: list[ScreenerStrategy],
         trader: TraderStrategy | None = None,
         on_progress: Callable[[int, int, str], None] | None = None,
+        join_modes: list[str] | None = None,
     ):
         self._stock_data = {}
         for sym, df in stock_data.items():
@@ -37,6 +42,11 @@ class BacktestEngine:
         self._trader = trader
         self._all_symbols = list(self._stock_data.keys())
         self._on_progress = on_progress
+
+        n = max(0, len(screeners) - 1)
+        self._join_modes = (join_modes or [])[:n]
+        while len(self._join_modes) < n:
+            self._join_modes.append("independent")
 
         self._weekly_data: dict[str, pd.DataFrame] = {}
         self._monthly_data: dict[str, pd.DataFrame] = {}
@@ -73,6 +83,91 @@ class BacktestEngine:
             monthly_data=self._monthly_data,
         )
 
+    def _pipeline_finest_freq(self) -> str:
+        best = "monthly"
+        for s in self._screeners:
+            f = getattr(s, "frequency", "daily")
+            if FREQ_ORDER.get(f, 0) < FREQ_ORDER.get(best, 0):
+                best = f
+        return best
+
+    def _finest_freq_in_result(self, result: dict[str, list[str]]) -> str:
+        best = "yearly"
+        for dates in result.values():
+            for d in dates:
+                f = detect_frequency(d)
+                if FREQ_ORDER.get(f, 0) < FREQ_ORDER.get(best, 99):
+                    best = f
+        return best
+
+    def _count_matches(self, result: dict[str, list[str]]) -> int:
+        return sum(len(v) for v in result.values())
+
+    def _union_results(self, a: dict[str, list[str]], b: dict[str, list[str]]) -> dict[str, list[str]]:
+        merged = {}
+        for sym in set(a) | set(b):
+            dates_a = a.get(sym, [])
+            dates_b = b.get(sym, [])
+            combined = list(dates_a)
+            for d in dates_b:
+                if d not in combined:
+                    combined.append(d)
+            merged[sym] = combined
+        return merged
+
+    def _intersect_results(self, prev: dict[str, list[str]], curr: dict[str, list[str]], coarse_freq: str, pair_idx: int) -> dict[str, list[str]]:
+        merged = {}
+        common_syms = set(prev) & set(curr)
+        for sym in common_syms:
+            kept = []
+            for d_prev in prev[sym]:
+                matched = False
+                for d_curr in curr[sym]:
+                    if date_belongs_to(d_prev, d_curr) or date_belongs_to(d_curr, d_prev):
+                        matched = True
+                        break
+                if matched:
+                    logger.debug("[Pair %d] %s: \"%s\" matched", pair_idx, sym, d_prev)
+                    kept.append(d_prev)
+                else:
+                    logger.debug("[Pair %d] %s: \"%s\" discarded", pair_idx, sym, d_prev)
+            for d_curr in curr[sym]:
+                already = False
+                for k in kept:
+                    if k == d_curr:
+                        already = True
+                        break
+                if not already:
+                    matched = False
+                    for d_prev in prev[sym]:
+                        if date_belongs_to(d_curr, d_prev) or date_belongs_to(d_prev, d_curr):
+                            matched = True
+                            break
+                    if matched:
+                        logger.debug("[Pair %d] %s: \"%s\" matched (from curr)", pair_idx, sym, d_curr)
+                        kept.append(d_curr)
+                    else:
+                        logger.debug("[Pair %d] %s: \"%s\" discarded (from curr)", pair_idx, sym, d_curr)
+            if kept:
+                merged[sym] = kept
+        return merged
+
+    def _filter_to_finest(self, merged: dict[str, list[str]], finest: str) -> dict[str, list[str]]:
+        finest_order = FREQ_ORDER[finest]
+        filtered = {}
+        for sym, dates in merged.items():
+            kept = []
+            for d in dates:
+                f = detect_frequency(d)
+                if FREQ_ORDER.get(f, 0) <= finest_order:
+                    logger.debug("[Output] %s: \"%s\" (%s) kept", sym, d, f)
+                    kept.append(d)
+                else:
+                    logger.debug("[Output] %s: \"%s\" (%s) discarded", sym, d, f)
+            if kept:
+                filtered[sym] = kept
+        return filtered
+
     def run(self, mode: str = "auto") -> dict:
         if mode == "screen":
             return self._run_screener_only()
@@ -84,14 +179,25 @@ class BacktestEngine:
         ref_sym = self._all_symbols[0]
         ref_df = self._stock_data[ref_sym]
         last_idx = len(ref_df) - 1
-        symbols = list(self._all_symbols)
+
+        screener_sets: list[set[str]] = []
         total = len(self._screeners)
         for i, screener in enumerate(self._screeners):
             self._report(i + 1, total, f"选股中 ({screener.__class__.__name__})")
             ctx = self._make_screener_ctx(screener, last_idx)
-            raw_result = screener.screen(ctx, symbols)
+            raw_result = screener.screen(ctx, list(self._all_symbols))
             symbols, _ = _parse_screen_result(raw_result)
-        return {"screened_symbols": symbols}
+            screener_sets.append(set(symbols))
+
+        merged = screener_sets[0] if screener_sets else set()
+        for i, mode in enumerate(self._join_modes):
+            next_set = screener_sets[i + 1]
+            if mode == "correlated":
+                merged = merged & next_set
+            else:
+                merged = merged | next_set
+
+        return {"screened_symbols": sorted(merged)}
 
     def _period_key(self, date_str: str, freq: str) -> str:
         if freq == "monthly":
@@ -122,20 +228,14 @@ class BacktestEngine:
         ref_df = self._stock_data[ref_sym]
         n_bars = len(ref_df)
 
-        match_history: dict[str, list[str]] = {}
+        raw_results: dict[int, dict[str, list[str]]] = {si: {} for si in range(len(self._screeners))}
         screener_cache: dict[int, list[str]] = {}
         prev_period_keys: dict[int, str] = {}
-
-        last_si = len(self._screeners) - 1
-        last_freq = getattr(self._screeners[last_si], "frequency", "daily")
-        last_custom_dates: dict[str, str] = {}
 
         for idx in range(n_bars):
             if idx % 10 == 0 or idx == n_bars - 1:
                 self._report(idx + 1, n_bars, "选股回测中")
             current_date = ref_df.iloc[idx]["date"]
-            symbols = list(self._all_symbols)
-            last_executed = False
 
             for si, screener in enumerate(self._screeners):
                 freq = getattr(screener, "frequency", "daily")
@@ -144,29 +244,47 @@ class BacktestEngine:
 
                 if need_run:
                     ctx = self._make_screener_ctx(screener, idx)
-                    raw_result = screener.screen(ctx, symbols)
+                    raw_result = screener.screen(ctx, list(self._all_symbols))
                     symbols, custom_dates = _parse_screen_result(raw_result)
                     screener_cache[si] = list(symbols)
-                    if si == last_si:
-                        last_custom_dates = custom_dates
                     prev_period_keys[si] = pk
-                    if si == last_si:
-                        last_executed = True
-                else:
-                    symbols = [s for s in symbols if s in screener_cache.get(si, [])]
 
-            if last_executed and symbols:
-                record_date = self._period_date(current_date, last_freq)
-                if record_date is None:
-                    continue
-                for sym in symbols:
-                    date_to_record = last_custom_dates.get(sym, record_date)
-                    history = match_history.setdefault(sym, [])
-                    if date_to_record not in history:
-                        history.append(date_to_record)
+                    record_date = self._period_date(current_date, freq)
+                    if record_date is None:
+                        continue
+                    formatted = format_match_date(record_date, freq)
+                    for sym in symbols:
+                        custom = custom_dates.get(sym)
+                        if custom:
+                            date_to_record = format_match_date(custom, freq)
+                        else:
+                            date_to_record = formatted
+                        logger.debug("[Format] %s(%s): %s match_date \"%s\" → \"%s\"",
+                                     screener.__class__.__name__, freq, sym, record_date, date_to_record)
+                        history = raw_results[si].setdefault(sym, [])
+                        if date_to_record not in history:
+                            history.append(date_to_record)
+
+        merged = raw_results[0] if raw_results else {}
+        for i, jm in enumerate(self._join_modes):
+            next_result = raw_results[i + 1]
+            freq_prev = getattr(self._screeners[i], "frequency", "daily") if i < len(self._screeners) else "daily"
+            freq_next = getattr(self._screeners[i + 1], "frequency", "daily")
+            coarse = freq_prev if FREQ_ORDER.get(freq_prev, 0) > FREQ_ORDER.get(freq_next, 0) else freq_next
+            if jm == "correlated":
+                logger.debug("[Pair %d] %s ∩ %s correlated: %d vs %d",
+                             i, freq_prev, freq_next, self._count_matches(merged), self._count_matches(next_result))
+                merged = self._intersect_results(merged, next_result, coarse, i)
+            else:
+                logger.debug("[Pair %d] %s ∪ %s independent: %d vs %d",
+                             i, freq_prev, freq_next, self._count_matches(merged), self._count_matches(next_result))
+                merged = self._union_results(merged, next_result)
+
+        finest = self._pipeline_finest_freq()
+        merged = self._filter_to_finest(merged, finest)
 
         result = []
-        for sym, dates in match_history.items():
+        for sym, dates in merged.items():
             result.append({"symbol": sym, "match_dates": dates})
         result.sort(key=lambda x: x["match_dates"][-1], reverse=True)
         return {"screened_symbols": result}
@@ -209,20 +327,30 @@ class BacktestEngine:
                 broker.fill_orders(ref_df.iloc[idx]["date"], current_bars, prev_closes)
 
             available_symbols = [s for s in self._all_symbols if s in current_bars]
-            symbols = list(available_symbols)
             current_date = ref_df.iloc[idx]["date"]
+
+            screener_sets: list[set[str]] = []
             for si, screener in enumerate(self._screeners):
                 freq = getattr(screener, "frequency", "daily")
                 pk = self._period_key(current_date, freq)
                 need_run = (si not in bt_prev_keys) or (pk != bt_prev_keys[si])
                 if need_run:
                     ctx = self._make_screener_ctx(screener, idx)
-                    raw_result = screener.screen(ctx, symbols)
+                    raw_result = screener.screen(ctx, list(available_symbols))
                     symbols, _ = _parse_screen_result(raw_result)
                     bt_screener_cache[si] = list(symbols)
                     bt_prev_keys[si] = pk
+                screener_sets.append(set(bt_screener_cache.get(si, [])))
+
+            merged_set = screener_sets[0] if screener_sets else set(available_symbols)
+            for i, jm in enumerate(self._join_modes):
+                next_set = screener_sets[i + 1]
+                if jm == "correlated":
+                    merged_set = merged_set & next_set
                 else:
-                    symbols = [s for s in symbols if s in bt_screener_cache.get(si, [])]
+                    merged_set = merged_set | next_set
+
+            symbols = [s for s in available_symbols if s in merged_set]
 
             trader_ctx = TraderContext(
                 stock_data=self._stock_data,
