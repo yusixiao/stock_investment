@@ -10,13 +10,18 @@
     </div>
     <div class="pipeline">
       <h3>当前管道 <span class="hint" v-if="!pipeline.length">点击左侧策略添加</span></h3>
-      <div v-for="(item, idx) in pipeline" :key="idx" class="pipeline-item">
-        <span class="step">{{ idx + 1 }}.</span>
-        <span :class="'badge ' + item.strategy_type">{{ item.strategy_type === 'screener' ? '筛选' : '交易' }}</span>
-        <span v-if="item.frequency" :class="'freq-badge freq-' + item.frequency">{{ freqLabel(item.frequency) }}</span>
-        <span class="name">{{ item.name }}</span>
-        <button class="remove-btn" @click="removeFromPipeline(idx)">✕</button>
-      </div>
+      <template v-for="(item, idx) in pipeline" :key="idx">
+        <div class="pipeline-item">
+          <span class="step">{{ idx + 1 }}.</span>
+          <span :class="'badge ' + item.strategy_type">{{ item.strategy_type === 'screener' ? '筛选' : '交易' }}</span>
+          <span v-if="item.frequency" :class="'freq-badge freq-' + item.frequency">{{ freqLabel(item.frequency) }}</span>
+          <span class="name">{{ item.name }}</span>
+          <button class="remove-btn" @click="removeFromPipeline(idx)">✕</button>
+        </div>
+        <div v-if="showJoinToggle(idx)" class="join-toggle" @click="toggleJoinMode(idx)">
+          <span :class="'join-badge join-' + getJoinMode(idx)">{{ getJoinMode(idx) === 'correlated' ? '关联' : '独立' }}</span>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -27,10 +32,11 @@ import { computed } from 'vue'
 const props = defineProps({
   strategies: { type: Array, default: () => [] },
   pipeline: { type: Array, default: () => [] },
+  joinModes: { type: Array, default: () => [] },
   mode: { type: String, default: 'backtest' },
 })
 
-const emit = defineEmits(['update:pipeline'])
+const emit = defineEmits(['update:pipeline', 'update:joinModes'])
 
 const availableStrategies = computed(() => {
   if (props.mode === 'screener') {
@@ -59,7 +65,50 @@ function addToPipeline(strategy) {
 const freqMap = { daily: '日线', weekly: '周线', monthly: '月线' }
 function freqLabel(f) { return freqMap[f] || f }
 
+function screenerIndices() {
+  return props.pipeline
+    .map((s, i) => s.strategy_type === 'screener' ? i : -1)
+    .filter(i => i >= 0)
+}
+
+function showJoinToggle(idx) {
+  const si = screenerIndices()
+  if (props.pipeline[idx]?.strategy_type !== 'screener') return false
+  const pos = si.indexOf(idx)
+  return pos >= 0 && pos < si.length - 1
+}
+
+function getJoinMode(idx) {
+  const si = screenerIndices()
+  const pos = si.indexOf(idx)
+  return (props.joinModes[pos]) || 'independent'
+}
+
+function toggleJoinMode(idx) {
+  const si = screenerIndices()
+  const pos = si.indexOf(idx)
+  if (pos < 0) return
+  const newModes = [...props.joinModes]
+  while (newModes.length <= pos) newModes.push('independent')
+  newModes[pos] = newModes[pos] === 'correlated' ? 'independent' : 'correlated'
+  emit('update:joinModes', newModes)
+}
+
 function removeFromPipeline(idx) {
+  const item = props.pipeline[idx]
+  if (item.strategy_type === 'screener') {
+    const si = screenerIndices()
+    const pos = si.indexOf(idx)
+    if (pos >= 0 && props.joinModes.length > 0) {
+      const newModes = [...props.joinModes]
+      if (pos < newModes.length) {
+        newModes.splice(pos, 1)
+      } else if (pos > 0 && pos - 1 < newModes.length) {
+        newModes.splice(pos - 1, 1)
+      }
+      emit('update:joinModes', newModes)
+    }
+  }
   const newPipeline = props.pipeline.filter((_, i) => i !== idx)
   emit('update:pipeline', newPipeline)
 }
@@ -83,4 +132,8 @@ function removeFromPipeline(idx) {
 .freq-weekly { background: #409eff; }
 .freq-monthly { background: #e6a23c; }
 .remove-btn { margin-left: auto; border: none; background: none; color: #f56c6c; cursor: pointer; font-size: 14px; }
+.join-toggle { display: flex; justify-content: center; margin: -4px 0 8px; cursor: pointer; }
+.join-badge { padding: 2px 10px; border-radius: 10px; font-size: 11px; user-select: none; }
+.join-independent { background: #e4e7ed; color: #909399; }
+.join-correlated { background: #fdf6ec; color: #e6a23c; border: 1px solid #e6a23c; }
 </style>

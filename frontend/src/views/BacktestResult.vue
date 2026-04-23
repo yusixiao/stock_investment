@@ -8,15 +8,20 @@
     <div v-if="pipelineInfo && pipelineInfo.length" class="pipeline-info">
       <h3>策略配置</h3>
       <p v-if="dateRange" class="date-range">回测区间: {{ dateRange }}</p>
-      <div v-for="(s, i) in pipelineInfo" :key="i" class="pipeline-item">
-        <span class="pi-step">{{ i + 1 }}.</span>
-        <span :class="'pi-type pi-' + s.strategy_type">{{ s.strategy_type === 'screener' ? '筛选' : '交易' }}</span>
-        <span v-if="s.frequency" :class="'pi-freq pi-freq-' + s.frequency">{{ freqLabel(s.frequency) }}</span>
-        <span class="pi-name">{{ s.name }}</span>
-        <span v-if="s.params && Object.keys(s.params).length" class="pi-params">
-          <span v-for="(v, k) in s.params" :key="k" class="pi-param">{{ k }}={{ v }}</span>
-        </span>
-      </div>
+      <template v-for="(s, i) in pipelineInfo" :key="i">
+        <div class="pipeline-item">
+          <span class="pi-step">{{ i + 1 }}.</span>
+          <span :class="'pi-type pi-' + s.strategy_type">{{ s.strategy_type === 'screener' ? '筛选' : '交易' }}</span>
+          <span v-if="s.frequency" :class="'pi-freq pi-freq-' + s.frequency">{{ freqLabel(s.frequency) }}</span>
+          <span class="pi-name">{{ s.name }}</span>
+          <span v-if="s.params && Object.keys(s.params).length" class="pi-params">
+            <span v-for="(v, k) in s.params" :key="k" class="pi-param">{{ k }}={{ v }}</span>
+          </span>
+        </div>
+        <div v-if="showJoinBadge(i)" class="join-mode-display">
+          <span :class="'join-badge join-' + getResultJoinMode(i)">{{ getResultJoinMode(i) === 'correlated' ? '关联' : '独立' }}</span>
+        </div>
+      </template>
     </div>
     <div v-if="sourceTaskId" class="source-info">
       来源任务:
@@ -82,6 +87,7 @@ const router = useRouter()
 const taskId = route.params.id
 const result = ref(null)
 const pipelineInfo = ref(null)
+const joinModesInfo = ref([])
 const dateRange = ref('')
 const loading = ref(true)
 const error = ref('')
@@ -92,10 +98,36 @@ const importName = ref('')
 const importError = ref('')
 const sourceTaskId = ref(null)
 
+function showJoinBadge(idx) {
+  if (!pipelineInfo.value) return false
+  const items = pipelineInfo.value
+  if (items[idx]?.strategy_type !== 'screener') return false
+  for (let j = idx + 1; j < items.length; j++) {
+    if (items[j]?.strategy_type === 'screener') return true
+  }
+  return false
+}
+
+function getResultJoinMode(idx) {
+  if (!pipelineInfo.value) return 'independent'
+  const screenerIdxs = pipelineInfo.value
+    .map((s, i) => s.strategy_type === 'screener' ? i : -1)
+    .filter(i => i >= 0)
+  const pos = screenerIdxs.indexOf(idx)
+  return (joinModesInfo.value && joinModesInfo.value[pos]) || 'independent'
+}
+
 onMounted(async () => {
   try {
     const { data } = await fetchBacktestResult(taskId)
-    pipelineInfo.value = data.pipeline_info || null
+    const rawPi = data.pipeline_info || null
+    if (rawPi) {
+      pipelineInfo.value = Array.isArray(rawPi) ? rawPi : (rawPi.strategies || [])
+      joinModesInfo.value = rawPi.join_modes || []
+    } else {
+      pipelineInfo.value = null
+      joinModesInfo.value = []
+    }
     sourceTaskId.value = data.source_task_id || null
     const sd = data.start_date || '最早'
     const ed = data.end_date || '最新'
@@ -173,4 +205,8 @@ async function onImport() {
 .screener-result-header h2 { margin: 0; }
 .btn-chain { background: #409eff; color: white; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .btn-chain:hover { background: #66b1ff; }
+.join-mode-display { display: flex; justify-content: center; margin: -2px 0 4px; }
+.join-badge { padding: 2px 10px; border-radius: 10px; font-size: 11px; }
+.join-independent { background: #e4e7ed; color: #909399; }
+.join-correlated { background: #fdf6ec; color: #e6a23c; border: 1px solid #e6a23c; }
 </style>

@@ -10,7 +10,7 @@
       </div>
       <button class="btn-clear-source" @click="clearSource">清除来源</button>
     </div>
-    <PipelineBuilder :strategies="strategies" v-model:pipeline="pipeline" mode="backtest" />
+    <PipelineBuilder :strategies="strategies" v-model:pipeline="pipeline" v-model:joinModes="joinModes" mode="backtest" />
     <ParamEditor :pipeline="pipeline" @update:overrides="overrides = $event" />
     <div class="date-range">
       <label>开始日期: <input v-model="startDate" type="date" :disabled="!!sourceInfo" /></label>
@@ -73,6 +73,7 @@ const route = useRoute()
 
 const strategies = ref([])
 const pipeline = ref([])
+const joinModes = ref([])
 const overrides = ref({})
 const startDate = ref('')
 const endDate = ref('')
@@ -125,6 +126,9 @@ async function runBacktestPipeline() {
   const body = {
     pipeline: pipeline.value.map(s => ({ filepath: s.filepath, class_name: s.class_name })),
     param_overrides: overrides.value,
+  }
+  if (joinModes.value.length > 0) {
+    body.join_modes = joinModes.value
   }
   if (sourceTaskId.value) {
     body.source_task_id = sourceTaskId.value
