@@ -52,6 +52,7 @@ def api_run_backtest(body: dict = Body(...)):
     end_date = body.get("end_date")
     param_overrides = body.get("param_overrides", {})
     source_task_id = body.get("source_task_id")
+    join_modes = body.get("join_modes")
 
     if not pipeline:
         raise HTTPException(status_code=400, detail="Pipeline cannot be empty")
@@ -91,7 +92,7 @@ def api_run_backtest(body: dict = Body(...)):
             screeners.append(instance)
 
     task_type = "backtest" if trader else "screener"
-    pipeline_info = []
+    screener_infos = []
     for item in pipeline:
         cls_name = item["class_name"]
         overrides = param_overrides.get(cls_name, {})
@@ -106,7 +107,10 @@ def api_run_backtest(body: dict = Body(...)):
             defaults = {k: v["default"] for k, v in getattr(cls, "params", {}).items()}
             merged = {**defaults, **overrides}
             info["params"] = merged
-        pipeline_info.append(info)
+        screener_infos.append(info)
+    pipeline_info = {"strategies": screener_infos}
+    if join_modes:
+        pipeline_info["join_modes"] = join_modes
     task_id = task_manager.create_task(task_type=task_type, pipeline_info=pipeline_info, start_date=start_date, end_date=end_date, source_task_id=source_task_id)
 
     def on_progress(current, total, phase):
@@ -117,7 +121,7 @@ def api_run_backtest(body: dict = Body(...)):
             task_manager.update_progress(task_id, 0, 0, "加载数据中...")
             stock_data = _load_stock_data(start_date, end_date, symbols)
             task_manager.update_progress(task_id, len(stock_data), len(stock_data), f"数据加载完成 ({len(stock_data)} 只)")
-            engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=trader, on_progress=on_progress)
+            engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=trader, on_progress=on_progress, join_modes=join_modes)
             result = engine.run()
             result = _safe_json(result)
             task_manager.complete_task(task_id, result)

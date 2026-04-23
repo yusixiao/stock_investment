@@ -217,6 +217,105 @@ class TestChainBacktest:
         mock_load.assert_called_once_with(None, None, ["000001", "600036"])
 
 
+class TestJoinModesAPI:
+    @patch("routers.backtest._load_stock_data")
+    def test_join_modes_passed_to_engine(self, mock_load):
+        import pandas as pd
+        import numpy as np
+        n = 30
+        np.random.seed(42)
+        close = 100 + np.cumsum(np.random.randn(n))
+        df = pd.DataFrame({
+            "date": pd.date_range("2024-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist(),
+            "open": close, "high": close + 1, "low": close - 1,
+            "close": close, "volume": [1e6] * n, "amount": [1e7] * n,
+        })
+        mock_load.return_value = {"TEST.SH": df}
+
+        from pathlib import Path
+        strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+
+        with patch("routers.backtest.BacktestEngine") as mock_engine_cls:
+            mock_engine = MagicMock()
+            mock_engine.run.return_value = {"screened_symbols": []}
+            mock_engine_cls.return_value = mock_engine
+
+            resp = client.post("/api/backtest/run", json={
+                "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
+                "join_modes": ["AND", "OR"],
+            })
+            assert resp.status_code == 200
+
+            import time
+            time.sleep(0.5)
+
+            mock_engine_cls.assert_called_once()
+            call_kwargs = mock_engine_cls.call_args[1]
+            assert call_kwargs["join_modes"] == ["AND", "OR"]
+
+    @patch("routers.backtest._load_stock_data")
+    def test_join_modes_in_pipeline_info(self, mock_load, isolated_task_manager):
+        import pandas as pd
+        import numpy as np
+        n = 30
+        np.random.seed(42)
+        close = 100 + np.cumsum(np.random.randn(n))
+        df = pd.DataFrame({
+            "date": pd.date_range("2024-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist(),
+            "open": close, "high": close + 1, "low": close - 1,
+            "close": close, "volume": [1e6] * n, "amount": [1e7] * n,
+        })
+        mock_load.return_value = {"TEST.SH": df}
+
+        from pathlib import Path
+        strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+
+        resp = client.post("/api/backtest/run", json={
+            "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
+            "join_modes": ["AND"],
+        })
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+
+        result = isolated_task_manager.get_result(task_id)
+        pi = result["pipeline_info"]
+        assert isinstance(pi, dict)
+        assert "strategies" in pi
+        assert pi["join_modes"] == ["AND"]
+
+    @patch("routers.backtest._load_stock_data")
+    def test_join_modes_default_when_missing(self, mock_load, isolated_task_manager):
+        import pandas as pd
+        import numpy as np
+        n = 30
+        np.random.seed(42)
+        close = 100 + np.cumsum(np.random.randn(n))
+        df = pd.DataFrame({
+            "date": pd.date_range("2024-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist(),
+            "open": close, "high": close + 1, "low": close - 1,
+            "close": close, "volume": [1e6] * n, "amount": [1e7] * n,
+        })
+        mock_load.return_value = {"TEST.SH": df}
+
+        from pathlib import Path
+        strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
+        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+
+        resp = client.post("/api/backtest/run", json={
+            "pipeline": [{"filepath": screener_path, "class_name": "MaTangleBreakoutScreener"}],
+        })
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+
+        result = isolated_task_manager.get_result(task_id)
+        pi = result["pipeline_info"]
+        assert isinstance(pi, dict)
+        assert "strategies" in pi
+        assert "join_modes" not in pi
+
+
 class TestSoftDeleteApi:
     def test_delete_task(self, isolated_task_manager):
         task_id = isolated_task_manager.create_task(task_type="screener")

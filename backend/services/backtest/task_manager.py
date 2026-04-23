@@ -49,7 +49,7 @@ class TaskManager:
         finally:
             conn.close()
 
-    def create_task(self, task_type: str = "screener", pipeline_info: list[dict] | None = None, start_date: str | None = None, end_date: str | None = None, source_task_id: str | None = None) -> str:
+    def create_task(self, task_type: str = "screener", pipeline_info: list[dict] | dict | None = None, start_date: str | None = None, end_date: str | None = None, source_task_id: str | None = None) -> str:
         task_id = str(uuid.uuid4())[:8]
         pi_json = json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
         conn = self._get_conn()
