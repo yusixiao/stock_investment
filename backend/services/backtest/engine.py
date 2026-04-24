@@ -35,6 +35,7 @@ class BacktestEngine:
         join_modes: list[str] | None = None,
         valuation_data: dict[str, pd.DataFrame] | None = None,
         dividend_data: dict[str, pd.DataFrame] | None = None,
+        financial_data: dict[str, pd.DataFrame] | None = None,
         source_matches: dict[str, list[str]] | None = None,
     ):
         self._stock_data = {}
@@ -47,6 +48,7 @@ class BacktestEngine:
         self._on_progress = on_progress
         self._valuation_data = valuation_data or {}
         self._dividend_data = dividend_data or {}
+        self._financial_data = financial_data or {}
         self._source_matches = source_matches
 
         n = max(0, len(screeners) - 1)
@@ -89,6 +91,7 @@ class BacktestEngine:
             monthly_data=self._monthly_data,
             valuation_data=self._valuation_data,
             dividend_data=self._dividend_data,
+            financial_data=self._financial_data,
         )
 
     def _pipeline_finest_freq(self) -> str:
@@ -409,6 +412,7 @@ class BacktestEngine:
                 monthly_data=self._monthly_data,
                 valuation_data=self._valuation_data,
                 dividend_data=self._dividend_data,
+                financial_data=self._financial_data,
             )
 
             try:

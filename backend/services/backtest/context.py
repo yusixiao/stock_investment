@@ -15,12 +15,14 @@ class ScreenerContext:
         monthly_data: dict[str, pd.DataFrame] | None = None,
         valuation_data: dict[str, pd.DataFrame] | None = None,
         dividend_data: dict[str, pd.DataFrame] | None = None,
+        financial_data: dict[str, pd.DataFrame] | None = None,
     ):
         self._daily_data = stock_data
         self._weekly_data = weekly_data or {}
         self._monthly_data = monthly_data or {}
         self._valuation_data = valuation_data or {}
         self._dividend_data = dividend_data or {}
+        self._financial_data = financial_data or {}
         self._current_idx = current_idx
         self._frequency = frequency
         self._indicator_cache: dict[str, pd.DataFrame] = {}
@@ -101,6 +103,29 @@ class ScreenerContext:
         if df is None or df.empty:
             return None
         return df
+
+    def get_financial(self, symbol: str) -> dict | None:
+        df = self._financial_data.get(symbol)
+        if df is None or df.empty:
+            return None
+        dates = df["报告期"]
+        if len(dates) > 0 and not isinstance(dates.iloc[0], str):
+            dates = dates.astype(str)
+        mask = dates <= self._current_date
+        if not mask.any():
+            return None
+        row = df.loc[mask].iloc[-1]
+        result = {}
+        for col in df.columns:
+            if col in ("报告期", "股票代码", "股票简称", "所处行业", "最新公告日期"):
+                result[col] = row[col]
+                continue
+            val = row[col]
+            if isinstance(val, float) and math.isnan(val):
+                result[col] = None
+            else:
+                result[col] = float(val) if isinstance(val, (int, float)) else val
+        return result
 
     def _get_precomputed(self, symbol: str, freq: str) -> pd.DataFrame | None:
         cache_key = f"{symbol}_{freq}"
@@ -215,8 +240,9 @@ class TraderContext(ScreenerContext):
         monthly_data: dict[str, pd.DataFrame] | None = None,
         valuation_data: dict[str, pd.DataFrame] | None = None,
         dividend_data: dict[str, pd.DataFrame] | None = None,
+        financial_data: dict[str, pd.DataFrame] | None = None,
     ):
-        super().__init__(stock_data, current_idx, "daily", weekly_data, monthly_data, valuation_data, dividend_data)
+        super().__init__(stock_data, current_idx, "daily", weekly_data, monthly_data, valuation_data, dividend_data, financial_data)
         self._portfolio = portfolio
         self._broker_submit = broker_submit
         self.selected_symbols = selected_symbols

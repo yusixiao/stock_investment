@@ -4,7 +4,7 @@ import pandas as pd
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Body
 
-from config import QFQ_KLINE_DIR, STRATEGY_DIR, VALUATION_DIR, DIVIDEND_DIR
+from config import QFQ_KLINE_DIR, STRATEGY_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
 from services.backtest.strategy_loader import scan_strategies, load_strategy_from_file
 from services.backtest.engine import BacktestEngine
 from services.backtest.base import ScreenerStrategy, TraderStrategy
@@ -138,8 +138,9 @@ def api_run_backtest(body: dict = Body(...)):
             stock_data = _load_stock_data(start_date, end_date, symbols)
             valuation_data = _load_valuation_data(list(stock_data.keys()))
             dividend_data = _load_dividend_data(list(stock_data.keys()))
+            financial_data = _load_financial_data(list(stock_data.keys()))
             task_manager.update_progress(task_id, len(stock_data), len(stock_data), f"数据加载完成 ({len(stock_data)} 只)")
-            engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=trader, on_progress=on_progress, join_modes=join_modes, valuation_data=valuation_data, dividend_data=dividend_data, source_matches=source_matches)
+            engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=trader, on_progress=on_progress, join_modes=join_modes, valuation_data=valuation_data, dividend_data=dividend_data, financial_data=financial_data, source_matches=source_matches)
             result = engine.run()
             result = _safe_json(result)
             task_manager.complete_task(task_id, result)
@@ -176,6 +177,17 @@ def api_list_tasks(show_deleted: bool = False):
 def api_delete_task(task_id: str):
     task_manager.delete_task(task_id)
     return {"ok": True}
+
+
+def _load_financial_data(symbols: list[str]) -> dict[str, pd.DataFrame]:
+    financial_data = {}
+    for sym in symbols:
+        filepath = FINANCIAL_DIR / f"{sym}.parquet"
+        if filepath.exists():
+            df = pd.read_parquet(filepath)
+            df = df.sort_values("报告期").reset_index(drop=True)
+            financial_data[sym] = df
+    return financial_data
 
 
 def _load_dividend_data(symbols: list[str]) -> dict[str, pd.DataFrame]:
