@@ -436,3 +436,84 @@ class TestJoinModesFullBacktest:
         )
         result = engine.run()
         assert len(result["trades"]) > 0
+
+
+class TestSourceMatches:
+    def _make_data(self):
+        return {
+            "A": _make_stock_df(100, seed=1),
+            "B": _make_stock_df(100, seed=2),
+        }
+
+    def test_source_matches_filters_screener_backtest(self):
+        data = self._make_data()
+        source_matches = {
+            "A": ["2024-01-01"],
+        }
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[AlwaysPassScreener()],
+            source_matches=source_matches,
+        )
+        result = engine.run()
+        syms = [item["symbol"] for item in result["screened_symbols"]]
+        assert "A" in syms
+        assert "B" not in syms
+        a_item = next(i for i in result["screened_symbols"] if i["symbol"] == "A")
+        assert len(a_item["match_dates"]) > 0
+
+    def test_source_matches_filters_screen_mode(self):
+        data = self._make_data()
+        source_matches = {
+            "A": ["2024-01-01"],
+        }
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[AlwaysPassScreener()],
+            source_matches=source_matches,
+        )
+        result = engine.run(mode="screen")
+        assert "A" in result["screened_symbols"]
+        assert "B" not in result["screened_symbols"]
+
+    def test_source_matches_no_overlap(self):
+        data = self._make_data()
+        source_matches = {
+            "X": ["2024-01-01"],
+        }
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[AlwaysPassScreener()],
+            source_matches=source_matches,
+        )
+        result = engine.run()
+        assert result["screened_symbols"] == []
+
+    def test_source_matches_none_no_filter(self):
+        data = self._make_data()
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[AlwaysPassScreener()],
+            source_matches=None,
+        )
+        result = engine.run()
+        syms = [item["symbol"] for item in result["screened_symbols"]]
+        assert "A" in syms
+        assert "B" in syms
+
+    def test_source_matches_cross_frequency(self):
+        data = self._make_data()
+        source_matches = {
+            "A": ["2024-01"],
+        }
+        engine = BacktestEngine(
+            stock_data=data,
+            screeners=[AlwaysPassScreener()],
+            source_matches=source_matches,
+        )
+        result = engine.run()
+        syms = [item["symbol"] for item in result["screened_symbols"]]
+        assert "A" in syms
+        a_item = next(i for i in result["screened_symbols"] if i["symbol"] == "A")
+        for d in a_item["match_dates"]:
+            assert d.startswith("2024-01")

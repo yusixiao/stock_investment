@@ -47,12 +47,28 @@
       <span>跳过: {{ divResult.skipped }}</span>
       <span>失败: {{ divResult.failed }}</span>
     </div>
+
+    <div class="status-row" style="margin-top: 12px;">
+      <span class="status-label">财报数据:</span>
+      <span :class="['status-badge', finStatusClass]">{{ finStatusText }}</span>
+      <button :disabled="finStatus === 'running'" @click="triggerFinUpdate('full')">全量拉取</button>
+      <button :disabled="finStatus === 'running'" @click="triggerFinUpdate('incremental')">增量更新</button>
+    </div>
+    <div v-if="finProgress && finStatus === 'running'" class="status-detail">
+      <span>{{ finProgress.phase }}: {{ finProgress.current }}/{{ finProgress.total }}</span>
+      <span>({{ Math.round(finProgress.current / finProgress.total * 100) }}%)</span>
+    </div>
+    <div v-if="finResult && finStatus !== 'running'" class="status-detail">
+      <span>成功: {{ finResult.success }}</span>
+      <span>失败: {{ finResult.failed }}</span>
+      <span>写入: {{ finResult.total_saved }}条</span>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { fetchUpdateStatus, triggerUpdate as apiTriggerUpdate, triggerValuationUpdate, fetchValuationStatus, triggerDividendUpdate, fetchDividendStatus } from '../api'
+import { fetchUpdateStatus, triggerUpdate as apiTriggerUpdate, triggerValuationUpdate, fetchValuationStatus, triggerDividendUpdate, fetchDividendStatus, triggerFinancialUpdate, fetchFinancialStatus } from '../api'
 
 const status = ref('idle')
 const result = ref(null)
@@ -68,6 +84,11 @@ const divStatus = ref('idle')
 const divProgress = ref(null)
 const divResult = ref(null)
 let divTimer = null
+
+const finStatus = ref('idle')
+const finProgress = ref(null)
+const finResult = ref(null)
+let finTimer = null
 
 const statusText = computed(() => {
   const map = { idle: '空闲', running: '进行中', success: '成功', failed: '失败' }
@@ -89,6 +110,13 @@ const divStatusText = computed(() => {
 })
 
 const divStatusClass = computed(() => divStatus.value)
+
+const finStatusText = computed(() => {
+  const map = { idle: '空闲', running: '进行中', success: '成功', failed: '失败' }
+  return map[finStatus.value] || finStatus.value
+})
+
+const finStatusClass = computed(() => finStatus.value)
 
 async function pollStatus() {
   try {
@@ -156,16 +184,43 @@ async function triggerDivUpdate(mode) {
   }
 }
 
+async function pollFinStatus() {
+  try {
+    const { data } = await fetchFinancialStatus()
+    finStatus.value = data.status
+    finProgress.value = data.progress
+    if (data.status !== 'running') {
+      finResult.value = data.result
+      if (finTimer) {
+        clearInterval(finTimer)
+        finTimer = null
+      }
+    }
+  } catch {}
+}
+
+async function triggerFinUpdate(mode) {
+  await triggerFinancialUpdate(mode)
+  finStatus.value = 'running'
+  finProgress.value = null
+  finResult.value = null
+  if (!finTimer) {
+    finTimer = setInterval(pollFinStatus, 2000)
+  }
+}
+
 onMounted(() => {
   pollStatus()
   pollValStatus()
   pollDivStatus()
+  pollFinStatus()
 })
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
   if (valTimer) clearInterval(valTimer)
   if (divTimer) clearInterval(divTimer)
+  if (finTimer) clearInterval(finTimer)
 })
 </script>
 

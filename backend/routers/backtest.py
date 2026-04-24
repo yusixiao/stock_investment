@@ -4,7 +4,7 @@ import pandas as pd
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Body
 
-from config import QFQ_KLINE_DIR, STRATEGY_DIR
+from config import QFQ_KLINE_DIR, STRATEGY_DIR, VALUATION_DIR, DIVIDEND_DIR
 from services.backtest.strategy_loader import scan_strategies, load_strategy_from_file
 from services.backtest.engine import BacktestEngine
 from services.backtest.base import ScreenerStrategy, TraderStrategy
@@ -38,6 +38,20 @@ def _extract_symbols(screened_symbols: list) -> list[str]:
     return [item["symbol"] for item in screened_symbols]
 
 
+def _extract_source_matches(screened_symbols: list) -> dict[str, list[str]] | None:
+    if not screened_symbols:
+        return None
+    if isinstance(screened_symbols[0], str):
+        return None
+    result = {}
+    for item in screened_symbols:
+        sym = item["symbol"]
+        dates = item.get("match_dates", [])
+        if dates:
+            result[sym] = dates
+    return result if result else None
+
+
 @router.get("/strategies")
 def api_list_strategies():
     if not STRATEGY_DIR.exists():
@@ -58,6 +72,7 @@ def api_run_backtest(body: dict = Body(...)):
         raise HTTPException(status_code=400, detail="Pipeline cannot be empty")
 
     symbols = None
+    source_matches = None
     if source_task_id:
         src_result = task_manager.get_result(source_task_id)
         if src_result is None:
@@ -72,6 +87,7 @@ def api_run_backtest(body: dict = Body(...)):
         if not syms:
             raise HTTPException(status_code=400, detail=f"源任务 {source_task_id} 未选出任何股票")
         symbols = syms
+        source_matches = _extract_source_matches(screened)
         start_date = src_result.get("start_date") or start_date
         end_date = src_result.get("end_date") or end_date
 
@@ -120,8 +136,10 @@ def api_run_backtest(body: dict = Body(...)):
         try:
             task_manager.update_progress(task_id, 0, 0, "加载数据中...")
             stock_data = _load_stock_data(start_date, end_date, symbols)
+            valuation_data = _load_valuation_data(list(stock_data.keys()))
+            dividend_data = _load_dividend_data(list(stock_data.keys()))
             task_manager.update_progress(task_id, len(stock_data), len(stock_data), f"数据加载完成 ({len(stock_data)} 只)")
-            engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=trader, on_progress=on_progress, join_modes=join_modes)
+            engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=trader, on_progress=on_progress, join_modes=join_modes, valuation_data=valuation_data, dividend_data=dividend_data, source_matches=source_matches)
             result = engine.run()
             result = _safe_json(result)
             task_manager.complete_task(task_id, result)
@@ -158,6 +176,27 @@ def api_list_tasks(show_deleted: bool = False):
 def api_delete_task(task_id: str):
     task_manager.delete_task(task_id)
     return {"ok": True}
+
+
+def _load_dividend_data(symbols: list[str]) -> dict[str, pd.DataFrame]:
+    dividend_data = {}
+    for sym in symbols:
+        filepath = DIVIDEND_DIR / f"{sym}.parquet"
+        if filepath.exists():
+            df = pd.read_parquet(filepath)
+            dividend_data[sym] = df
+    return dividend_data
+
+
+def _load_valuation_data(symbols: list[str]) -> dict[str, pd.DataFrame]:
+    valuation_data = {}
+    for sym in symbols:
+        filepath = VALUATION_DIR / f"{sym}.parquet"
+        if filepath.exists():
+            df = pd.read_parquet(filepath)
+            df = df.sort_values("date").reset_index(drop=True)
+            valuation_data[sym] = df
+    return valuation_data
 
 
 def _load_stock_data(start_date: str = None, end_date: str = None, symbols: list[str] = None) -> dict[str, pd.DataFrame]:

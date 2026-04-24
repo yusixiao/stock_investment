@@ -6,6 +6,7 @@ RAW_KLINE_DIR = DATA_DIR / "kline" / "A" / "raw"
 QFQ_KLINE_DIR = DATA_DIR / "kline" / "A" / "qfq"
 VALUATION_DIR = DATA_DIR / "valuation" / "A"
 DIVIDEND_DIR = DATA_DIR / "dividend" / "A"
+FINANCIAL_DIR = DATA_DIR / "financial" / "A"
 INDICATOR_DIR = DATA_DIR / "indicators" / "A"
 STRATEGY_DIR = BASE_DIR / "strategies"
 LOG_DIR = DATA_DIR / "logs"
@@ -14,6 +15,7 @@ PORTFOLIO_DB = DATA_DIR / "portfolio.db"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 VALUATION_DIR.mkdir(parents=True, exist_ok=True)
 DIVIDEND_DIR.mkdir(parents=True, exist_ok=True)
+FINANCIAL_DIR.mkdir(parents=True, exist_ok=True)
 
 UPDATE_LOG_FILE = LOG_DIR / "update_log.json"
 UPDATE_PROGRESS_FILE = LOG_DIR / "update_progress.log"

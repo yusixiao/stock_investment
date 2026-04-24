@@ -42,6 +42,14 @@ export function fetchDividendStatus() {
   return api.get('/dividend/update/status')
 }
 
+export function triggerFinancialUpdate(mode = 'full') {
+  return api.post('/financial/update', { mode })
+}
+
+export function fetchFinancialStatus() {
+  return api.get('/financial/update/status')
+}
+
 export function fetchStrategies() {
   return api.get('/backtest/strategies')
 }

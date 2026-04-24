@@ -9,6 +9,7 @@ from routers.screener import router as screener_router
 from routers.portfolio import router as portfolio_router
 from routers.valuation import router as valuation_router
 from routers.dividend import router as dividend_router
+from routers.financial import router as financial_router
 from scheduler import start_scheduler, shutdown_scheduler
 
 
@@ -38,6 +39,7 @@ app.include_router(screener_router)
 app.include_router(portfolio_router)
 app.include_router(valuation_router)
 app.include_router(dividend_router)
+app.include_router(financial_router)
 
 
 @app.get("/api/health")

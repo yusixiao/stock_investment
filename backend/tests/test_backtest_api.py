@@ -217,6 +217,33 @@ class TestChainBacktest:
         mock_load.assert_called_once_with(None, None, ["000001", "600036"])
 
 
+class TestExtractSourceMatches:
+    def test_dict_format_with_match_dates(self):
+        from routers.backtest import _extract_source_matches
+        screened = [
+            {"symbol": "A", "match_dates": ["2024-01", "2024-02"]},
+            {"symbol": "B", "match_dates": ["2024-03"]},
+        ]
+        result = _extract_source_matches(screened)
+        assert result == {"A": ["2024-01", "2024-02"], "B": ["2024-03"]}
+
+    def test_flat_symbol_list_returns_none(self):
+        from routers.backtest import _extract_source_matches
+        result = _extract_source_matches(["A", "B"])
+        assert result is None
+
+    def test_empty_list_returns_none(self):
+        from routers.backtest import _extract_source_matches
+        result = _extract_source_matches([])
+        assert result is None
+
+    def test_dict_without_match_dates(self):
+        from routers.backtest import _extract_source_matches
+        screened = [{"symbol": "A"}, {"symbol": "B"}]
+        result = _extract_source_matches(screened)
+        assert result is None
+
+
 class TestJoinModesAPI:
     @patch("routers.backtest._load_stock_data")
     def test_join_modes_passed_to_engine(self, mock_load):

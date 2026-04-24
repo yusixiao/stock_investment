@@ -33,6 +33,9 @@ class BacktestEngine:
         trader: TraderStrategy | None = None,
         on_progress: Callable[[int, int, str], None] | None = None,
         join_modes: list[str] | None = None,
+        valuation_data: dict[str, pd.DataFrame] | None = None,
+        dividend_data: dict[str, pd.DataFrame] | None = None,
+        source_matches: dict[str, list[str]] | None = None,
     ):
         self._stock_data = {}
         for sym, df in stock_data.items():
@@ -42,6 +45,9 @@ class BacktestEngine:
         self._trader = trader
         self._all_symbols = list(self._stock_data.keys())
         self._on_progress = on_progress
+        self._valuation_data = valuation_data or {}
+        self._dividend_data = dividend_data or {}
+        self._source_matches = source_matches
 
         n = max(0, len(screeners) - 1)
         self._join_modes = (join_modes or [])[:n]
@@ -81,6 +87,8 @@ class BacktestEngine:
             frequency=getattr(screener, "frequency", "daily"),
             weekly_data=self._weekly_data,
             monthly_data=self._monthly_data,
+            valuation_data=self._valuation_data,
+            dividend_data=self._dividend_data,
         )
 
     def _pipeline_finest_freq(self) -> str:
@@ -168,11 +176,49 @@ class BacktestEngine:
                 filtered[sym] = kept
         return filtered
 
+    def _apply_source_matches(self, result: dict) -> dict:
+        if self._source_matches is None:
+            return result
+        screened = result.get("screened_symbols")
+        if screened is None:
+            return result
+
+        if isinstance(screened, list) and screened and isinstance(screened[0], str):
+            filtered = [s for s in screened if s in self._source_matches]
+            result["screened_symbols"] = filtered
+            return result
+
+        new_result = result.get("screened_symbols", [])
+        merged = {}
+        for item in new_result:
+            sym = item["symbol"]
+            if sym not in self._source_matches:
+                continue
+            src_dates = self._source_matches[sym]
+            new_dates = item.get("match_dates", [])
+            kept = []
+            for nd in new_dates:
+                for sd in src_dates:
+                    if date_belongs_to(nd, sd) or date_belongs_to(sd, nd):
+                        kept.append(nd)
+                        break
+            if kept:
+                merged[sym] = kept
+
+        filtered = []
+        for sym, dates in merged.items():
+            filtered.append({"symbol": sym, "match_dates": dates})
+        filtered.sort(key=lambda x: x["match_dates"][-1], reverse=True)
+        result["screened_symbols"] = filtered
+        return result
+
     def run(self, mode: str = "auto") -> dict:
         if mode == "screen":
-            return self._run_screener_only()
+            result = self._run_screener_only()
+            return self._apply_source_matches(result)
         if self._trader is None:
-            return self._run_screener_backtest()
+            result = self._run_screener_backtest()
+            return self._apply_source_matches(result)
         return self._run_backtest()
 
     def _run_screener_only(self) -> dict:
@@ -361,6 +407,8 @@ class BacktestEngine:
                 days_since_rebalance=days_since_rebalance,
                 weekly_data=self._weekly_data,
                 monthly_data=self._monthly_data,
+                valuation_data=self._valuation_data,
+                dividend_data=self._dividend_data,
             )
 
             try:

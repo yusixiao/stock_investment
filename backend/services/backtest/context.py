@@ -13,10 +13,14 @@ class ScreenerContext:
         frequency: str = "daily",
         weekly_data: dict[str, pd.DataFrame] | None = None,
         monthly_data: dict[str, pd.DataFrame] | None = None,
+        valuation_data: dict[str, pd.DataFrame] | None = None,
+        dividend_data: dict[str, pd.DataFrame] | None = None,
     ):
         self._daily_data = stock_data
         self._weekly_data = weekly_data or {}
         self._monthly_data = monthly_data or {}
+        self._valuation_data = valuation_data or {}
+        self._dividend_data = dividend_data or {}
         self._current_idx = current_idx
         self._frequency = frequency
         self._indicator_cache: dict[str, pd.DataFrame] = {}
@@ -64,6 +68,39 @@ class ScreenerContext:
         start = max(0, idx - n + 1)
         end = idx + 1
         return df.iloc[start:end].to_dict(orient="records")
+
+    def get_valuation(self, symbol: str) -> dict | None:
+        df = self._valuation_data.get(symbol)
+        if df is None or df.empty:
+            return None
+        dates = df["date"]
+        if len(dates) > 0 and not isinstance(dates.iloc[0], str):
+            dates = dates.astype(str)
+        mask = dates <= self._current_date
+        if not mask.any():
+            return None
+        row = df.loc[mask].iloc[-1]
+        result = {}
+        for col in df.columns:
+            if col == "date":
+                result[col] = row[col]
+                continue
+            val = row[col]
+            if isinstance(val, float) and math.isnan(val):
+                sub_mask = mask & df[col].notna()
+                if sub_mask.any():
+                    result[col] = float(df.loc[sub_mask, col].iloc[-1])
+                else:
+                    result[col] = None
+            else:
+                result[col] = float(val) if val is not None else None
+        return result
+
+    def get_dividend(self, symbol: str) -> pd.DataFrame | None:
+        df = self._dividend_data.get(symbol)
+        if df is None or df.empty:
+            return None
+        return df
 
     def _get_precomputed(self, symbol: str, freq: str) -> pd.DataFrame | None:
         cache_key = f"{symbol}_{freq}"
@@ -176,8 +213,10 @@ class TraderContext(ScreenerContext):
         days_since_rebalance: int = 0,
         weekly_data: dict[str, pd.DataFrame] | None = None,
         monthly_data: dict[str, pd.DataFrame] | None = None,
+        valuation_data: dict[str, pd.DataFrame] | None = None,
+        dividend_data: dict[str, pd.DataFrame] | None = None,
     ):
-        super().__init__(stock_data, current_idx, "daily", weekly_data, monthly_data)
+        super().__init__(stock_data, current_idx, "daily", weekly_data, monthly_data, valuation_data, dividend_data)
         self._portfolio = portfolio
         self._broker_submit = broker_submit
         self.selected_symbols = selected_symbols
