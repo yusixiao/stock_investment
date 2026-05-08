@@ -134,21 +134,6 @@ def run_incremental_update(
         if idx % 500 == 0 or idx == total:
             _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed}")
 
-    if updated_symbols:
-        _log_progress(f"开始更新 {len(updated_symbols)} 只股票的技术指标...")
-        ind_count = 0
-        for symbol in updated_symbols:
-            qfq_path = QFQ_KLINE_DIR / f"{symbol}.parquet"
-            if not qfq_path.exists():
-                continue
-            try:
-                df = pd.read_parquet(qfq_path)
-                compute_and_save(symbol, df)
-                ind_count += 1
-            except Exception as e:
-                logger.error(f"指标预计算失败 {symbol}: {e}")
-        _log_progress(f"技术指标更新完成，共更新 {ind_count} 只")
-
     result.finished_at = datetime.now().isoformat()
     elapsed = round(time.time() - t0, 2)
     _log_progress(f"完成! 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed} 总耗时:{elapsed}s")

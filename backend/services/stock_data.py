@@ -1,3 +1,5 @@
+import math
+
 import pandas as pd
 from pathlib import Path
 from typing import Optional
@@ -74,10 +76,16 @@ def list_stocks(
             continue
         df = pd.read_parquet(f, columns=["date", "close", "volume"])
         latest = df.iloc[0] if not df.empty else {}
+        close_val = float(latest.get("close", 0))
+        volume_val = float(latest.get("volume", 0))
+        if math.isnan(close_val) or math.isinf(close_val):
+            close_val = 0.0
+        if math.isnan(volume_val) or math.isinf(volume_val):
+            volume_val = 0.0
         results.append({
             "symbol": symbol,
             "latest_date": latest.get("date", ""),
-            "close": float(latest.get("close", 0)),
-            "volume": float(latest.get("volume", 0)),
+            "close": close_val,
+            "volume": volume_val,
         })
     return results
