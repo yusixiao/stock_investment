@@ -32,6 +32,7 @@ async function save() {
   const pipelineData = pipeline.value.map(s => ({
     filepath: s.filepath,
     class_name: s.class_name,
+    name: s.name || s.class_name,
     frequency: s.frequency || 'daily',
     params: s.params || {},
   }))

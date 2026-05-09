@@ -259,12 +259,15 @@ class GroupManager:
                     else:
                         strategies = pi.get("strategies", [pi] if "class_name" in pi else [])
                     for s in strategies:
-                        pipeline.append({
+                        item = {
                             "filepath": s.get("filepath", ""),
                             "class_name": s.get("class_name", ""),
                             "frequency": s.get("frequency", "daily"),
                             "params": s.get("params", {}),
-                        })
+                        }
+                        if s.get("name"):
+                            item["name"] = s["name"]
+                        pipeline.append(item)
 
             if len(pipeline) < 2:
                 continue

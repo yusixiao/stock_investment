@@ -12,7 +12,7 @@
     <div v-if="group" class="pipeline-display">
       <span v-for="(step, i) in group.pipeline" :key="i" class="flow-step">
         <span :class="'freq-badge freq-' + (step.frequency || 'daily')">{{ freqLabel(step.frequency) }}</span>
-        <span class="step-name">{{ step.class_name }}</span>
+        <span class="step-name">{{ step.name || step.class_name }}</span>
         <span v-if="i < group.pipeline.length - 1" class="flow-arrow">
           {{ joinModeLabel(group.join_modes, i) }} →
         </span>
