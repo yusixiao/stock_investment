@@ -9,7 +9,7 @@
       <div class="steps-flow">
         <div v-for="(step, i) in run.steps_result" :key="i" class="step-card" :class="{ active: expandedStep === i }" @click="expandedStep = expandedStep === i ? -1 : i">
           <div class="step-header">
-            <span class="step-num">步骤 {{ step.step }}</span>
+            <span class="step-num">{{ stepName(i) }}</span>
             <span class="step-io">{{ step.input_count || '全量' }} → {{ step.output_count }}</span>
           </div>
           <div v-if="expandedStep === i && step.symbols" class="step-symbols">
@@ -51,16 +51,25 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { fetchRun, fetchRunStatus, nextStep } from '../api'
+import { fetchRun, fetchRunStatus, nextStep, fetchGroup } from '../api'
 
 const route = useRoute()
 const groupId = route.params.groupId
 const runId = route.params.runId
 
 const run = ref(null)
+const group = ref(null)
 const expandedStep = ref(-1)
 const stepping = ref(false)
 let pollTimer = null
+
+function stepName(index) {
+  if (group.value?.pipeline?.[index]) {
+    const step = group.value.pipeline[index]
+    return step.name || step.class_name
+  }
+  return `步骤 ${index + 1}`
+}
 
 const isStepwise = computed(() => run.value?.execution_mode === 'stepwise')
 const isComplete = computed(() => run.value?.status === 'success' || run.value?.status === 'failed')
@@ -113,6 +122,8 @@ async function pollRunStatus() {
 
 onMounted(async () => {
   await loadRun()
+  const { data } = await fetchGroup(groupId)
+  group.value = data
   if (!isComplete.value) {
     pollTimer = setInterval(pollRunStatus, 3000)
   }
