@@ -138,6 +138,10 @@ export function deleteGroup(groupId) {
   return api.delete(`/backtest/groups/${groupId}`)
 }
 
+export function archiveGroup(groupId, archived = true) {
+  return api.patch(`/backtest/groups/${groupId}/archive`, { archived })
+}
+
 export function runGroup(groupId, body) {
   return api.post(`/backtest/groups/${groupId}/run`, body)
 }

@@ -30,6 +30,10 @@ class GroupManager:
                     updated_at TEXT NOT NULL
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE strategy_groups ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS group_runs (
                     run_id TEXT PRIMARY KEY,
@@ -78,6 +82,7 @@ class GroupManager:
             "name": row["name"],
             "pipeline": json.loads(row["pipeline"]),
             "join_modes": json.loads(row["join_modes"]) if row["join_modes"] else [],
+            "archived": bool(row["archived"]),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -85,7 +90,7 @@ class GroupManager:
     def list_groups(self) -> list[dict]:
         conn = self._get_conn()
         try:
-            rows = conn.execute("SELECT * FROM strategy_groups ORDER BY updated_at DESC").fetchall()
+            rows = conn.execute("SELECT * FROM strategy_groups ORDER BY archived ASC, updated_at DESC").fetchall()
             result = []
             for row in rows:
                 group = {
@@ -93,6 +98,7 @@ class GroupManager:
                     "name": row["name"],
                     "pipeline": json.loads(row["pipeline"]),
                     "join_modes": json.loads(row["join_modes"]) if row["join_modes"] else [],
+                    "archived": bool(row["archived"]),
                     "created_at": row["created_at"],
                     "updated_at": row["updated_at"],
                 }
@@ -135,6 +141,14 @@ class GroupManager:
         try:
             conn.execute("DELETE FROM group_runs WHERE group_id = ?", (group_id,))
             conn.execute("DELETE FROM strategy_groups WHERE group_id = ?", (group_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def archive_group(self, group_id: str, archived: bool = True):
+        conn = self._get_conn()
+        try:
+            conn.execute("UPDATE strategy_groups SET archived = ? WHERE group_id = ?", (1 if archived else 0, group_id))
             conn.commit()
         finally:
             conn.close()

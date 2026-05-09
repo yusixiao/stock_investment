@@ -9,10 +9,35 @@
     </div>
     <div v-if="migrateMsg" class="migrate-msg">{{ migrateMsg }}</div>
     <div v-if="groups.length" class="group-cards">
-      <div v-for="g in groups" :key="g.group_id" class="group-card" @click="$router.push('/backtest/group/' + g.group_id)">
+      <div v-for="g in activeGroups" :key="g.group_id" class="group-card" @click="$router.push('/backtest/group/' + g.group_id)">
         <div class="card-header">
           <h3>{{ g.name }}</h3>
-          <button class="btn-run" @click.stop="openRunDialog(g)">运行</button>
+          <div class="card-actions">
+            <button class="btn-run" @click.stop="openRunDialog(g)">运行</button>
+            <button class="btn-archive" @click.stop="doArchive(g.group_id, true)">废弃</button>
+          </div>
+        </div>
+        <div class="pipeline-flow">
+          <span v-for="(step, i) in g.pipeline" :key="i" class="flow-step">
+            <span :class="'freq-badge freq-' + (step.frequency || 'daily')">{{ freqLabel(step.frequency) }}</span>
+            <span class="step-name">{{ step.name || step.class_name }}</span>
+            <span v-if="i < g.pipeline.length - 1" class="flow-arrow">→</span>
+          </span>
+        </div>
+        <div class="card-footer">
+          <span>已运行 {{ g.run_count }} 次</span>
+          <span v-if="g.last_run"> | 最近: {{ g.last_run }}</span>
+        </div>
+      </div>
+      <div v-if="archivedGroups.length" class="archive-divider">
+        <span>已废弃 ({{ archivedGroups.length }})</span>
+      </div>
+      <div v-for="g in archivedGroups" :key="g.group_id" class="group-card archived" @click="$router.push('/backtest/group/' + g.group_id)">
+        <div class="card-header">
+          <h3>{{ g.name }}</h3>
+          <div class="card-actions">
+            <button class="btn-restore" @click.stop="doArchive(g.group_id, false)">恢复</button>
+          </div>
         </div>
         <div class="pipeline-flow">
           <span v-for="(step, i) in g.pipeline" :key="i" class="flow-step">
@@ -51,9 +76,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchGroups, runGroup, migrateGroups } from '../api'
+import { fetchGroups, runGroup, migrateGroups, archiveGroup } from '../api'
 
 const router = useRouter()
 const groups = ref([])
@@ -65,8 +90,16 @@ const runStartDate = ref('')
 const runEndDate = ref('')
 const runMode = ref('auto')
 
+const activeGroups = computed(() => groups.value.filter(g => !g.archived))
+const archivedGroups = computed(() => groups.value.filter(g => g.archived))
+
 const freqMap = { daily: '日线', weekly: '周线', monthly: '月线' }
 function freqLabel(f) { return freqMap[f] || '日线' }
+
+async function doArchive(groupId, archived) {
+  await archiveGroup(groupId, archived)
+  loadGroups()
+}
 
 async function loadGroups() {
   const { data } = await fetchGroups()
@@ -130,6 +163,13 @@ onMounted(loadGroups)
 .freq-monthly { background: #f56c6c; }
 .step-name { font-size: 13px; color: #606266; }
 .flow-arrow { color: #c0c4cc; margin: 0 4px; }
+.card-actions { display: flex; gap: 8px; }
+.btn-archive { padding: 4px 12px; background: white; color: #909399; border: 1px solid #dcdfe6; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.btn-archive:hover { color: #f56c6c; border-color: #f56c6c; }
+.btn-restore { padding: 4px 12px; background: white; color: #909399; border: 1px solid #dcdfe6; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.btn-restore:hover { color: #67c23a; border-color: #67c23a; }
+.archive-divider { margin: 24px 0 12px; padding: 8px 0; border-top: 1px solid #ebeef5; color: #909399; font-size: 13px; }
+.group-card.archived { opacity: 0.6; }
 .card-footer { margin-top: 12px; font-size: 12px; color: #909399; }
 .empty { color: #c0c4cc; font-size: 14px; text-align: center; margin-top: 40px; }
 .dialog-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }

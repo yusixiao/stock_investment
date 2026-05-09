@@ -54,6 +54,16 @@ def api_update_group(group_id: str, body: dict = Body(...)):
     return {"ok": True}
 
 
+@router.patch("/groups/{group_id}/archive")
+def api_archive_group(group_id: str, body: dict = Body(...)):
+    group = group_manager_instance.get_group(group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    archived = body.get("archived", True)
+    group_manager_instance.archive_group(group_id, archived)
+    return {"ok": True}
+
+
 @router.delete("/groups/{group_id}")
 def api_delete_group(group_id: str):
     group = group_manager_instance.get_group(group_id)
