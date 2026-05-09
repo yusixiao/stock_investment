@@ -221,6 +221,90 @@ class GroupManager:
             conn.close()
 
 
+    def migrate_from_tasks(self, task_manager) -> int:
+        tasks = task_manager.list_tasks(show_deleted=False)
+        source_map = {}
+        task_map = {}
+        for t in tasks:
+            task_map[t["task_id"]] = t
+            if t.get("source_task_id"):
+                source_map[t["task_id"]] = t["source_task_id"]
+
+        children = {}
+        for child_id, parent_id in source_map.items():
+            children.setdefault(parent_id, []).append(child_id)
+
+        roots = set()
+        for child_id in source_map:
+            parent_id = source_map[child_id]
+            if parent_id not in source_map:
+                roots.add(parent_id)
+
+        count = 0
+        for root_id in roots:
+            chain = [root_id]
+            current = root_id
+            while current in children:
+                next_ids = children[current]
+                current = next_ids[0]
+                chain.append(current)
+
+            pipeline = []
+            for tid in chain:
+                result = task_manager.get_result(tid)
+                if result and result.get("pipeline_info"):
+                    pi = result["pipeline_info"]
+                    strategies = pi.get("strategies", [pi] if "class_name" in pi else [])
+                    for s in strategies:
+                        pipeline.append({
+                            "filepath": s.get("filepath", ""),
+                            "class_name": s.get("class_name", ""),
+                            "frequency": s.get("frequency", "daily"),
+                            "params": s.get("params", {}),
+                        })
+
+            if len(pipeline) < 2:
+                continue
+
+            from datetime import datetime as _dt
+            name = f"迁移-{_dt.now().strftime('%Y%m%d')}-#{count + 1}"
+            first_task = task_manager.get_result(chain[0])
+            start_date = first_task.get("start_date", "")
+            end_date = first_task.get("end_date", "")
+
+            join_modes = ["correlated"] * (len(pipeline) - 1)
+            group_id = self.create_group(name, pipeline, join_modes)
+
+            run_id = self.create_run(group_id, start_date, end_date, "auto")
+            steps_result = []
+            last_result = None
+            for i, tid in enumerate(chain):
+                r = task_manager.get_result(tid)
+                result_data = r.get("result") or {}
+                syms = _extract_symbols_from_result(result_data) if result_data else []
+                steps_result.append({
+                    "step": i + 1,
+                    "input_count": 0 if i == 0 else steps_result[i - 1]["output_count"],
+                    "output_count": len(syms),
+                    "symbols": syms,
+                    "task_id": tid,
+                })
+                last_result = result_data
+
+            self.update_run_step(run_id, len(chain), steps_result)
+            summary = None
+            if last_result:
+                if "screened_symbols" in last_result:
+                    summary = {"screened_count": len(last_result["screened_symbols"])}
+                elif "metrics" in last_result:
+                    m = last_result["metrics"]
+                    summary = {"total_return": m.get("total_return"), "max_drawdown": m.get("max_drawdown")}
+            self.update_run_status(run_id, "success", final_result=last_result, summary=summary)
+            count += 1
+
+        return count
+
+
 group_manager_instance = GroupManager()
 
 import threading

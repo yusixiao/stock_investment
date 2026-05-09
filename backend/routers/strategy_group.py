@@ -2,6 +2,7 @@ import threading
 from fastapi import APIRouter, HTTPException, Body
 
 from services.backtest.group_manager import group_manager_instance, group_runner
+from services.backtest.task_manager import task_manager
 
 router = APIRouter(prefix="/api/backtest", tags=["strategy-group"])
 
@@ -23,6 +24,12 @@ def api_create_group(body: dict = Body(...)):
     group_id = group_manager_instance.create_group(name, pipeline, join_modes)
     group = group_manager_instance.get_group(group_id)
     return group
+
+
+@router.post("/groups/migrate")
+def api_migrate_groups():
+    count = group_manager_instance.migrate_from_tasks(task_manager)
+    return {"migrated": count}
 
 
 @router.get("/groups/{group_id}")

@@ -122,3 +122,34 @@ class TestGroupRunner:
         run = gm.get_run(run_id)
         assert run["status"] == "success"
         assert run["current_step"] == 2
+
+
+class TestMigration:
+    def test_migrate_chain(self, tmp_path):
+        db_path = str(tmp_path / "test.db")
+        from services.backtest.task_manager import TaskManager
+        tm = TaskManager(db_path=db_path)
+        gm = GroupManager(db_path=db_path)
+
+        t1 = tm.create_task(task_type="screener", pipeline_info={"strategies": [{"class_name": "MaCross", "name": "均线交叉"}]}, start_date="2024-01-01", end_date="2024-12-31")
+        tm.complete_task(t1, {"screened_symbols": ["000001", "000002"]})
+        t2 = tm.create_task(task_type="screener", pipeline_info={"strategies": [{"class_name": "MacdFilter", "name": "MACD过滤"}]}, start_date="2024-01-01", end_date="2024-12-31", source_task_id=t1)
+        tm.complete_task(t2, {"screened_symbols": ["000001"]})
+
+        count = gm.migrate_from_tasks(tm)
+        assert count == 1
+        groups = gm.list_groups()
+        assert len(groups) == 1
+        assert len(groups[0]["pipeline"]) == 2
+
+    def test_migrate_no_chains(self, tmp_path):
+        db_path = str(tmp_path / "test.db")
+        from services.backtest.task_manager import TaskManager
+        tm = TaskManager(db_path=db_path)
+        gm = GroupManager(db_path=db_path)
+
+        t1 = tm.create_task(task_type="screener", pipeline_info={"strategies": [{"class_name": "A"}]}, start_date="2024-01-01", end_date="2024-12-31")
+        tm.complete_task(t1, {"screened_symbols": ["000001"]})
+
+        count = gm.migrate_from_tasks(tm)
+        assert count == 0
