@@ -222,3 +222,225 @@ class GroupManager:
 
 
 group_manager_instance = GroupManager()
+
+import threading
+from pathlib import Path
+from services.backtest.task_manager import TaskManager, task_manager as default_task_manager
+from services.backtest.strategy_loader import load_strategy_from_file
+from services.backtest.base import ScreenerStrategy, TraderStrategy
+
+
+def _extract_symbols_from_result(result: dict) -> list[str]:
+    screened = result.get("screened_symbols", [])
+    if not screened:
+        return []
+    if isinstance(screened[0], str):
+        return list(screened)
+    return [item["symbol"] for item in screened]
+
+
+def _execute_step(step_config: dict, start_date: str, end_date: str, symbols: list[str] | None, task_manager: TaskManager) -> tuple[str, dict]:
+    from services.backtest.engine import BacktestEngine
+    from services.qfq_cache import get_qfq_kline
+    from config import RAW_KLINE_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
+    import pandas as pd
+
+    filepath = Path(step_config["filepath"])
+    class_name = step_config["class_name"]
+    params = step_config.get("params", {})
+
+    classes = load_strategy_from_file(filepath)
+    cls = next((c for c in classes if c.__name__ == class_name), None)
+    if cls is None:
+        raise ValueError(f"Strategy class {class_name} not found in {filepath}")
+    instance = cls(param_overrides=params)
+
+    screeners = []
+    trader = None
+    if isinstance(instance, TraderStrategy):
+        trader = instance
+    else:
+        screeners = [instance]
+
+    task_type = "backtest" if trader else "screener"
+    task_id = task_manager.create_task(task_type=task_type, start_date=start_date, end_date=end_date)
+
+    if symbols is not None:
+        target_symbols = symbols
+    else:
+        target_symbols = [f.stem for f in RAW_KLINE_DIR.glob("*.parquet")]
+
+    stock_data = {}
+    for sym in target_symbols:
+        df = get_qfq_kline(sym, start_date=start_date, end_date=end_date)
+        if not df.empty:
+            stock_data[sym] = df
+
+    valuation_data = {}
+    for sym in stock_data:
+        fp = VALUATION_DIR / f"{sym}.parquet"
+        if fp.exists():
+            valuation_data[sym] = pd.read_parquet(fp).sort_values("date").reset_index(drop=True)
+
+    dividend_data = {}
+    for sym in stock_data:
+        fp = DIVIDEND_DIR / f"{sym}.parquet"
+        if fp.exists():
+            dividend_data[sym] = pd.read_parquet(fp)
+
+    financial_data = {}
+    for sym in stock_data:
+        fp = FINANCIAL_DIR / f"{sym}.parquet"
+        if fp.exists():
+            financial_data[sym] = pd.read_parquet(fp).sort_values("报告期").reset_index(drop=True)
+
+    engine = BacktestEngine(
+        stock_data=stock_data,
+        screeners=screeners,
+        trader=trader,
+        valuation_data=valuation_data,
+        dividend_data=dividend_data,
+        financial_data=financial_data,
+    )
+    result = engine.run()
+    task_manager.complete_task(task_id, result)
+    return task_id, result
+
+
+class GroupRunner:
+    def __init__(self, group_manager: GroupManager | None = None, task_manager: TaskManager | None = None):
+        self._group_manager = group_manager or group_manager_instance
+        self._task_manager = task_manager or default_task_manager
+
+    def run_auto(self, group_id: str, start_date: str, end_date: str) -> str:
+        gm = self._group_manager
+        group = gm.get_group(group_id)
+        if group is None:
+            raise ValueError(f"Group {group_id} not found")
+
+        pipeline = group["pipeline"]
+        join_modes = group["join_modes"]
+        run_id = gm.create_run(group_id, start_date, end_date, "auto")
+
+        try:
+            steps_result = []
+            prev_symbols = None
+            for i, step_config in enumerate(pipeline):
+                join_mode = join_modes[i - 1] if i > 0 and i - 1 < len(join_modes) else "independent"
+                if i == 0 or join_mode == "independent":
+                    input_symbols = None
+                else:
+                    input_symbols = prev_symbols
+
+                input_count = len(input_symbols) if input_symbols else 0
+                task_id, result = _execute_step(step_config, start_date, end_date, input_symbols, self._task_manager)
+                output_symbols = _extract_symbols_from_result(result)
+
+                step_info = {
+                    "step": i + 1,
+                    "input_count": input_count,
+                    "output_count": len(output_symbols),
+                    "symbols": output_symbols,
+                    "task_id": task_id,
+                }
+                steps_result.append(step_info)
+                gm.update_run_step(run_id, i + 1, steps_result)
+                prev_symbols = output_symbols
+
+            final_result = result
+            summary = self._build_summary(final_result)
+            gm.update_run_status(run_id, "success", final_result=final_result, summary=summary)
+        except Exception as e:
+            gm.update_run_status(run_id, "failed", error=str(e))
+
+        return run_id
+
+    def run_stepwise_start(self, group_id: str, start_date: str, end_date: str) -> str:
+        gm = self._group_manager
+        group = gm.get_group(group_id)
+        if group is None:
+            raise ValueError(f"Group {group_id} not found")
+
+        pipeline = group["pipeline"]
+        run_id = gm.create_run(group_id, start_date, end_date, "stepwise")
+
+        step_config = pipeline[0]
+        task_id, result = _execute_step(step_config, start_date, end_date, None, self._task_manager)
+        output_symbols = _extract_symbols_from_result(result)
+
+        steps_result = [{
+            "step": 1,
+            "input_count": 0,
+            "output_count": len(output_symbols),
+            "symbols": output_symbols,
+            "task_id": task_id,
+        }]
+        gm.update_run_step(run_id, 1, steps_result)
+
+        if len(pipeline) == 1:
+            summary = self._build_summary(result)
+            gm.update_run_status(run_id, "success", final_result=result, summary=summary)
+        else:
+            gm.update_run_status(run_id, "step_1_done")
+
+        return run_id
+
+    def run_stepwise_next(self, run_id: str):
+        gm = self._group_manager
+        run = gm.get_run(run_id)
+        if run is None:
+            raise ValueError(f"Run {run_id} not found")
+
+        group = gm.get_group(run["group_id"])
+        pipeline = group["pipeline"]
+        join_modes = group["join_modes"]
+        current_step = run["current_step"]
+        next_step_idx = current_step
+
+        if next_step_idx >= len(pipeline):
+            return
+
+        steps_result = run["steps_result"]
+        prev_symbols = steps_result[-1]["symbols"] if steps_result else None
+
+        join_mode = join_modes[next_step_idx - 1] if next_step_idx > 0 and next_step_idx - 1 < len(join_modes) else "independent"
+        if join_mode == "independent":
+            input_symbols = None
+        else:
+            input_symbols = prev_symbols
+
+        input_count = len(input_symbols) if input_symbols else 0
+        step_config = pipeline[next_step_idx]
+        task_id, result = _execute_step(step_config, run["start_date"], run["end_date"], input_symbols, self._task_manager)
+        output_symbols = _extract_symbols_from_result(result)
+
+        step_info = {
+            "step": next_step_idx + 1,
+            "input_count": input_count,
+            "output_count": len(output_symbols),
+            "symbols": output_symbols,
+            "task_id": task_id,
+        }
+        steps_result.append(step_info)
+        gm.update_run_step(run_id, next_step_idx + 1, steps_result)
+
+        if next_step_idx + 1 >= len(pipeline):
+            summary = self._build_summary(result)
+            gm.update_run_status(run_id, "success", final_result=result, summary=summary)
+        else:
+            gm.update_run_status(run_id, f"step_{next_step_idx + 1}_done")
+
+    def _build_summary(self, result: dict) -> dict | None:
+        if "screened_symbols" in result:
+            items = result["screened_symbols"]
+            return {"screened_count": len(items)}
+        if "metrics" in result:
+            m = result["metrics"]
+            return {
+                "total_return": m.get("total_return"),
+                "max_drawdown": m.get("max_drawdown"),
+            }
+        return None
+
+
+group_runner = GroupRunner()
