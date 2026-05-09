@@ -41,6 +41,7 @@
             <td>{{ t.created_at }}</td>
             <td>
               <button v-if="t.status === 'success'" class="view-btn" @click="$router.push('/backtest/result/' + t.task_id)">查看</button>
+              <button class="btn-delete" @click="onDeleteTask(t.task_id)">删除</button>
             </td>
           </tr>
         </tbody>
@@ -52,7 +53,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { fetchStrategies, runBacktest, fetchBacktestStatus, fetchBacktestResult, fetchBacktestTasks } from '../api'
+import { fetchStrategies, runBacktest, fetchBacktestStatus, fetchBacktestResult, fetchBacktestTasks, deleteBacktestTask } from '../api'
 import PipelineBuilder from '../components/PipelineBuilder.vue'
 import ParamEditor from '../components/ParamEditor.vue'
 
@@ -93,6 +94,11 @@ async function loadTasks() {
     const { data } = await fetchBacktestTasks()
     tasks.value = data.filter(t => t.task_type === 'screener' || t.task_type === 'debug')
   } catch {}
+}
+
+async function onDeleteTask(taskId) {
+  await deleteBacktestTask(taskId)
+  await loadTasks()
 }
 
 async function runDebug() {
@@ -173,4 +179,5 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .task-status.failed { background: #ffebee; color: #c62828; }
 .task-status.running { background: #fff3e0; color: #e65100; }
 .empty { color: #c0c4cc; font-size: 13px; }
+.btn-delete { background: #f56c6c; color: white; border: none; padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 12px; margin-left: 6px; }
 </style>
