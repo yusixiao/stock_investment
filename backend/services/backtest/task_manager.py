@@ -41,6 +41,33 @@ class TaskManager:
                     conn.execute(f"ALTER TABLE backtest_tasks ADD COLUMN {col} {typedef}")
                 except Exception:
                     pass
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS strategy_groups (
+                    group_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    pipeline TEXT NOT NULL,
+                    join_modes TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS group_runs (
+                    run_id TEXT PRIMARY KEY,
+                    group_id TEXT NOT NULL,
+                    start_date TEXT,
+                    end_date TEXT,
+                    execution_mode TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    current_step INTEGER DEFAULT 0,
+                    steps_result TEXT,
+                    final_result TEXT,
+                    summary TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (group_id) REFERENCES strategy_groups(group_id)
+                )
+            """)
             conn.execute(
                 "UPDATE backtest_tasks SET status = ?, error = ? WHERE status = ?",
                 ("failed", "服务重启，任务中断", "running"),
