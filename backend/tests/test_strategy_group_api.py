@@ -1,11 +1,23 @@
 import pytest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
-from main import app
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def client(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    with patch("services.backtest.task_manager.PORTFOLIO_DB", db_path):
+        with patch("services.backtest.group_manager.PORTFOLIO_DB", db_path):
+            from services.backtest.task_manager import TaskManager
+            from services.backtest.group_manager import GroupManager, GroupRunner
+            tm = TaskManager(db_path=db_path)
+            gm = GroupManager(db_path=db_path)
+            gr = GroupRunner(gm, tm)
+            with patch("routers.strategy_group.group_manager_instance", gm):
+                with patch("routers.strategy_group.group_runner", gr):
+                    with patch("routers.strategy_group.task_manager", tm):
+                        from main import app
+                        yield TestClient(app)
 
 
 class TestStrategyGroupAPI:
