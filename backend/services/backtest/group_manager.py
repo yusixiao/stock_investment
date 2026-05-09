@@ -254,7 +254,10 @@ class GroupManager:
                 result = task_manager.get_result(tid)
                 if result and result.get("pipeline_info"):
                     pi = result["pipeline_info"]
-                    strategies = pi.get("strategies", [pi] if "class_name" in pi else [])
+                    if isinstance(pi, list):
+                        strategies = pi
+                    else:
+                        strategies = pi.get("strategies", [pi] if "class_name" in pi else [])
                     for s in strategies:
                         pipeline.append({
                             "filepath": s.get("filepath", ""),
