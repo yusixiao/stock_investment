@@ -118,4 +118,48 @@ export function importFromBacktest(taskId, body) {
   return api.post(`/portfolio/import/${taskId}`, body)
 }
 
+export function fetchGroups() {
+  return api.get('/backtest/groups')
+}
+
+export function createGroup(body) {
+  return api.post('/backtest/groups', body)
+}
+
+export function fetchGroup(groupId) {
+  return api.get(`/backtest/groups/${groupId}`)
+}
+
+export function updateGroup(groupId, body) {
+  return api.patch(`/backtest/groups/${groupId}`, body)
+}
+
+export function deleteGroup(groupId) {
+  return api.delete(`/backtest/groups/${groupId}`)
+}
+
+export function runGroup(groupId, body) {
+  return api.post(`/backtest/groups/${groupId}/run`, body)
+}
+
+export function fetchGroupRuns(groupId) {
+  return api.get(`/backtest/groups/${groupId}/runs`)
+}
+
+export function fetchRun(runId) {
+  return api.get(`/backtest/runs/${runId}`)
+}
+
+export function fetchRunStatus(runId) {
+  return api.get(`/backtest/runs/${runId}/status`)
+}
+
+export function nextStep(runId) {
+  return api.post(`/backtest/runs/${runId}/next-step`)
+}
+
+export function migrateGroups() {
+  return api.post('/backtest/groups/migrate')
+}
+
 export default api

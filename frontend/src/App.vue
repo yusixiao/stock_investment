@@ -3,7 +3,7 @@
     <nav class="top-nav">
       <router-link to="/">行情</router-link>
       <router-link to="/strategies">策略</router-link>
-      <router-link to="/screener">选股</router-link>
+      <router-link to="/debug">策略调试</router-link>
       <router-link to="/backtest">回测</router-link>
       <router-link to="/portfolio">持仓</router-link>
       <router-link to="/compare">对比</router-link>
