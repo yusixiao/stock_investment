@@ -430,6 +430,43 @@ class GroupRunner:
         else:
             gm.update_run_status(run_id, f"step_{next_step_idx + 1}_done")
 
+    def _run_auto_with_run_id(self, run_id: str, group_id: str, start_date: str, end_date: str):
+        gm = self._group_manager
+        group = gm.get_group(group_id)
+        pipeline = group["pipeline"]
+        join_modes = group["join_modes"]
+
+        try:
+            steps_result = []
+            prev_symbols = None
+            for i, step_config in enumerate(pipeline):
+                join_mode = join_modes[i - 1] if i > 0 and i - 1 < len(join_modes) else "independent"
+                if i == 0 or join_mode == "independent":
+                    input_symbols = None
+                else:
+                    input_symbols = prev_symbols
+
+                input_count = len(input_symbols) if input_symbols else 0
+                task_id, result = _execute_step(step_config, start_date, end_date, input_symbols, self._task_manager)
+                output_symbols = _extract_symbols_from_result(result)
+
+                step_info = {
+                    "step": i + 1,
+                    "input_count": input_count,
+                    "output_count": len(output_symbols),
+                    "symbols": output_symbols,
+                    "task_id": task_id,
+                }
+                steps_result.append(step_info)
+                gm.update_run_step(run_id, i + 1, steps_result)
+                prev_symbols = output_symbols
+
+            final_result = result
+            summary = self._build_summary(final_result)
+            gm.update_run_status(run_id, "success", final_result=final_result, summary=summary)
+        except Exception as e:
+            gm.update_run_status(run_id, "failed", error=str(e))
+
     def _build_summary(self, result: dict) -> dict | None:
         if "screened_symbols" in result:
             items = result["screened_symbols"]
