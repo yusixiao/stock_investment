@@ -19,6 +19,7 @@ FINANCIAL_DIR.mkdir(parents=True, exist_ok=True)
 
 UPDATE_LOG_FILE = LOG_DIR / "update_log.json"
 UPDATE_PROGRESS_FILE = LOG_DIR / "update_progress.log"
+STOCK_UPDATE_TRACKER_FILE = BASE_DIR / "stock_update_tracker.json"
 LOG_RETENTION_DAYS = 90
 
 SCHEDULER_HOUR = 15

@@ -1,6 +1,5 @@
 import threading
-from datetime import date, timedelta
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from services.data_updater import (
     run_incremental_update,
@@ -17,15 +16,13 @@ router = APIRouter(prefix="/api/data", tags=["data"])
 _update_lock = threading.Lock()
 
 
-def run_update_task(trigger: str = "manual", start_date: str = None):
-    if not start_date:
-        start_date = (date.today() - timedelta(days=7)).strftime("%Y-%m-%d")
+def run_update_task(trigger: str = "manual"):
     if not _update_lock.acquire(blocking=False):
         return
     try:
         updater_module._current_status = "running"
         updater_module._current_result = None
-        result = run_incremental_update(trigger=trigger, start_date=start_date)
+        result = run_incremental_update(trigger=trigger)
         updater_module._current_status = "success"
         updater_module._current_result = result
     except Exception as e:
@@ -38,13 +35,10 @@ def run_update_task(trigger: str = "manual", start_date: str = None):
 
 
 @router.post("/update")
-def api_trigger_update(body: dict = None):
-    start_date = (body or {}).get("date")
-    if not start_date:
-        raise HTTPException(status_code=400, detail="date is required (start_date for incremental update)")
-    t = threading.Thread(target=run_update_task, args=("manual", start_date), daemon=True)
+def api_trigger_update():
+    t = threading.Thread(target=run_update_task, args=("manual",), daemon=True)
     t.start()
-    return {"message": "incremental update started", "start_date": start_date}
+    return {"message": "incremental update started"}
 
 
 @router.get("/update/status")

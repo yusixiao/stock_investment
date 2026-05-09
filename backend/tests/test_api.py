@@ -48,13 +48,9 @@ class TestStockRoutes:
 class TestDataUpdateRoutes:
     @patch("routers.data_update.run_update_task")
     def test_trigger_update(self, mock_task):
-        resp = client.post("/api/data/update", json={"date": "2026-04-11"})
+        resp = client.post("/api/data/update")
         assert resp.status_code == 200
         assert "incremental update started" in resp.json()["message"]
-
-    def test_trigger_update_requires_date(self):
-        resp = client.post("/api/data/update", json={})
-        assert resp.status_code == 400
 
     def test_get_update_status(self):
         resp = client.get("/api/data/update/status")

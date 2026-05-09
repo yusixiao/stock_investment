@@ -13,6 +13,7 @@ from config import (
     RAW_KLINE_DIR,
     UPDATE_LOG_FILE,
     UPDATE_PROGRESS_FILE,
+    STOCK_UPDATE_TRACKER_FILE,
     LOG_RETENTION_DAYS,
     RETRY_MAX_ATTEMPTS,
     RETRY_BACKOFF_CAP,
@@ -36,6 +37,21 @@ class UpdateResult:
     trigger: str = "manual"
     started_at: str = ""
     finished_at: str = ""
+
+
+def _load_tracker(tracker_path: Path = None) -> dict:
+    path = tracker_path or STOCK_UPDATE_TRACKER_FILE
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_tracker(tracker: dict, tracker_path: Path = None):
+    path = tracker_path or STOCK_UPDATE_TRACKER_FILE
+    path.write_text(json.dumps(tracker, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _fetch_hist_with_retry(symbol: str, start_date: str, end_date: str, max_attempts: int = RETRY_MAX_ATTEMPTS) -> pd.DataFrame:
@@ -74,18 +90,16 @@ def _hist_df_to_records(df: pd.DataFrame) -> list[dict]:
 
 def run_incremental_update(
     data_dir: Optional[Path] = None,
-    start_date: str = None,
     trigger: str = "manual",
+    tracker_path: Optional[Path] = None,
 ) -> UpdateResult:
     if data_dir is None:
         data_dir = RAW_KLINE_DIR
-    if not start_date:
-        raise ValueError("start_date is required")
 
     end_date = date.today().strftime("%Y-%m-%d")
-    start_date_fmt = start_date.replace("-", "")
     end_date_fmt = end_date.replace("-", "")
 
+    tracker = _load_tracker(tracker_path)
     result = UpdateResult(trigger=trigger, started_at=datetime.now().isoformat())
     updated_symbols: list[str] = []
 
@@ -95,7 +109,7 @@ def run_incremental_update(
             f.write(f"[{ts}] {msg}\n")
 
     UPDATE_PROGRESS_FILE.write_text("", encoding="utf-8")
-    _log_progress(f"开始增量更新 trigger={trigger} range={start_date}~{end_date}")
+    _log_progress(f"开始增量更新 trigger={trigger} end_date={end_date}")
 
     t0 = time.time()
 
@@ -119,27 +133,37 @@ def run_incremental_update(
             raise
 
     total = len(symbols)
-    _log_progress(f"共 {total} 只股票待更新 ({start_date} ~ {end_date})")
+    _log_progress(f"共 {total} 只股票待检查")
 
     for idx, (code, full_symbol) in enumerate(symbols, 1):
         try:
+            last_updated = tracker.get(full_symbol)
+
+            if last_updated and last_updated >= end_date:
+                result.skipped += 1
+                if idx % 500 == 0 or idx == total:
+                    _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}")
+                continue
+
+            if last_updated:
+                next_day = (datetime.strptime(last_updated, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+                sym_start = next_day
+            else:
+                sym_start = "2010-01-04"
+
+            if sym_start > end_date:
+                result.skipped += 1
+                if idx % 500 == 0 or idx == total:
+                    _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}")
+                continue
+
+            sym_start_fmt = sym_start.replace("-", "")
             filepath = data_dir / f"{full_symbol}.parquet"
 
-            if filepath.exists():
-                existing = pd.read_parquet(filepath)
-                if not existing.empty:
-                    latest_date = existing.iloc[0]["date"]
-                    if latest_date >= end_date:
-                        result.skipped += 1
-                        if idx % 500 == 0 or idx == total:
-                            _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}")
-                        continue
-            else:
-                existing = pd.DataFrame()
-
-            hist_df = _fetch_hist_with_retry(code, start_date_fmt, end_date_fmt)
+            hist_df = _fetch_hist_with_retry(code, sym_start_fmt, end_date_fmt, max_attempts=3)
 
             if hist_df.empty:
+                tracker[full_symbol] = end_date
                 result.skipped += 1
                 if idx % 500 == 0 or idx == total:
                     _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}")
@@ -147,15 +171,12 @@ def run_incremental_update(
 
             new_records = _hist_df_to_records(hist_df)
 
-            if existing.empty:
-                new_df = pd.DataFrame(new_records)
-                new_df = new_df.sort_values("date", ascending=False).reset_index(drop=True)
-                new_df.to_parquet(filepath, index=False)
-                result.new_stocks += 1
-            else:
+            if filepath.exists():
+                existing = pd.read_parquet(filepath)
                 existing_dates = set(existing["date"].tolist())
                 fresh = [r for r in new_records if r["date"] not in existing_dates]
                 if not fresh:
+                    tracker[full_symbol] = end_date
                     result.skipped += 1
                 else:
                     fresh_df = pd.DataFrame(fresh)
@@ -163,8 +184,16 @@ def run_incremental_update(
                     merged = merged.sort_values("date", ascending=False).reset_index(drop=True)
                     merged.to_parquet(filepath, index=False)
                     result.updated += 1
+                    updated_symbols.append(full_symbol)
+                    tracker[full_symbol] = end_date
+            else:
+                new_df = pd.DataFrame(new_records)
+                new_df = new_df.sort_values("date", ascending=False).reset_index(drop=True)
+                new_df.to_parquet(filepath, index=False)
+                result.new_stocks += 1
+                updated_symbols.append(full_symbol)
+                tracker[full_symbol] = end_date
 
-            updated_symbols.append(full_symbol)
         except Exception as e:
             result.failed += 1
             if len(result.errors) < 50:
@@ -173,6 +202,11 @@ def run_incremental_update(
 
         if idx % 500 == 0 or idx == total:
             _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed}")
+
+        if idx % 100 == 0:
+            _save_tracker(tracker, tracker_path)
+
+    _save_tracker(tracker, tracker_path)
 
     if updated_symbols:
         invalidate_cache(updated_symbols)

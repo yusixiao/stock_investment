@@ -3,9 +3,7 @@
     <div class="status-row">
       <span class="status-label">行情数据:</span>
       <span :class="['status-badge', statusClass]">{{ statusText }}</span>
-      <label class="date-pick">起始日期: <input type="date" v-model="targetDate" :disabled="status === 'running'" min="2010-01-04" /></label>
-      <span class="date-hint">~ 今天</span>
-      <button :disabled="status === 'running' || !targetDate" @click="doUpdate">
+      <button :disabled="status === 'running'" @click="doUpdate">
         {{ status === 'running' ? '更新中...' : '增量更新' }}
       </button>
     </div>
@@ -73,7 +71,7 @@ import { fetchUpdateStatus, triggerUpdate as apiTriggerUpdate, triggerValuationU
 
 const status = ref('idle')
 const result = ref(null)
-const targetDate = ref(new Date().toISOString().slice(0, 10))
+
 let timer = null
 
 const valStatus = ref('idle')
@@ -128,8 +126,7 @@ async function pollStatus() {
 }
 
 async function doUpdate() {
-  if (!targetDate.value) return
-  await apiTriggerUpdate(targetDate.value)
+  await apiTriggerUpdate()
   status.value = 'running'
   if (!timer) {
     timer = setInterval(pollStatus, 2000)
@@ -236,9 +233,6 @@ onUnmounted(() => {
 .status-badge.success { background: #e8f5e9; color: #2e7d32; }
 .status-badge.failed { background: #ffebee; color: #c62828; }
 .status-detail { margin-top: 8px; font-size: 13px; display: flex; gap: 16px; color: #666; }
-.date-pick { font-size: 13px; }
-.date-pick input { padding: 4px 8px; border: 1px solid #dcdfe6; border-radius: 4px; margin-left: 4px; }
-.date-hint { font-size: 12px; color: #909399; }
 button { padding: 6px 16px; cursor: pointer; border: 1px solid #dcdfe6; border-radius: 4px; background: white; }
 button:disabled { cursor: not-allowed; opacity: 0.5; }
 </style>
