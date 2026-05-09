@@ -6,13 +6,13 @@ scheduler = BackgroundScheduler()
 
 def _snapshot_job():
     import pandas as pd
-    from config import QFQ_KLINE_DIR
+    from config import RAW_KLINE_DIR
     from services.portfolio.db import get_connection, init_db
     from services.portfolio.manager import PortfolioManager
 
     current_prices = {}
     latest_date = ""
-    for filepath in QFQ_KLINE_DIR.glob("*.parquet"):
+    for filepath in RAW_KLINE_DIR.glob("*.parquet"):
         symbol = filepath.stem
         df = pd.read_parquet(filepath, columns=["date", "close"])
         if not df.empty:

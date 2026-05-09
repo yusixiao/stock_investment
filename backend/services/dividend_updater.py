@@ -8,7 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import akshare as ak
 import pandas as pd
 
-from config import DIVIDEND_DIR, QFQ_KLINE_DIR, LOG_DIR
+from config import DIVIDEND_DIR, RAW_KLINE_DIR, LOG_DIR
+from services.qfq_cache import invalidate_cache
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,7 @@ def fetch_symbol_dividend(symbol: str) -> pd.DataFrame | None:
 
 
 def get_all_symbols() -> list[str]:
-    return [f.stem for f in sorted(QFQ_KLINE_DIR.glob("*.parquet"))]
+    return [f.stem for f in sorted(RAW_KLINE_DIR.glob("*.parquet"))]
 
 
 def run_dividend_update(
@@ -147,6 +148,7 @@ def run_dividend_update(
     skipped = 0
     failed = 0
     errors = []
+    updated_symbols = []
 
     DIVIDEND_PROGRESS_FILE.write_text("", encoding="utf-8")
     _log_progress(f"开始{mode}更新分红数据, 共 {total} 只股票")
@@ -168,6 +170,7 @@ def run_dividend_update(
             else:
                 df.to_parquet(filepath, index=False)
                 success += 1
+                updated_symbols.append(sym)
 
         elif mode == "incremental":
             if not filepath.exists():
@@ -188,6 +191,7 @@ def run_dividend_update(
                 merged = merged.sort_values(key_col, ascending=False).reset_index(drop=True)
                 merged.to_parquet(filepath, index=False)
                 success += 1
+                updated_symbols.append(sym)
 
         if on_progress:
             phase = "拉取分红数据" if mode == "full" else "增量更新分红数据"
@@ -197,6 +201,10 @@ def run_dividend_update(
             _log_progress(f"进度 {i}/{total} — 成功:{success} 跳过:{skipped} 失败:{failed}")
 
         time.sleep(SLEEP_BETWEEN_CALLS)
+
+    if updated_symbols:
+        invalidate_cache(updated_symbols)
+        _log_progress(f"已清除 {len(updated_symbols)} 只股票的 qfq 缓存")
 
     _log_progress(f"完成! 成功:{success} 跳过:{skipped} 失败:{failed}")
     return {

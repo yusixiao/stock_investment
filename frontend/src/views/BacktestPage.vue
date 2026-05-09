@@ -13,8 +13,9 @@
     <PipelineBuilder :strategies="strategies" v-model:pipeline="pipeline" v-model:joinModes="joinModes" mode="backtest" />
     <ParamEditor :pipeline="pipeline" @update:overrides="overrides = $event" />
     <div class="date-range">
-      <label>开始日期: <input v-model="startDate" type="date" :disabled="!!sourceInfo" /></label>
-      <label>结束日期: <input v-model="endDate" type="date" :disabled="!!sourceInfo" /></label>
+      <label>开始日期: <input v-model="startDate" type="date" min="2010-01-04" :disabled="!!sourceInfo" /></label>
+      <label>结束日期: <input v-model="endDate" type="date" min="2010-01-04" :disabled="!!sourceInfo" /></label>
+      <span class="date-hint">前复权数据有效范围：2010年起</span>
     </div>
     <button class="run-btn" @click="runBacktestPipeline" :disabled="!pipeline.length || running">
       {{ running ? '回测运行中...' : '运行回测' }}
@@ -198,9 +199,10 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 
 <style scoped>
 .backtest-page { padding: 20px; max-width: 1200px; margin: 0 auto; }
-.date-range { margin-top: 16px; display: flex; gap: 16px; }
+.date-range { margin-top: 16px; display: flex; gap: 16px; align-items: center; }
 .date-range label { font-size: 14px; }
 .date-range input { padding: 4px 8px; margin-left: 4px; }
+.date-hint { font-size: 12px; color: #909399; }
 .run-btn { margin-top: 16px; padding: 10px 24px; background: #409eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .run-btn:disabled { background: #c0c4cc; cursor: not-allowed; }
 .status { margin-top: 16px; padding: 12px; background: #f5f7fa; border-radius: 4px; }

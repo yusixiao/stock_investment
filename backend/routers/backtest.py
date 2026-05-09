@@ -4,7 +4,8 @@ import pandas as pd
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Body
 
-from config import QFQ_KLINE_DIR, STRATEGY_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
+from config import RAW_KLINE_DIR, STRATEGY_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
+from services.qfq_cache import get_qfq_kline
 from services.backtest.strategy_loader import scan_strategies, load_strategy_from_file
 from services.backtest.engine import BacktestEngine
 from services.backtest.base import ScreenerStrategy, TraderStrategy
@@ -214,17 +215,11 @@ def _load_valuation_data(symbols: list[str]) -> dict[str, pd.DataFrame]:
 def _load_stock_data(start_date: str = None, end_date: str = None, symbols: list[str] = None) -> dict[str, pd.DataFrame]:
     stock_data = {}
     if symbols is not None:
-        filepaths = [QFQ_KLINE_DIR / f"{s}.parquet" for s in symbols]
-        filepaths = [f for f in filepaths if f.exists()]
+        target_symbols = symbols
     else:
-        filepaths = list(QFQ_KLINE_DIR.glob("*.parquet"))
-    for filepath in filepaths:
-        symbol = filepath.stem
-        df = pd.read_parquet(filepath)
-        if start_date:
-            df = df[df["date"] >= start_date]
-        if end_date:
-            df = df[df["date"] <= end_date]
+        target_symbols = [f.stem for f in RAW_KLINE_DIR.glob("*.parquet")]
+    for symbol in target_symbols:
+        df = get_qfq_kline(symbol, start_date=start_date, end_date=end_date)
         if not df.empty:
             stock_data[symbol] = df
     return stock_data

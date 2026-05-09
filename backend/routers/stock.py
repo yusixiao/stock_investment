@@ -6,9 +6,10 @@ from fastapi.responses import Response
 from pathlib import Path
 from typing import Optional
 
-from config import RAW_KLINE_DIR, QFQ_KLINE_DIR
+from config import RAW_KLINE_DIR
 from services.stock_data import list_stocks, get_kline, aggregate_kline
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
+from services.qfq_cache import get_qfq_kline
 
 
 def _safe_json(obj):
@@ -50,11 +51,15 @@ def api_get_kline(
     period: str = Query("daily", description="daily/weekly/monthly"),
     adjust: str = Query("raw", description="raw/qfq"),
 ):
-    data_dir = QFQ_KLINE_DIR if adjust == "qfq" else RAW_KLINE_DIR
-    filepath = data_dir / f"{symbol}.parquet"
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-    df = get_kline(filepath, start_date=start_date, end_date=end_date)
+    if adjust == "qfq":
+        df = get_qfq_kline(symbol, start_date=start_date, end_date=end_date)
+        if df.empty:
+            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    else:
+        filepath = RAW_KLINE_DIR / f"{symbol}.parquet"
+        if not filepath.exists():
+            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+        df = get_kline(filepath, start_date=start_date, end_date=end_date)
     if period in ("weekly", "monthly"):
         df = aggregate_kline(df, period=period)
     return df.to_dict(orient="records")
@@ -69,11 +74,15 @@ def api_get_indicators(
     period: str = Query("daily", description="daily/weekly/monthly"),
     adjust: str = Query("raw", description="raw/qfq"),
 ):
-    data_dir = QFQ_KLINE_DIR if adjust == "qfq" else RAW_KLINE_DIR
-    filepath = data_dir / f"{symbol}.parquet"
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-    df = get_kline(filepath, start_date=start_date, end_date=end_date)
+    if adjust == "qfq":
+        df = get_qfq_kline(symbol, start_date=start_date, end_date=end_date)
+        if df.empty:
+            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    else:
+        filepath = RAW_KLINE_DIR / f"{symbol}.parquet"
+        if not filepath.exists():
+            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+        df = get_kline(filepath, start_date=start_date, end_date=end_date)
     if period in ("weekly", "monthly"):
         df = aggregate_kline(df, period=period)
 

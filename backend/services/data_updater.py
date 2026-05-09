@@ -11,7 +11,6 @@ import pandas as pd
 
 from config import (
     RAW_KLINE_DIR,
-    QFQ_KLINE_DIR,
     UPDATE_LOG_FILE,
     UPDATE_PROGRESS_FILE,
     LOG_RETENTION_DAYS,
@@ -20,6 +19,7 @@ from config import (
 )
 from services.stock_data import symbol_to_exchange
 from services.indicator_store import compute_and_save
+from services.qfq_cache import invalidate_cache
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,10 @@ def run_incremental_update(
 
         if idx % 500 == 0 or idx == total:
             _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed}")
+
+    if updated_symbols:
+        invalidate_cache(updated_symbols)
+        _log_progress(f"已清除 {len(updated_symbols)} 只股票的 qfq 缓存")
 
     result.finished_at = datetime.now().isoformat()
     elapsed = round(time.time() - t0, 2)

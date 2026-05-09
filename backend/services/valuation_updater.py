@@ -9,7 +9,7 @@ import akshare as ak
 import pandas as pd
 
 from datetime import datetime
-from config import VALUATION_DIR, QFQ_KLINE_DIR, LOG_DIR
+from config import VALUATION_DIR, RAW_KLINE_DIR, LOG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ def fetch_symbol_valuation(symbol: str, period: str) -> pd.DataFrame | None:
 
 
 def get_all_symbols() -> list[str]:
-    return [f.stem for f in sorted(QFQ_KLINE_DIR.glob("*.parquet"))]
+    return [f.stem for f in sorted(RAW_KLINE_DIR.glob("*.parquet"))]
 
 
 VALUATION_PROGRESS_FILE = LOG_DIR / "valuation_progress.log"

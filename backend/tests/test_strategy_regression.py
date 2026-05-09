@@ -6,17 +6,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "strategi
 
 import pytest
 import pandas as pd
-from config import QFQ_KLINE_DIR
+from config import RAW_KLINE_DIR
 from services.stock_data import aggregate_kline
+from services.qfq_cache import get_qfq_kline
 from unittest.mock import MagicMock
 
-DATA_AVAILABLE = QFQ_KLINE_DIR.exists() and any(QFQ_KLINE_DIR.glob("*.parquet"))
+DATA_AVAILABLE = RAW_KLINE_DIR.exists() and any(RAW_KLINE_DIR.glob("*.parquet"))
 
-skip_no_data = pytest.mark.skipif(not DATA_AVAILABLE, reason="qfq parquet data not available")
+skip_no_data = pytest.mark.skipif(not DATA_AVAILABLE, reason="raw parquet data not available")
 
 
 def _load_monthly(symbol: str) -> list[dict]:
-    df = pd.read_parquet(QFQ_KLINE_DIR / f"{symbol}.parquet")
+    df = get_qfq_kline(symbol)
+    if df.empty:
+        return []
     df = df.sort_values("date").reset_index(drop=True)
     monthly = aggregate_kline(df, period="monthly")
     monthly = monthly.sort_values("date").reset_index(drop=True)
@@ -53,7 +56,9 @@ def _engine_backtest(symbols: list[str]) -> dict[str, list[str]]:
     from ma_tangle_breakout_screener import MaTangleBreakoutScreener
     stock_data = {}
     for sym in symbols:
-        df = pd.read_parquet(QFQ_KLINE_DIR / f"{sym}.parquet")
+        df = get_qfq_kline(sym)
+        if df.empty:
+            continue
         df = df.sort_values("date").reset_index(drop=True)
         stock_data[sym] = df
     screener = MaTangleBreakoutScreener()

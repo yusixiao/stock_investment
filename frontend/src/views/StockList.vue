@@ -1,6 +1,6 @@
 <template>
   <div class="stock-list-page">
-    <h1>A 股列表</h1>
+    <h1>A 股列表 <span class="data-hint">（前复权数据有效范围：2010年起）</span></h1>
     <UpdateStatus />
     <SearchBar @search="onSearch" />
     <table class="stock-table">
@@ -70,4 +70,5 @@ onMounted(loadData)
 .stock-table tbody tr { cursor: pointer; }
 .stock-table tbody tr:hover { background: #f5f7fa; }
 .pagination { margin-top: 16px; display: flex; align-items: center; gap: 12px; }
+.data-hint { font-size: 13px; color: #e6a23c; font-weight: normal; }
 </style>

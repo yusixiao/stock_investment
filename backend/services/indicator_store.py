@@ -1,9 +1,10 @@
 import pandas as pd
 from pathlib import Path
 
-from config import INDICATOR_DIR, QFQ_KLINE_DIR
+from config import INDICATOR_DIR, RAW_KLINE_DIR
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
 from services.stock_data import aggregate_kline
+from services.qfq_cache import get_qfq_kline
 
 _FREQS = ["daily", "weekly", "monthly"]
 _MA_WINDOWS = [5, 10, 20, 60]
@@ -57,13 +58,14 @@ def load_indicators(symbol: str, freq: str) -> pd.DataFrame | None:
 
 
 def run_full_precompute(progress_callback=None):
-    files = list(QFQ_KLINE_DIR.glob("*.parquet"))
+    files = list(RAW_KLINE_DIR.glob("*.parquet"))
     total = len(files)
     for i, filepath in enumerate(files, 1):
         symbol = filepath.stem
         try:
-            df = pd.read_parquet(filepath)
-            compute_and_save(symbol, df)
+            df = get_qfq_kline(symbol)
+            if not df.empty:
+                compute_and_save(symbol, df)
         except Exception as e:
             if progress_callback:
                 progress_callback(f"指标预计算失败 {symbol}: {e}")

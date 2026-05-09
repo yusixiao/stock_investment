@@ -75,7 +75,9 @@ def list_stocks(
         if search and search.lower() not in symbol.lower():
             continue
         df = pd.read_parquet(f, columns=["date", "close", "volume"])
-        latest = df.iloc[0] if not df.empty else {}
+        if df.empty:
+            continue
+        latest = df.iloc[0]
         close_val = float(latest.get("close", 0))
         volume_val = float(latest.get("volume", 0))
         if math.isnan(close_val) or math.isinf(close_val):

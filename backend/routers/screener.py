@@ -2,10 +2,11 @@ import pandas as pd
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Body
 
-from config import QFQ_KLINE_DIR, STRATEGY_DIR
+from config import RAW_KLINE_DIR, STRATEGY_DIR
 from services.backtest.strategy_loader import load_strategy_from_file
 from services.backtest.engine import BacktestEngine
 from services.backtest.base import ScreenerStrategy
+from services.qfq_cache import get_qfq_kline
 
 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
@@ -37,9 +38,9 @@ def api_run_screener(body: dict = Body(...)):
         screeners.append(instance)
 
     stock_data = {}
-    for filepath in QFQ_KLINE_DIR.glob("*.parquet"):
+    for filepath in RAW_KLINE_DIR.glob("*.parquet"):
         symbol = filepath.stem
-        df = pd.read_parquet(filepath)
+        df = get_qfq_kline(symbol)
         if not df.empty:
             stock_data[symbol] = df
 

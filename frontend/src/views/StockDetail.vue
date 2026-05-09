@@ -6,8 +6,8 @@
     </div>
 
     <div class="controls">
-      <label>开始日期: <input v-model="startDate" type="date" @change="loadData" /></label>
-      <label>结束日期: <input v-model="endDate" type="date" @change="loadData" /></label>
+      <label>开始日期: <input v-model="startDate" type="date" min="2010-01-04" @change="loadData" /></label>
+      <label>结束日期: <input v-model="endDate" type="date" min="2010-01-04" @change="loadData" /></label>
       <span class="period-toggles">
         周期:
         <button v-for="p in periodOptions" :key="p.value"

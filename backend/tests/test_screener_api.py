@@ -20,8 +20,9 @@ class TestScreenerRoutes:
         data = resp.json()
         assert "screened_symbols" in data
 
-    @patch("routers.screener.QFQ_KLINE_DIR")
-    def test_run_screener_with_mock_data(self, mock_dir, tmp_path):
+    @patch("routers.screener.RAW_KLINE_DIR")
+    @patch("routers.screener.get_qfq_kline")
+    def test_run_screener_with_mock_data(self, mock_get_qfq, mock_dir, tmp_path):
         n = 60
         np.random.seed(42)
         close = 100 + np.cumsum(np.random.randn(n))
@@ -33,6 +34,7 @@ class TestScreenerRoutes:
         pq_path = tmp_path / "TEST.SH.parquet"
         df.to_parquet(pq_path)
         mock_dir.glob = tmp_path.glob
+        mock_get_qfq.return_value = df
 
         from pathlib import Path
         strategies_dir = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
