@@ -50,3 +50,17 @@ class TraderStrategy(BaseStrategy):
 
     def on_bar(self, ctx):
         raise NotImplementedError
+
+
+class BuyStrategy(BaseStrategy):
+    strategy_type = "buy"
+
+    def on_bar(self, ctx):
+        raise NotImplementedError
+
+
+class SellStrategy(BaseStrategy):
+    strategy_type = "sell"
+
+    def on_bar(self, ctx):
+        raise NotImplementedError
