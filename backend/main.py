@@ -11,6 +11,7 @@ from routers.valuation import router as valuation_router
 from routers.dividend import router as dividend_router
 from routers.financial import router as financial_router
 from routers.strategy_group import router as strategy_group_router
+from routers.meta import router as meta_router
 from scheduler import start_scheduler, shutdown_scheduler
 
 
@@ -42,6 +43,7 @@ app.include_router(valuation_router)
 app.include_router(dividend_router)
 app.include_router(financial_router)
 app.include_router(strategy_group_router)
+app.include_router(meta_router)
 
 
 @app.get("/api/health")
