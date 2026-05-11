@@ -248,6 +248,10 @@ class TraderContext(ScreenerContext):
         self.selected_symbols = selected_symbols
         self.days_since_rebalance = days_since_rebalance
 
+    @property
+    def available_cash(self) -> float:
+        return self._portfolio.cash
+
     def reset_rebalance_counter(self):
         self.days_since_rebalance = 0
 
