@@ -402,6 +402,20 @@ def _find_strategy_by_class(strategy_dir: Path, class_name: str) -> Path | None:
     return None
 
 
+def _resolve_filepath(step_config: dict) -> Path:
+    """解析策略文件路径，filepath 为空时按 class_name 自动搜索策略目录。"""
+    from config import STRATEGY_DIR
+    filepath_str = step_config.get("filepath", "")
+    if filepath_str and Path(filepath_str).is_file():
+        return Path(filepath_str)
+    # filepath 为空或无效，按 class_name 搜索
+    class_name = step_config["class_name"]
+    found = _find_strategy_by_class(STRATEGY_DIR, class_name)
+    if found is None:
+        raise FileNotFoundError(f"Strategy class {class_name} not found in strategies directory")
+    return found
+
+
 def _extract_symbols_from_result(result: dict) -> list[str]:
     screened = result.get("screened_symbols", [])
     if not screened:
@@ -418,18 +432,9 @@ def _execute_step(step_config: dict, start_date: str, end_date: str, symbols: li
     from config import RAW_KLINE_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
     import pandas as pd
 
-    filepath_str = step_config.get("filepath", "")
     class_name = step_config["class_name"]
     params = step_config.get("params", {})
-
-    # filepath 为空时，按 class_name 在策略目录中搜索
-    if not filepath_str:
-        from config import STRATEGY_DIR
-        filepath = _find_strategy_by_class(STRATEGY_DIR, class_name)
-        if filepath is None:
-            raise ValueError(f"Strategy class {class_name} not found in strategies directory")
-    else:
-        filepath = Path(filepath_str)
+    filepath = _resolve_filepath(step_config)
 
     logger.debug("执行步骤: filepath=%s, class_name=%s, params=%s", filepath, class_name, params)
 
@@ -511,7 +516,7 @@ def _execute_buy_sell_steps(
 
     screeners = []
     for cfg in screener_configs:
-        filepath = Path(cfg["filepath"])
+        filepath = _resolve_filepath(cfg)
         classes = load_strategy_from_file(filepath)
         cls = next((c for c in classes if c.__name__ == cfg["class_name"]), None)
         if cls is None:
@@ -520,7 +525,7 @@ def _execute_buy_sell_steps(
 
     buyer = None
     if buyer_config:
-        filepath = Path(buyer_config["filepath"])
+        filepath = _resolve_filepath(buyer_config)
         classes = load_strategy_from_file(filepath)
         cls = next((c for c in classes if c.__name__ == buyer_config["class_name"]), None)
         if cls is None:
@@ -529,7 +534,7 @@ def _execute_buy_sell_steps(
 
     seller = None
     if seller_config:
-        filepath = Path(seller_config["filepath"])
+        filepath = _resolve_filepath(seller_config)
         classes = load_strategy_from_file(filepath)
         cls = next((c for c in classes if c.__name__ == seller_config["class_name"]), None)
         if cls is None:
@@ -684,7 +689,7 @@ class GroupRunner:
         """检测 pipeline 中是否包含 BuyStrategy 或 SellStrategy，决定走买卖引擎还是普通引擎"""
         for step in pipeline:
             try:
-                filepath = Path(step["filepath"])
+                filepath = _resolve_filepath(step)
                 classes = load_strategy_from_file(filepath)
                 cls = next((c for c in classes if c.__name__ == step["class_name"]), None)
                 if cls and (issubclass(cls, BuyStrategy) or issubclass(cls, SellStrategy)):
@@ -702,7 +707,7 @@ class GroupRunner:
         buyer_config = None
         seller_config = None
         for step in pipeline:
-            filepath = Path(step["filepath"])
+            filepath = _resolve_filepath(step)
             classes = load_strategy_from_file(filepath)
             cls = next((c for c in classes if c.__name__ == step["class_name"]), None)
             if cls is None:
