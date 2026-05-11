@@ -6,7 +6,11 @@ class ParamAccessor:
         if overrides:
             for key, val in overrides.items():
                 if key in self._values:
-                    self._values[key] = val
+                    # 兼容两种格式：覆盖值可能是原始值(如 8)，也可能是完整定义(如 {"default": 8, ...})
+                    if isinstance(val, dict) and "default" in val:
+                        self._values[key] = val["default"]
+                    else:
+                        self._values[key] = val
 
     def __getattr__(self, name):
         if name.startswith("_"):
