@@ -40,6 +40,14 @@
       <div class="dialog">
         <h3>运行策略组</h3>
         <div class="dialog-form">
+          <label v-if="hasBuySell && successRuns.length">信号来源:
+            <select v-model="sourceRunId">
+              <option value="">不使用（重新选股）</option>
+              <option v-for="r in successRuns" :key="r.run_id" :value="r.run_id">
+                {{ r.created_at?.slice(0, 16) }} | {{ formatSummary(r.summary) }}
+              </option>
+            </select>
+          </label>
           <label>开始日期: <input v-model="runStartDate" type="date" min="2010-01-04" /></label>
           <label>结束日期: <input v-model="runEndDate" type="date" min="2010-01-04" /></label>
           <label>起始资金(万): <input v-model.number="runCapital" type="number" min="1" step="1" /></label>
@@ -60,7 +68,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchGroup, fetchGroupRuns, runGroup, deleteGroup } from '../api'
 
@@ -75,6 +83,19 @@ const runStartDate = ref('')
 const runEndDate = ref('')
 const runMode = ref('auto')
 const runCapital = ref(100)
+const sourceRunId = ref('')
+
+const hasBuySell = computed(() => {
+  if (!group.value?.pipeline) return false
+  return group.value.pipeline.some(s =>
+    s.strategy_type === 'buy' || s.strategy_type === 'sell' ||
+    /buy|sell/i.test(s.class_name || '')
+  )
+})
+
+const successRuns = computed(() => {
+  return runs.value.filter(r => r.status === 'success' && r.summary?.screened_count > 0)
+})
 
 const freqMap = { daily: '日线', weekly: '周线', monthly: '月线' }
 function freqLabel(f) { return freqMap[f] || '日线' }
@@ -113,6 +134,7 @@ function openRunDialog() {
   runStartDate.value = ''
   runEndDate.value = ''
   runMode.value = 'auto'
+  sourceRunId.value = ''
   showRunDialog.value = true
 }
 
@@ -122,6 +144,7 @@ async function doRun() {
     end_date: runEndDate.value || undefined,
     execution_mode: runMode.value,
     initial_capital: runCapital.value * 10000,
+    source_run_id: sourceRunId.value || undefined,
   })
   showRunDialog.value = false
   router.push(`/backtest/group/${groupId}/run/${data.run_id}`)
