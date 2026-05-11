@@ -35,6 +35,15 @@ class GroupManager:
             except sqlite3.OperationalError:
                 pass
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS stock_exclusions (
+                    run_id TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    reason TEXT,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (run_id, symbol)
+                )
+            """)
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS group_runs (
                     run_id TEXT PRIMARY KEY,
                     group_id TEXT NOT NULL,
@@ -235,6 +244,41 @@ class GroupManager:
             conn.close()
 
 
+    def add_exclusion(self, run_id: str, symbol: str, reason: str = ""):
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO stock_exclusions (run_id, symbol, reason, created_at) VALUES (?, ?, ?, ?)",
+                (run_id, symbol, reason, datetime.now().isoformat()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def remove_exclusion(self, run_id: str, symbol: str):
+        conn = self._get_conn()
+        try:
+            conn.execute("DELETE FROM stock_exclusions WHERE run_id = ? AND symbol = ?", (run_id, symbol))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def list_exclusions(self, run_id: str) -> list[dict]:
+        conn = self._get_conn()
+        try:
+            rows = conn.execute("SELECT symbol, reason, created_at FROM stock_exclusions WHERE run_id = ?", (run_id,)).fetchall()
+        finally:
+            conn.close()
+        return [{"symbol": row["symbol"], "reason": row["reason"], "created_at": row["created_at"]} for row in rows]
+
+    def get_effective_symbols(self, run_id: str) -> list[str]:
+        run = self.get_run(run_id)
+        if not run or not run["steps_result"]:
+            return []
+        all_symbols = run["steps_result"][-1].get("symbols", [])
+        exclusions = {e["symbol"] for e in self.list_exclusions(run_id)}
+        return [s for s in all_symbols if s not in exclusions]
+
     def migrate_from_tasks(self, task_manager) -> int:
         tasks = task_manager.list_tasks(show_deleted=False)
         source_map = {}
@@ -331,7 +375,9 @@ import threading
 from pathlib import Path
 from services.backtest.task_manager import TaskManager, task_manager as default_task_manager
 from services.backtest.strategy_loader import load_strategy_from_file
-from services.backtest.base import ScreenerStrategy, TraderStrategy
+from services.backtest.base import ScreenerStrategy, TraderStrategy, BuyStrategy, SellStrategy
+from services.qfq_cache import get_qfq_kline
+from config import RAW_KLINE_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
 
 
 def _extract_symbols_from_result(result: dict) -> list[str]:
@@ -411,52 +457,109 @@ def _execute_step(step_config: dict, start_date: str, end_date: str, symbols: li
     return task_id, result
 
 
+def _execute_buy_sell_steps(
+    screener_configs: list[dict],
+    buyer_config: dict | None,
+    seller_config: dict | None,
+    start_date: str,
+    end_date: str,
+    symbols: list[str] | None,
+    initial_capital: float,
+    task_manager: TaskManager,
+    signal_table: dict[str, list[str]] | None = None,
+    join_modes: list[str] | None = None,
+) -> tuple[str, dict]:
+    from services.backtest.buy_sell_engine import BuySellEngine
+    import pandas as pd
+
+    screeners = []
+    for cfg in screener_configs:
+        filepath = Path(cfg["filepath"])
+        classes = load_strategy_from_file(filepath)
+        cls = next((c for c in classes if c.__name__ == cfg["class_name"]), None)
+        if cls is None:
+            raise ValueError(f"Strategy class {cfg['class_name']} not found in {filepath}")
+        screeners.append(cls(param_overrides=cfg.get("params", {})))
+
+    buyer = None
+    if buyer_config:
+        filepath = Path(buyer_config["filepath"])
+        classes = load_strategy_from_file(filepath)
+        cls = next((c for c in classes if c.__name__ == buyer_config["class_name"]), None)
+        if cls is None:
+            raise ValueError(f"Strategy class {buyer_config['class_name']} not found in {filepath}")
+        buyer = cls(param_overrides=buyer_config.get("params", {}))
+
+    seller = None
+    if seller_config:
+        filepath = Path(seller_config["filepath"])
+        classes = load_strategy_from_file(filepath)
+        cls = next((c for c in classes if c.__name__ == seller_config["class_name"]), None)
+        if cls is None:
+            raise ValueError(f"Strategy class {seller_config['class_name']} not found in {filepath}")
+        seller = cls(param_overrides=seller_config.get("params", {}))
+
+    if symbols is not None:
+        target_symbols = symbols
+    else:
+        target_symbols = [f.stem for f in RAW_KLINE_DIR.glob("*.parquet")]
+
+    stock_data = {}
+    for sym in target_symbols:
+        df = get_qfq_kline(sym, start_date=start_date, end_date=end_date)
+        if not df.empty:
+            stock_data[sym] = df
+
+    valuation_data = {}
+    for sym in stock_data:
+        fp = VALUATION_DIR / f"{sym}.parquet"
+        if fp.exists():
+            valuation_data[sym] = pd.read_parquet(fp).sort_values("date").reset_index(drop=True)
+
+    dividend_data = {}
+    for sym in stock_data:
+        fp = DIVIDEND_DIR / f"{sym}.parquet"
+        if fp.exists():
+            dividend_data[sym] = pd.read_parquet(fp)
+
+    financial_data = {}
+    for sym in stock_data:
+        fp = FINANCIAL_DIR / f"{sym}.parquet"
+        if fp.exists():
+            financial_data[sym] = pd.read_parquet(fp).sort_values("报告期").reset_index(drop=True)
+
+    task_id = task_manager.create_task(task_type="backtest", start_date=start_date, end_date=end_date)
+
+    engine = BuySellEngine(
+        stock_data=stock_data,
+        screeners=screeners,
+        buyer=buyer,
+        seller=seller,
+        initial_capital=initial_capital,
+        signal_table=signal_table,
+        valuation_data=valuation_data,
+        dividend_data=dividend_data,
+        financial_data=financial_data,
+        join_modes=join_modes,
+    )
+    result = engine.run()
+    task_manager.complete_task(task_id, result)
+    return task_id, result
+
+
 class GroupRunner:
     def __init__(self, group_manager: GroupManager | None = None, task_manager: TaskManager | None = None):
         self._group_manager = group_manager or group_manager_instance
         self._task_manager = task_manager or default_task_manager
 
-    def run_auto(self, group_id: str, start_date: str, end_date: str) -> str:
+    def run_auto(self, group_id: str, start_date: str, end_date: str, source_run_id: str = None) -> str:
         gm = self._group_manager
         group = gm.get_group(group_id)
         if group is None:
             raise ValueError(f"Group {group_id} not found")
 
-        pipeline = group["pipeline"]
-        join_modes = group["join_modes"]
         run_id = gm.create_run(group_id, start_date, end_date, "auto")
-
-        try:
-            steps_result = []
-            prev_symbols = None
-            for i, step_config in enumerate(pipeline):
-                join_mode = join_modes[i - 1] if i > 0 and i - 1 < len(join_modes) else "independent"
-                if i == 0 or join_mode == "independent":
-                    input_symbols = None
-                else:
-                    input_symbols = prev_symbols
-
-                input_count = len(input_symbols) if input_symbols else 0
-                task_id, result = _execute_step(step_config, start_date, end_date, input_symbols, self._task_manager)
-                output_symbols = _extract_symbols_from_result(result)
-
-                step_info = {
-                    "step": i + 1,
-                    "input_count": input_count,
-                    "output_count": len(output_symbols),
-                    "symbols": output_symbols,
-                    "task_id": task_id,
-                }
-                steps_result.append(step_info)
-                gm.update_run_step(run_id, i + 1, steps_result)
-                prev_symbols = output_symbols
-
-            final_result = result
-            summary = self._build_summary(final_result)
-            gm.update_run_status(run_id, "success", final_result=final_result, summary=summary)
-        except Exception as e:
-            gm.update_run_status(run_id, "failed", error=str(e))
-
+        self._run_auto_with_run_id(run_id, group_id, start_date, end_date, source_run_id)
         return run_id
 
     def run_stepwise_start(self, group_id: str, start_date: str, end_date: str) -> str:
@@ -534,18 +637,107 @@ class GroupRunner:
         else:
             gm.update_run_status(run_id, f"step_{next_step_idx + 1}_done")
 
-    def _run_auto_with_run_id(self, run_id: str, group_id: str, start_date: str, end_date: str):
+    def _has_buy_sell(self, pipeline: list[dict]) -> bool:
+        for step in pipeline:
+            try:
+                filepath = Path(step["filepath"])
+                classes = load_strategy_from_file(filepath)
+                cls = next((c for c in classes if c.__name__ == step["class_name"]), None)
+                if cls and (issubclass(cls, BuyStrategy) or issubclass(cls, SellStrategy)):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _split_pipeline(self, pipeline: list[dict]) -> tuple[list[dict], dict | None, dict | None]:
+        screener_configs = []
+        buyer_config = None
+        seller_config = None
+        for step in pipeline:
+            filepath = Path(step["filepath"])
+            classes = load_strategy_from_file(filepath)
+            cls = next((c for c in classes if c.__name__ == step["class_name"]), None)
+            if cls is None:
+                continue
+            if issubclass(cls, BuyStrategy):
+                buyer_config = step
+            elif issubclass(cls, SellStrategy):
+                seller_config = step
+            elif issubclass(cls, ScreenerStrategy):
+                screener_configs.append(step)
+        return screener_configs, buyer_config, seller_config
+
+    def _build_signal_table(self, final_result: dict, source_run_id: str) -> dict[str, list[str]]:
+        gm = self._group_manager
+        exclusions = {e["symbol"] for e in gm.list_exclusions(source_run_id)}
+        screened = final_result.get("screened_symbols", [])
+        table: dict[str, list[str]] = {}
+        for item in screened:
+            if not isinstance(item, dict):
+                continue
+            symbol = item.get("symbol", "")
+            if symbol in exclusions:
+                continue
+            for d in item.get("match_dates", []):
+                if len(d) == 10:
+                    table.setdefault(d, []).append(symbol)
+        return table
+
+    def _run_auto_with_run_id(self, run_id: str, group_id: str, start_date: str, end_date: str, source_run_id: str = None):
         gm = self._group_manager
         group = gm.get_group(group_id)
         pipeline = group["pipeline"]
         join_modes = group["join_modes"]
 
+        initial_symbols = None
+        if source_run_id:
+            initial_symbols = gm.get_effective_symbols(source_run_id)
+
         try:
+            if self._has_buy_sell(pipeline):
+                screener_configs, buyer_config, seller_config = self._split_pipeline(pipeline)
+
+                signal_table = None
+                symbols = initial_symbols
+                if source_run_id:
+                    source_run = gm.get_run(source_run_id)
+                    if source_run and source_run.get("final_result"):
+                        signal_table = self._build_signal_table(source_run["final_result"], source_run_id)
+
+                screener_join_modes = join_modes[:max(0, len(screener_configs) - 1)] if join_modes else None
+
+                task_id, result = _execute_buy_sell_steps(
+                    screener_configs=screener_configs,
+                    buyer_config=buyer_config,
+                    seller_config=seller_config,
+                    start_date=start_date,
+                    end_date=end_date,
+                    symbols=symbols,
+                    initial_capital=1_000_000,
+                    task_manager=self._task_manager,
+                    signal_table=signal_table,
+                    join_modes=screener_join_modes,
+                )
+
+                steps_result = [{
+                    "step": 1,
+                    "input_count": len(symbols) if symbols else 0,
+                    "output_count": 0,
+                    "symbols": [],
+                    "task_id": task_id,
+                }]
+                gm.update_run_step(run_id, 1, steps_result)
+                summary = self._build_summary(result)
+                gm.update_run_status(run_id, "success", final_result=result, summary=summary)
+                return
+
             steps_result = []
-            prev_symbols = None
+            prev_symbols = initial_symbols
             for i, step_config in enumerate(pipeline):
                 join_mode = join_modes[i - 1] if i > 0 and i - 1 < len(join_modes) else "independent"
-                if i == 0 or join_mode == "independent":
+                if i == 0:
+                    input_symbols = initial_symbols
+                elif join_mode == "independent":
                     input_symbols = None
                 else:
                     input_symbols = prev_symbols
