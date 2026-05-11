@@ -81,16 +81,19 @@ def api_run_group(group_id: str, body: dict = Body(...)):
     start_date = body.get("start_date")
     end_date = body.get("end_date")
     execution_mode = body.get("execution_mode", "auto")
+    source_run_id = body.get("source_run_id")
+
+    initial_capital = body.get("initial_capital", 1_000_000)
 
     if execution_mode == "stepwise":
         run_id = group_runner.run_stepwise_start(group_id, start_date, end_date)
         run = group_manager_instance.get_run(run_id)
         return {"run_id": run_id, "status": run["status"]}
     else:
-        run_id = group_manager_instance.create_run(group_id, start_date, end_date, "auto")
+        run_id = group_manager_instance.create_run(group_id, start_date, end_date, "auto", initial_capital=initial_capital)
 
         def _do_run():
-            group_runner._run_auto_with_run_id(run_id, group_id, start_date, end_date)
+            group_runner._run_auto_with_run_id(run_id, group_id, start_date, end_date, source_run_id, initial_capital=initial_capital)
 
         t = threading.Thread(target=_do_run, daemon=True)
         t.start()
@@ -131,3 +134,33 @@ def api_next_step(run_id: str):
     group_runner.run_stepwise_next(run_id)
     updated = group_manager_instance.get_run(run_id)
     return {"run_id": run_id, "status": updated["status"], "current_step": updated["current_step"]}
+
+
+@router.get("/runs/{run_id}/exclusions")
+def api_list_exclusions(run_id: str):
+    run = group_manager_instance.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return group_manager_instance.list_exclusions(run_id)
+
+
+@router.post("/runs/{run_id}/exclusions")
+def api_add_exclusion(run_id: str, body: dict = Body(...)):
+    run = group_manager_instance.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    symbol = body.get("symbol")
+    reason = body.get("reason", "")
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+    group_manager_instance.add_exclusion(run_id, symbol, reason)
+    return {"ok": True}
+
+
+@router.delete("/runs/{run_id}/exclusions/{symbol}")
+def api_remove_exclusion(run_id: str, symbol: str):
+    run = group_manager_instance.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    group_manager_instance.remove_exclusion(run_id, symbol)
+    return {"ok": True}

@@ -60,6 +60,10 @@ class GroupManager:
                     FOREIGN KEY (group_id) REFERENCES strategy_groups(group_id)
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE group_runs ADD COLUMN initial_capital REAL NOT NULL DEFAULT 1000000")
+            except sqlite3.OperationalError:
+                pass
             conn.commit()
         finally:
             conn.close()
@@ -162,14 +166,14 @@ class GroupManager:
         finally:
             conn.close()
 
-    def create_run(self, group_id: str, start_date: str | None, end_date: str | None, execution_mode: str) -> str:
+    def create_run(self, group_id: str, start_date: str | None, end_date: str | None, execution_mode: str, initial_capital: float = 1_000_000) -> str:
         run_id = str(uuid.uuid4())[:8]
         now = datetime.now().isoformat()
         conn = self._get_conn()
         try:
             conn.execute(
-                "INSERT INTO group_runs (run_id, group_id, start_date, end_date, execution_mode, status, current_step, steps_result, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (run_id, group_id, start_date, end_date, execution_mode, "running", 0, "[]", now),
+                "INSERT INTO group_runs (run_id, group_id, start_date, end_date, execution_mode, status, current_step, steps_result, initial_capital, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (run_id, group_id, start_date, end_date, execution_mode, "running", 0, "[]", initial_capital, now),
             )
             conn.commit()
         finally:
@@ -195,6 +199,7 @@ class GroupManager:
             "steps_result": json.loads(row["steps_result"]) if row["steps_result"] else [],
             "final_result": json.loads(row["final_result"]) if row["final_result"] else None,
             "summary": json.loads(row["summary"]) if row["summary"] else None,
+            "initial_capital": row["initial_capital"],
             "error": row["error"],
             "created_at": row["created_at"],
         }
@@ -552,14 +557,14 @@ class GroupRunner:
         self._group_manager = group_manager or group_manager_instance
         self._task_manager = task_manager or default_task_manager
 
-    def run_auto(self, group_id: str, start_date: str, end_date: str, source_run_id: str = None) -> str:
+    def run_auto(self, group_id: str, start_date: str, end_date: str, source_run_id: str = None, initial_capital: float = 1_000_000) -> str:
         gm = self._group_manager
         group = gm.get_group(group_id)
         if group is None:
             raise ValueError(f"Group {group_id} not found")
 
-        run_id = gm.create_run(group_id, start_date, end_date, "auto")
-        self._run_auto_with_run_id(run_id, group_id, start_date, end_date, source_run_id)
+        run_id = gm.create_run(group_id, start_date, end_date, "auto", initial_capital=initial_capital)
+        self._run_auto_with_run_id(run_id, group_id, start_date, end_date, source_run_id, initial_capital=initial_capital)
         return run_id
 
     def run_stepwise_start(self, group_id: str, start_date: str, end_date: str) -> str:
@@ -683,7 +688,7 @@ class GroupRunner:
                     table.setdefault(d, []).append(symbol)
         return table
 
-    def _run_auto_with_run_id(self, run_id: str, group_id: str, start_date: str, end_date: str, source_run_id: str = None):
+    def _run_auto_with_run_id(self, run_id: str, group_id: str, start_date: str, end_date: str, source_run_id: str = None, initial_capital: float = 1_000_000):
         gm = self._group_manager
         group = gm.get_group(group_id)
         pipeline = group["pipeline"]
@@ -713,7 +718,7 @@ class GroupRunner:
                     start_date=start_date,
                     end_date=end_date,
                     symbols=symbols,
-                    initial_capital=1_000_000,
+                    initial_capital=initial_capital,
                     task_manager=self._task_manager,
                     signal_table=signal_table,
                     join_modes=screener_join_modes,
