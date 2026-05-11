@@ -388,6 +388,20 @@ from services.qfq_cache import get_qfq_kline
 from config import RAW_KLINE_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
 
 
+def _find_strategy_by_class(strategy_dir: Path, class_name: str) -> Path | None:
+    """在策略目录中按类名搜索策略文件。"""
+    for filepath in sorted(strategy_dir.rglob("*.py")):
+        if filepath.name.startswith("_"):
+            continue
+        try:
+            classes = load_strategy_from_file(filepath)
+            if any(c.__name__ == class_name for c in classes):
+                return filepath
+        except Exception:
+            continue
+    return None
+
+
 def _extract_symbols_from_result(result: dict) -> list[str]:
     screened = result.get("screened_symbols", [])
     if not screened:
@@ -404,9 +418,19 @@ def _execute_step(step_config: dict, start_date: str, end_date: str, symbols: li
     from config import RAW_KLINE_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
     import pandas as pd
 
-    filepath = Path(step_config["filepath"])
+    filepath_str = step_config.get("filepath", "")
     class_name = step_config["class_name"]
     params = step_config.get("params", {})
+
+    # filepath 为空时，按 class_name 在策略目录中搜索
+    if not filepath_str:
+        from config import STRATEGY_DIR
+        filepath = _find_strategy_by_class(STRATEGY_DIR, class_name)
+        if filepath is None:
+            raise ValueError(f"Strategy class {class_name} not found in strategies directory")
+    else:
+        filepath = Path(filepath_str)
+
     logger.debug("执行步骤: filepath=%s, class_name=%s, params=%s", filepath, class_name, params)
 
     classes = load_strategy_from_file(filepath)

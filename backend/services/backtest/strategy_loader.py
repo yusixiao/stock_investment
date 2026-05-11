@@ -7,10 +7,12 @@ from services.backtest.base import BaseStrategy, ScreenerStrategy, TraderStrateg
 
 def load_strategy_from_file(filepath: Path) -> list[type]:
     filepath = Path(filepath)
-    if not filepath.exists():
+    if not filepath.exists() or str(filepath) == "":
         raise FileNotFoundError(f"Strategy file not found: {filepath}")
 
     spec = importlib.util.spec_from_file_location(filepath.stem, filepath)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from: {filepath}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
