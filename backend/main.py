@@ -1,6 +1,31 @@
+import logging
+import logging.handlers
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from config import LOG_DIR
+
+# 日志配置：同时输出到 stdout 和文件（按天轮转，保留90天）
+_log_file = LOG_DIR / "app.log"
+_file_handler = logging.handlers.TimedRotatingFileHandler(
+    _log_file, when="midnight", backupCount=90, encoding="utf-8"
+)
+_file_handler.setLevel(logging.DEBUG)
+_file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+))
+
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.INFO)
+_console_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
+))
+
+logging.basicConfig(level=logging.DEBUG, handlers=[_file_handler, _console_handler])
+# 降低第三方库的日志级别
+logging.getLogger("uvicorn").setLevel(logging.INFO)
+logging.getLogger("watchfiles").setLevel(logging.WARNING)
 
 from routers.stock import router as stock_router
 from routers.data_update import router as data_update_router
