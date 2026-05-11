@@ -2,7 +2,7 @@ import importlib.util
 import inspect
 from pathlib import Path
 
-from services.backtest.base import BaseStrategy, ScreenerStrategy, TraderStrategy
+from services.backtest.base import BaseStrategy, ScreenerStrategy, TraderStrategy, BuyStrategy, SellStrategy
 
 
 def load_strategy_from_file(filepath: Path) -> list[type]:
@@ -18,7 +18,7 @@ def load_strategy_from_file(filepath: Path) -> list[type]:
     for _, obj in inspect.getmembers(module, inspect.isclass):
         if (
             issubclass(obj, BaseStrategy)
-            and obj not in (BaseStrategy, ScreenerStrategy, TraderStrategy)
+            and obj not in (BaseStrategy, ScreenerStrategy, TraderStrategy, BuyStrategy, SellStrategy)
             and obj.__module__ == module.__name__
         ):
             strategies.append(obj)
