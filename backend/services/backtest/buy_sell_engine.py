@@ -135,7 +135,14 @@ class BuySellEngine:
         return symbols
 
     def run(self) -> dict:
-        """执行回测主循环，返回 metrics/equity_curve/trades。"""
+        """执行回测主循环，返回 metrics/equity_curve/trades。
+
+        核心逻辑：维护 target_symbols 累计池。
+        - 每日从 signal_table/screener 获取今日信号
+        - 仅新增股票加入 target_symbols 并标记为 new_symbols
+        - Seller 每日执行，可通过 ctx.remove_target 移除股票
+        - Buyer 仅在有新增时执行
+        """
         mode_desc = "signal_table" if self._signal_table is not None else "screener+trader"
         logger.info("开始运行回测, 模式: %s", mode_desc)
 
@@ -151,9 +158,10 @@ class BuySellEngine:
 
         equity_curve = []
         prev_closes: dict[str, float] = {}
-        # 周期缓存: 同一周期内复用上次筛选结果，避免重复计算
         screener_cache: dict[int, list[str]] = {}
         prev_period_keys: dict[int, str] = {}
+
+        target_symbols: set[str] = set()
 
         for idx in range(n_bars):
             if idx % 10 == 0 or idx == n_bars - 1:
@@ -179,18 +187,16 @@ class BuySellEngine:
             current_date = ref_df.iloc[idx]["date"]
             available_symbols = [s for s in self._all_symbols if s in current_bars]
 
-            # --- 选股逻辑: signal_table 直接查表 vs screener 动态筛选 ---
+            # --- 选股逻辑: 获取今日信号 ---
             if self._signal_table is not None:
-                # signal_table 模式: 预计算信号表直接按日期查找
-                selected_symbols = self._signal_table.get(current_date, [])
-                if selected_symbols:
-                    logger.debug("signal_table 命中: date=%s, count=%d", current_date, len(selected_symbols))
+                today_signals = self._signal_table.get(current_date, [])
+                if today_signals:
+                    logger.debug("signal_table 命中: date=%s, count=%d", current_date, len(today_signals))
             elif self._screeners:
                 screener_sets: list[set[str]] = []
                 for si, screener in enumerate(self._screeners):
                     freq = getattr(screener, "frequency", "daily")
                     pk = self._period_key(current_date, freq)
-                    # 周期键变化才重新执行筛选，否则复用缓存
                     need_run = (si not in prev_period_keys) or (pk != prev_period_keys[si])
                     if need_run:
                         ctx = self._make_screener_ctx(screener, idx)
@@ -205,40 +211,68 @@ class BuySellEngine:
                     screener_sets.append(set(screener_cache.get(si, [])))
 
                 # 按 join_modes 合并多个 screener 结果 (correlated=交集, independent=并集)
-                merged_set = screener_sets[0] if screener_sets else set(available_symbols)
+                merged_set = screener_sets[0] if screener_sets else set()
                 for i, jm in enumerate(self._join_modes):
                     next_set = screener_sets[i + 1]
                     if jm == "correlated":
                         merged_set = merged_set & next_set
                     else:
                         merged_set = merged_set | next_set
-                selected_symbols = [s for s in available_symbols if s in merged_set]
+                today_signals = [s for s in available_symbols if s in merged_set]
             else:
-                selected_symbols = list(available_symbols)
+                today_signals = []
 
-            trader_ctx = TraderContext(
-                stock_data=self._stock_data,
-                current_idx=idx,
-                portfolio=broker.portfolio,
-                broker_submit=broker.submit_order,
-                selected_symbols=selected_symbols,
-                days_since_rebalance=0,
-                weekly_data=self._weekly_data,
-                monthly_data=self._monthly_data,
-                valuation_data=self._valuation_data,
-                dividend_data=self._dividend_data,
-                financial_data=self._financial_data,
-            )
+            # --- 累计池逻辑: 仅新增股票触发 buyer ---
+            new_symbols = [s for s in today_signals if s not in target_symbols]
+            target_symbols.update(new_symbols)
+            has_new = len(new_symbols) > 0
 
+            def on_remove_target(sym, _ts=target_symbols):
+                _ts.discard(sym)
+
+            # Seller 每日执行
             if self._seller:
+                seller_ctx = TraderContext(
+                    stock_data=self._stock_data,
+                    current_idx=idx,
+                    portfolio=broker.portfolio,
+                    broker_submit=broker.submit_order,
+                    selected_symbols=list(target_symbols),
+                    days_since_rebalance=0,
+                    weekly_data=self._weekly_data,
+                    monthly_data=self._monthly_data,
+                    valuation_data=self._valuation_data,
+                    dividend_data=self._dividend_data,
+                    financial_data=self._financial_data,
+                    target_symbols=list(target_symbols),
+                    new_symbols=list(new_symbols),
+                    on_remove_target=on_remove_target,
+                )
                 try:
-                    self._seller.on_bar(trader_ctx)
+                    self._seller.on_bar(seller_ctx)
                 except Exception as e:
                     logger.warning("Seller 执行异常: date=%s, error=%s", current_date, e)
 
-            if selected_symbols and self._buyer:
+            # Buyer 仅在有新增时执行
+            if has_new and self._buyer:
+                buyer_ctx = TraderContext(
+                    stock_data=self._stock_data,
+                    current_idx=idx,
+                    portfolio=broker.portfolio,
+                    broker_submit=broker.submit_order,
+                    selected_symbols=list(target_symbols),
+                    days_since_rebalance=0,
+                    weekly_data=self._weekly_data,
+                    monthly_data=self._monthly_data,
+                    valuation_data=self._valuation_data,
+                    dividend_data=self._dividend_data,
+                    financial_data=self._financial_data,
+                    target_symbols=list(target_symbols),
+                    new_symbols=list(new_symbols),
+                    on_remove_target=on_remove_target,
+                )
                 try:
-                    self._buyer.on_bar(trader_ctx)
+                    self._buyer.on_bar(buyer_ctx)
                 except Exception as e:
                     logger.warning("Buyer 执行异常: date=%s, error=%s", current_date, e)
 

@@ -55,3 +55,133 @@ def test_trader_context_remove_target():
     )
     ctx.remove_target("SH600001")
     assert "SH600001" not in target_set
+
+
+# --- BuySellEngine integration tests ---
+
+from services.backtest.buy_sell_engine import BuySellEngine
+from services.backtest.base import BuyStrategy, SellStrategy, ScreenerStrategy
+
+
+class RecordingBuyer(BuyStrategy):
+    """记录每次 on_bar 调用时的 target_symbols 和 new_symbols。"""
+    name = "recording_buyer"
+    params = {}
+
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def on_bar(self, ctx):
+        self.calls.append({
+            "date": ctx._current_date,
+            "target_symbols": list(ctx.target_symbols),
+            "new_symbols": list(ctx.new_symbols),
+            "cash": ctx.available_cash,
+        })
+
+
+class RecordingSeller(SellStrategy):
+    """在特定日期对特定股票调用 remove_target + 卖出。"""
+    name = "recording_seller"
+    params = {}
+
+    def __init__(self, sell_plan: dict[str, list[str]] = None):
+        super().__init__()
+        self.sell_plan = sell_plan or {}
+        self.calls = []
+
+    def on_bar(self, ctx):
+        self.calls.append(ctx._current_date)
+        symbols_to_sell = self.sell_plan.get(ctx._current_date, [])
+        for sym in symbols_to_sell:
+            pos = ctx.get_position(sym)
+            if pos and pos["shares"] > 0:
+                ctx.order_shares(sym, -pos["shares"])
+            ctx.remove_target(sym)
+
+
+def test_target_symbols_accumulates():
+    """信号表命中时 target_symbols 累计，buyer 仅在有新增时调用。"""
+    stock_data = _make_stock_data()
+    signal_table = {
+        "2024-01-04": ["SH600001"],
+        "2024-01-06": ["SH600002"],
+    }
+    buyer = RecordingBuyer()
+    seller = RecordingSeller()
+
+    engine = BuySellEngine(
+        stock_data=stock_data,
+        buyer=buyer,
+        seller=seller,
+        initial_capital=1_000_000,
+        signal_table=signal_table,
+    )
+    engine.run()
+
+    # Buyer should be called exactly 2 times (on day4 and day6 when new symbols appear)
+    assert len(buyer.calls) == 2
+
+    # First call: target_symbols = [SH600001], new_symbols = [SH600001]
+    assert "SH600001" in buyer.calls[0]["target_symbols"]
+    assert "SH600001" in buyer.calls[0]["new_symbols"]
+
+    # Second call: target_symbols contains both, new_symbols = [SH600002]
+    assert "SH600001" in buyer.calls[1]["target_symbols"]
+    assert "SH600002" in buyer.calls[1]["target_symbols"]
+    assert "SH600002" in buyer.calls[1]["new_symbols"]
+    assert "SH600001" not in buyer.calls[1]["new_symbols"]
+
+
+def test_seller_removes_from_target():
+    """Seller 平仓后从 target_symbols 移除，不触发 buyer。"""
+    stock_data = _make_stock_data()
+    signal_table = {
+        "2024-01-03": ["SH600001"],
+    }
+    seller = RecordingSeller(sell_plan={"2024-01-06": ["SH600001"]})
+    buyer = RecordingBuyer()
+
+    engine = BuySellEngine(
+        stock_data=stock_data,
+        buyer=buyer,
+        seller=seller,
+        initial_capital=1_000_000,
+        signal_table=signal_table,
+    )
+    engine.run()
+
+    # Buyer only called once on day3 (signal day)
+    assert len(buyer.calls) == 1
+    assert buyer.calls[0]["target_symbols"] == ["SH600001"]
+
+    # Seller called every day (10 bars)
+    assert len(seller.calls) == 10
+
+
+def test_seller_executes_before_buyer():
+    """同一天: seller 先执行释放资金，buyer 后执行时能用到释放的资金。"""
+    stock_data = _make_stock_data()
+    signal_table = {
+        "2024-01-03": ["SH600001"],
+        "2024-01-06": ["SH600002"],
+    }
+    # day6: seller removes SH600001, buyer gets signal for SH600002
+    seller = RecordingSeller(sell_plan={"2024-01-06": ["SH600001"]})
+    buyer = RecordingBuyer()
+
+    engine = BuySellEngine(
+        stock_data=stock_data,
+        buyer=buyer,
+        seller=seller,
+        initial_capital=1_000_000,
+        signal_table=signal_table,
+    )
+    engine.run()
+
+    # On day6, buyer's ctx should NOT contain SH600001 (seller already removed it)
+    day6_call = [c for c in buyer.calls if c["date"] == "2024-01-06"]
+    assert len(day6_call) == 1
+    assert "SH600001" not in day6_call[0]["target_symbols"]
+    assert "SH600002" in day6_call[0]["target_symbols"]
