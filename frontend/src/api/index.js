@@ -166,4 +166,16 @@ export function migrateGroups() {
   return api.post('/backtest/groups/migrate')
 }
 
+export function fetchExclusions(runId) {
+  return api.get(`/backtest/runs/${runId}/exclusions`)
+}
+
+export function addExclusion(runId, symbol, reason = '') {
+  return api.post(`/backtest/runs/${runId}/exclusions`, { symbol, reason })
+}
+
+export function removeExclusion(runId, symbol) {
+  return api.delete(`/backtest/runs/${runId}/exclusions/${symbol}`)
+}
+
 export default api

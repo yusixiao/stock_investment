@@ -25,16 +25,24 @@
       <div v-if="run.status === 'running'" class="running-msg">运行中...</div>
       <div v-if="run.error" class="error-msg">错误: {{ run.error }}</div>
       <div v-if="run.final_result && run.final_result.screened_symbols" class="final-result">
-        <h2>最终结果 ({{ run.final_result.screened_symbols.length }} 只)</h2>
+        <h2>最终结果 ({{ activeSymbols.length }} 只<span v-if="excludedSymbols.length">, 已排除 {{ excludedSymbols.length }} 只</span>)</h2>
         <table class="result-table">
           <thead>
-            <tr><th>代码</th><th>匹配次数</th><th>匹配日期</th></tr>
+            <tr><th>代码</th><th>匹配次数</th><th>匹配日期</th><th>操作</th></tr>
           </thead>
           <tbody>
-            <tr v-for="item in finalSymbols" :key="item.symbol">
+            <tr v-for="item in activeSymbols" :key="item.symbol">
               <td><a @click="$router.push('/stock/' + item.symbol)">{{ item.symbol }}</a></td>
               <td>{{ item.match_count }}</td>
               <td>{{ item.dates }}</td>
+              <td><button class="btn-exclude" @click="openExcludeDialog(item.symbol)">人工排除</button></td>
+            </tr>
+            <tr v-if="excludedSymbols.length" class="divider-row"><td colspan="4"><span class="divider-text">以下为已排除</span></td></tr>
+            <tr v-for="item in excludedSymbols" :key="item.symbol" class="excluded-row">
+              <td><a @click="$router.push('/stock/' + item.symbol)">{{ item.symbol }}</a></td>
+              <td>{{ item.match_count }}</td>
+              <td class="reason-cell">{{ exclusionMap[item.symbol] }}</td>
+              <td><button class="btn-restore" @click="doRestore(item.symbol)">取消排除</button></td>
             </tr>
           </tbody>
         </table>
@@ -45,13 +53,25 @@
       </div>
     </div>
     <div v-else class="loading">加载中...</div>
+    <div v-if="showExcludeDialog" class="dialog-overlay" @click.self="showExcludeDialog = false">
+      <div class="dialog">
+        <h3>排除 {{ excludeTarget }}</h3>
+        <div class="dialog-form">
+          <label>排除原因: <input v-model="excludeReason" type="text" placeholder="如: 地方银行" /></label>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn-primary" @click="doExclude">确认排除</button>
+          <button class="btn-secondary" @click="showExcludeDialog = false">取消</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { fetchRun, fetchRunStatus, nextStep, fetchGroup } from '../api'
+import { fetchRun, fetchRunStatus, nextStep, fetchGroup, fetchExclusions, addExclusion, removeExclusion } from '../api'
 
 const route = useRoute()
 const groupId = route.params.groupId
@@ -59,8 +79,12 @@ const runId = route.params.runId
 
 const run = ref(null)
 const group = ref(null)
+const exclusions = ref([])
 const expandedStep = ref(-1)
 const stepping = ref(false)
+const showExcludeDialog = ref(false)
+const excludeTarget = ref('')
+const excludeReason = ref('')
 let pollTimer = null
 
 function stepName(index) {
@@ -73,6 +97,16 @@ function stepName(index) {
 
 const isStepwise = computed(() => run.value?.execution_mode === 'stepwise')
 const isComplete = computed(() => run.value?.status === 'success' || run.value?.status === 'failed')
+
+const exclusionMap = computed(() => {
+  const map = {}
+  for (const e of exclusions.value) {
+    map[e.symbol] = e.reason || ''
+  }
+  return map
+})
+
+const excludedSet = computed(() => new Set(Object.keys(exclusionMap.value)))
 
 const finalSymbols = computed(() => {
   if (!run.value?.final_result?.screened_symbols) return []
@@ -87,6 +121,9 @@ const finalSymbols = computed(() => {
   })
 })
 
+const activeSymbols = computed(() => finalSymbols.value.filter(s => !excludedSet.value.has(s.symbol)))
+const excludedSymbols = computed(() => finalSymbols.value.filter(s => excludedSet.value.has(s.symbol)))
+
 const lastTaskId = computed(() => {
   if (!run.value?.steps_result?.length) return ''
   return run.value.steps_result[run.value.steps_result.length - 1].task_id
@@ -97,6 +134,11 @@ async function loadRun() {
   run.value = data
 }
 
+async function loadExclusions() {
+  const { data } = await fetchExclusions(runId)
+  exclusions.value = data
+}
+
 async function doNextStep() {
   stepping.value = true
   try {
@@ -105,6 +147,23 @@ async function doNextStep() {
   } finally {
     stepping.value = false
   }
+}
+
+function openExcludeDialog(symbol) {
+  excludeTarget.value = symbol
+  excludeReason.value = ''
+  showExcludeDialog.value = true
+}
+
+async function doExclude() {
+  await addExclusion(runId, excludeTarget.value, excludeReason.value)
+  showExcludeDialog.value = false
+  await loadExclusions()
+}
+
+async function doRestore(symbol) {
+  await removeExclusion(runId, symbol)
+  await loadExclusions()
 }
 
 async function pollRunStatus() {
@@ -124,6 +183,7 @@ onMounted(async () => {
   await loadRun()
   const { data } = await fetchGroup(groupId)
   group.value = data
+  await loadExclusions()
   if (!isComplete.value) {
     pollTimer = setInterval(pollRunStatus, 3000)
   }
@@ -151,6 +211,7 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .next-step-section { display: flex; align-items: center; }
 .btn-primary { padding: 8px 16px; background: #409eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .btn-primary:disabled { background: #c0c4cc; cursor: not-allowed; }
+.btn-secondary { padding: 8px 16px; background: white; color: #606266; border: 1px solid #dcdfe6; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .running-msg { color: #e6a23c; font-size: 14px; }
 .error-msg { color: #f56c6c; font-size: 14px; padding: 8px 12px; background: #ffebee; border-radius: 4px; }
 .final-result { margin-top: 24px; }
@@ -159,6 +220,22 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .result-table th { background: #f5f7fa; padding: 8px 12px; text-align: left; border-bottom: 1px solid #ebeef5; }
 .result-table td { padding: 8px 12px; border-bottom: 1px solid #ebeef5; }
 .result-table a { color: #409eff; cursor: pointer; }
+.btn-exclude { padding: 3px 10px; background: white; color: #909399; border: 1px solid #dcdfe6; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.btn-exclude:hover { color: #f56c6c; border-color: #f56c6c; }
+.btn-restore { padding: 3px 10px; background: white; color: #909399; border: 1px solid #dcdfe6; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.btn-restore:hover { color: #67c23a; border-color: #67c23a; }
+.divider-row td { padding: 12px; text-align: center; border-bottom: none; }
+.divider-text { color: #909399; font-size: 12px; background: #f5f7fa; padding: 2px 12px; border-radius: 3px; }
+.excluded-row { opacity: 0.45; }
+.excluded-row td { color: #909399; }
+.reason-cell { font-style: italic; }
 .view-btn { padding: 6px 14px; background: #67c23a; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .loading { color: #909399; font-size: 14px; }
+.dialog-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.dialog { background: white; border-radius: 8px; padding: 24px; min-width: 400px; }
+.dialog h3 { margin: 0 0 16px; font-size: 16px; }
+.dialog-form { display: flex; flex-direction: column; gap: 12px; }
+.dialog-form label { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.dialog-form input { padding: 6px 10px; border: 1px solid #dcdfe6; border-radius: 4px; flex: 1; }
+.dialog-actions { margin-top: 20px; display: flex; gap: 12px; justify-content: flex-end; }
 </style>

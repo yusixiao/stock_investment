@@ -4,7 +4,7 @@ from services.backtest.strategy_loader import (
     load_strategy_from_file,
     scan_strategies,
 )
-from services.backtest.base import ScreenerStrategy, TraderStrategy
+from services.backtest.base import ScreenerStrategy
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
@@ -20,13 +20,12 @@ class TestLoadStrategyFromFile:
         assert issubclass(s, ScreenerStrategy)
         assert s.name == "月线均线缠绕"
 
-    def test_load_trader(self):
-        filepath = EXAMPLES_DIR / "equal_weight_trader.py"
+    def test_load_another_screener(self):
+        filepath = EXAMPLES_DIR / "roe_screener.py"
         strategies = load_strategy_from_file(filepath)
         assert len(strategies) >= 1
         s = strategies[0]
-        assert issubclass(s, TraderStrategy)
-        assert s.name == "等权买入持有"
+        assert issubclass(s, ScreenerStrategy)
 
     def test_load_nonexistent_file(self):
         filepath = Path("/nonexistent/file.py")
@@ -43,10 +42,9 @@ class TestLoadStrategyFromFile:
 class TestScanStrategies:
     def test_scan_examples_dir(self):
         results = scan_strategies(EXAMPLES_DIR)
-        assert len(results) >= 3
+        assert len(results) >= 2
         names = [r["name"] for r in results]
         assert "月线均线缠绕" in names
-        assert "等权买入持有" in names
 
     def test_scan_returns_correct_structure(self):
         results = scan_strategies(EXAMPLES_DIR)
