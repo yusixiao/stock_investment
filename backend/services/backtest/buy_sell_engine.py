@@ -199,8 +199,8 @@ class BuySellEngine:
                         screener_cache[si] = list(symbols)
                         prev_period_keys[si] = pk
                         logger.debug(
-                            "Screener[%d] 执行: date=%s, freq=%s, 筛出=%d",
-                            si, current_date, freq, len(symbols),
+                            "选股 %s: 输入 %d 只, 通过 %d 只, 过滤 %d 只",
+                            screener.__class__.__name__, len(available_symbols), len(symbols), len(available_symbols) - len(symbols),
                         )
                     screener_sets.append(set(screener_cache.get(si, [])))
 

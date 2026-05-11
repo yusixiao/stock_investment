@@ -251,6 +251,8 @@ class BacktestEngine:
             ctx = self._make_screener_ctx(screener, last_idx)
             raw_result = screener.screen(ctx, list(self._all_symbols))
             symbols, _ = _parse_screen_result(raw_result)
+            logger.debug("选股 %s: 输入 %d 只, 通过 %d 只, 过滤 %d 只",
+                         screener.__class__.__name__, len(self._all_symbols), len(symbols), len(self._all_symbols) - len(symbols))
             screener_sets.append(set(symbols))
 
         merged = screener_sets[0] if screener_sets else set()
@@ -316,6 +318,8 @@ class BacktestEngine:
                     ctx = self._make_screener_ctx(screener, idx)
                     raw_result = screener.screen(ctx, list(self._all_symbols))
                     symbols, custom_dates = _parse_screen_result(raw_result)
+                    logger.debug("选股 %s: 输入 %d 只, 通过 %d 只, 过滤 %d 只",
+                                 screener.__class__.__name__, len(self._all_symbols), len(symbols), len(self._all_symbols) - len(symbols))
                     screener_cache[si] = list(symbols)
                     prev_period_keys[si] = pk
 
@@ -416,6 +420,8 @@ class BacktestEngine:
                     ctx = self._make_screener_ctx(screener, idx)
                     raw_result = screener.screen(ctx, list(available_symbols))
                     symbols, _ = _parse_screen_result(raw_result)
+                    logger.debug("选股 %s: 输入 %d 只, 通过 %d 只, 过滤 %d 只",
+                                 screener.__class__.__name__, len(available_symbols), len(symbols), len(available_symbols) - len(symbols))
                     bt_screener_cache[si] = list(symbols)
                     bt_prev_keys[si] = pk
                 screener_sets.append(set(bt_screener_cache.get(si, [])))

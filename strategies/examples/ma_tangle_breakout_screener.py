@@ -1,9 +1,12 @@
 import sys
+import logging
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "backend"))
 
 import pandas as pd
 from services.backtest.base import ScreenerStrategy
+
+logger = logging.getLogger(__name__)
 
 
 class MaTangleBreakoutScreener(ScreenerStrategy):
@@ -69,6 +72,7 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
         for sym in symbols:
             history = ctx.get_history(sym, 99999)
             if len(history) < min_bars:
+                logger.debug("%s: 历史数据不足(%d < %d)，跳过", sym, len(history), min_bars)
                 continue
             df = pd.DataFrame(history)
             col_f = f"ma{self.p.fast}"
@@ -82,6 +86,7 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
             tm = self.p.tangle_months
             sm = self.p.spread_months
             if n < tm + 1:
+                logger.debug("%s: 均线计算后数据不足(%d < %d)，跳过", sym, n, tm + 1)
                 continue
 
             last_idx = n - 1
@@ -114,5 +119,7 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
 
             if latest_match_date is not None:
                 result.append({"symbol": sym, "match_date": latest_match_date})
+            else:
+                logger.debug("%s: 未找到均线缠绕突破形态", sym)
 
         return result
