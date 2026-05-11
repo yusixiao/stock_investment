@@ -83,9 +83,12 @@ def test_buy_sell_engine_basic():
 
 
 def test_buy_sell_engine_no_screener():
+    """无 screener 时通过 signal_table 提供全部股票信号，buyer 应被触发"""
     stock_data = _make_stock_data()
     buyer = SimpleBuyer()
     seller = SimpleSeller()
+
+    signal_table = {"2024-01-02": ["000001", "000002", "000003"]}
 
     engine = BuySellEngine(
         stock_data=stock_data,
@@ -93,6 +96,7 @@ def test_buy_sell_engine_no_screener():
         buyer=buyer,
         seller=seller,
         initial_capital=1_000_000,
+        signal_table=signal_table,
     )
     result = engine.run()
 
