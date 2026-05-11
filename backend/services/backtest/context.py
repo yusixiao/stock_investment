@@ -63,8 +63,8 @@ class ScreenerContext:
     def current_date(self) -> str:
         return self._current_date
 
-    def get_price(self, symbol: str) -> dict | None:
-        df, idx = self._get_data_for_freq(symbol)
+    def get_price(self, symbol: str, period: str | None = None) -> dict | None:
+        df, idx = self._get_data_for_freq(symbol, period)
         if df is None or idx < 0 or idx >= len(df):
             return None
         return df.iloc[idx].to_dict()
