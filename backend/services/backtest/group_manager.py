@@ -1,9 +1,12 @@
 import json
+import logging
 import sqlite3
 import uuid
 from datetime import datetime
 
 from config import PORTFOLIO_DB
+
+logger = logging.getLogger(__name__)
 
 
 class GroupManager:
@@ -395,6 +398,7 @@ def _extract_symbols_from_result(result: dict) -> list[str]:
 
 
 def _execute_step(step_config: dict, start_date: str, end_date: str, symbols: list[str] | None, task_manager: TaskManager) -> tuple[str, dict]:
+    """执行单个策略步骤：加载策略类、加载数据、运行引擎"""
     from services.backtest.engine import BacktestEngine
     from services.qfq_cache import get_qfq_kline
     from config import RAW_KLINE_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
@@ -403,6 +407,7 @@ def _execute_step(step_config: dict, start_date: str, end_date: str, symbols: li
     filepath = Path(step_config["filepath"])
     class_name = step_config["class_name"]
     params = step_config.get("params", {})
+    logger.debug("执行步骤: filepath=%s, class_name=%s, params=%s", filepath, class_name, params)
 
     classes = load_strategy_from_file(filepath)
     cls = next((c for c in classes if c.__name__ == class_name), None)
@@ -431,6 +436,8 @@ def _execute_step(step_config: dict, start_date: str, end_date: str, symbols: li
         if not df.empty:
             stock_data[sym] = df
 
+    logger.debug("_execute_step 数据加载完成: %d/%d 只股票有效数据", len(stock_data), len(target_symbols))
+
     valuation_data = {}
     for sym in stock_data:
         fp = VALUATION_DIR / f"{sym}.parquet"
@@ -449,6 +456,7 @@ def _execute_step(step_config: dict, start_date: str, end_date: str, symbols: li
         if fp.exists():
             financial_data[sym] = pd.read_parquet(fp).sort_values("报告期").reset_index(drop=True)
 
+    logger.debug("创建 BacktestEngine: screeners=%d, trader=%s", len(screeners), type(trader).__name__ if trader else "None")
     engine = BacktestEngine(
         stock_data=stock_data,
         screeners=screeners,
@@ -515,6 +523,8 @@ def _execute_buy_sell_steps(
         if not df.empty:
             stock_data[sym] = df
 
+    logger.debug("_execute_buy_sell_steps 数据加载: %d/%d 只股票有效", len(stock_data), len(target_symbols))
+
     valuation_data = {}
     for sym in stock_data:
         fp = VALUATION_DIR / f"{sym}.parquet"
@@ -535,6 +545,8 @@ def _execute_buy_sell_steps(
 
     task_id = task_manager.create_task(task_type="backtest", start_date=start_date, end_date=end_date)
 
+    logger.debug("创建 BuySellEngine: screeners=%d, buyer=%s, seller=%s",
+                 len(screeners), type(buyer).__name__ if buyer else "None", type(seller).__name__ if seller else "None")
     engine = BuySellEngine(
         stock_data=stock_data,
         screeners=screeners,
@@ -563,6 +575,8 @@ class GroupRunner:
         if group is None:
             raise ValueError(f"Group {group_id} not found")
 
+        logger.info("run_auto 开始: group_id=%s, start=%s, end=%s, source_run_id=%s",
+                    group_id, start_date, end_date, source_run_id)
         run_id = gm.create_run(group_id, start_date, end_date, "auto", initial_capital=initial_capital)
         self._run_auto_with_run_id(run_id, group_id, start_date, end_date, source_run_id, initial_capital=initial_capital)
         return run_id
@@ -643,18 +657,23 @@ class GroupRunner:
             gm.update_run_status(run_id, f"step_{next_step_idx + 1}_done")
 
     def _has_buy_sell(self, pipeline: list[dict]) -> bool:
+        """检测 pipeline 中是否包含 BuyStrategy 或 SellStrategy，决定走买卖引擎还是普通引擎"""
         for step in pipeline:
             try:
                 filepath = Path(step["filepath"])
                 classes = load_strategy_from_file(filepath)
                 cls = next((c for c in classes if c.__name__ == step["class_name"]), None)
                 if cls and (issubclass(cls, BuyStrategy) or issubclass(cls, SellStrategy)):
+                    logger.info("检测到买卖策略: %s, 将使用 BuySellEngine", step["class_name"])
                     return True
             except Exception:
                 continue
+        logger.info("未检测到买卖策略, 将使用普通 pipeline 顺序执行")
         return False
 
     def _split_pipeline(self, pipeline: list[dict]) -> tuple[list[dict], dict | None, dict | None]:
+        """将 pipeline 拆分为 screener 列表 + buyer + seller。
+        根据策略基类类型判断角色：BuyStrategy → buyer, SellStrategy → seller, 其余 → screener"""
         screener_configs = []
         buyer_config = None
         seller_config = None
@@ -670,9 +689,15 @@ class GroupRunner:
                 seller_config = step
             elif issubclass(cls, ScreenerStrategy):
                 screener_configs.append(step)
+        logger.debug("_split_pipeline: screeners=%d, buyer=%s, seller=%s",
+                     len(screener_configs),
+                     buyer_config["class_name"] if buyer_config else "None",
+                     seller_config["class_name"] if seller_config else "None")
         return screener_configs, buyer_config, seller_config
 
     def _build_signal_table(self, final_result: dict, source_run_id: str) -> dict[str, list[str]]:
+        """从上游选股结果构建信号表: {日期 -> [符合条件的股票列表]}。
+        排除 exclusion 列表中的股票，只保留格式为 YYYY-MM-DD 的日期。"""
         gm = self._group_manager
         exclusions = {e["symbol"] for e in gm.list_exclusions(source_run_id)}
         screened = final_result.get("screened_symbols", [])
@@ -686,9 +711,13 @@ class GroupRunner:
             for d in item.get("match_dates", []):
                 if len(d) == 10:
                     table.setdefault(d, []).append(symbol)
+        total_symbols = len({s for syms in table.values() for s in syms})
+        logger.info("_build_signal_table: %d 个信号日期, %d 只股票(去重后)", len(table), total_symbols)
         return table
 
     def _run_auto_with_run_id(self, run_id: str, group_id: str, start_date: str, end_date: str, source_run_id: str = None, initial_capital: float = 1_000_000):
+        """自动执行整个 pipeline。source_run_id 用于链式回测：
+        从上游 run 的结果中获取初始股票池和信号表，实现多步骤串联。"""
         gm = self._group_manager
         group = gm.get_group(group_id)
         pipeline = group["pipeline"]
@@ -697,6 +726,7 @@ class GroupRunner:
         initial_symbols = None
         if source_run_id:
             initial_symbols = gm.get_effective_symbols(source_run_id)
+            logger.debug("从 source_run_id=%s 获取初始股票池: %d 只", source_run_id, len(initial_symbols) if initial_symbols else 0)
 
         try:
             if self._has_buy_sell(pipeline):
@@ -748,8 +778,10 @@ class GroupRunner:
                     input_symbols = prev_symbols
 
                 input_count = len(input_symbols) if input_symbols else 0
+                logger.debug("步骤 %d/%d: input_count=%d, join_mode=%s", i + 1, len(pipeline), input_count, join_mode)
                 task_id, result = _execute_step(step_config, start_date, end_date, input_symbols, self._task_manager)
                 output_symbols = _extract_symbols_from_result(result)
+                logger.debug("步骤 %d 完成: output_count=%d", i + 1, len(output_symbols))
 
                 step_info = {
                     "step": i + 1,
@@ -766,6 +798,7 @@ class GroupRunner:
             summary = self._build_summary(final_result)
             gm.update_run_status(run_id, "success", final_result=final_result, summary=summary)
         except Exception as e:
+            logger.error("run_auto 失败: run_id=%s, group_id=%s, error=%s", run_id, group_id, e, exc_info=True)
             gm.update_run_status(run_id, "failed", error=str(e))
 
     def _build_summary(self, result: dict) -> dict | None:

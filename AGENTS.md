@@ -10,7 +10,7 @@ Build a personal A-share stock investment comprehensive platform (综合平台) 
 - **Tech stack**: Python full-stack — FastAPI backend, Vue 3 + ECharts frontend
 - **Data source**: AKShare (`stock_zh_a_spot_em` for batch daily updates)
 - **Data storage**: Parquet files per stock — `data/kline/A/raw/` (不复权) and `data/kline/A/qfq/` (前复权)
-- **No code comments**: The user explicitly requires no code comments in any files
+- **Code comments**: Add comments for complex/non-obvious logic; keep logging informative for debugging
 - **MACD bar**: `2 × (DIF - DEA)` per user's explicit request
 - **Strategy definition**: Python code in local `.py` files, loaded via importlib (trust local user)
 - **Architecture**: Event-driven backtest engine with Broker (T+1, 涨跌停, commission万三+印花税千一, slippage)

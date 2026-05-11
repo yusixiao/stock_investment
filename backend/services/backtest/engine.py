@@ -41,6 +41,12 @@ class BacktestEngine:
         self._stock_data = {}
         for sym, df in stock_data.items():
             self._stock_data[sym] = df.sort_values("date").reset_index(drop=True)
+        logger.info(
+            "Engine init: %d symbols, %d screeners, trader=%s, source_matches=%s",
+            len(self._stock_data), len(screeners),
+            trader.__class__.__name__ if trader else "None",
+            f"{len(source_matches)} symbols" if source_matches else "None",
+        )
 
         self._screeners = screeners
         self._trader = trader
@@ -180,6 +186,7 @@ class BacktestEngine:
         return filtered
 
     def _apply_source_matches(self, result: dict) -> dict:
+        # 链式回测过滤: 仅保留与source_task结果时间匹配的symbol
         if self._source_matches is None:
             return result
         screened = result.get("screened_symbols")
@@ -216,15 +223,23 @@ class BacktestEngine:
         return result
 
     def run(self, mode: str = "auto") -> dict:
+        # 三种执行路径:
+        # 1. screen模式: 仅在最新一根bar上执行选股，返回符号列表
+        # 2. 选股回测模式(trader=None): 遍历所有bar，记录每个周期的选股结果
+        # 3. 完整回测模式(有trader): 遍历所有bar，选股+交易，返回收益指标
         if mode == "screen":
+            logger.info("执行路径: screen(仅最新bar选股)")
             result = self._run_screener_only()
             return self._apply_source_matches(result)
         if self._trader is None:
+            logger.info("执行路径: screener_backtest(选股回测)")
             result = self._run_screener_backtest()
             return self._apply_source_matches(result)
+        logger.info("执行路径: backtest(完整回测)")
         return self._run_backtest()
 
     def _run_screener_only(self) -> dict:
+        logger.info("_run_screener_only: 开始, %d个策略, %d只股票", len(self._screeners), len(self._all_symbols))
         ref_sym = self._all_symbols[0]
         ref_df = self._stock_data[ref_sym]
         last_idx = len(ref_df) - 1
@@ -246,9 +261,12 @@ class BacktestEngine:
             else:
                 merged = merged | next_set
 
+        logger.info("_run_screener_only: 完成, 选出%d只", len(merged))
         return {"screened_symbols": sorted(merged)}
 
     def _period_key(self, date_str: str, freq: str) -> str:
+        # 根据频率生成周期key，用于判断是否需要重新执行策略
+        # monthly → "2024-01", weekly → "2024-W03", daily → "2024-01-15"
         if freq == "monthly":
             return date_str[:7]
         if freq == "weekly":
@@ -276,9 +294,12 @@ class BacktestEngine:
         ref_sym = self._all_symbols[0]
         ref_df = self._stock_data[ref_sym]
         n_bars = len(ref_df)
+        logger.info("_run_screener_backtest: 开始, %d bars, %d只股票", n_bars, len(self._all_symbols))
 
         raw_results: dict[int, dict[str, list[str]]] = {si: {} for si in range(len(self._screeners))}
+        # 周期缓存: 同一周期内复用上次结果，避免重复执行
         screener_cache: dict[int, list[str]] = {}
+        # prev_period_keys记录每个screener上次执行时的周期key，周期变化时才重新执行
         prev_period_keys: dict[int, str] = {}
 
         for idx in range(n_bars):
@@ -314,6 +335,7 @@ class BacktestEngine:
                         if date_to_record not in history:
                             history.append(date_to_record)
 
+        # 合并多个screener结果: correlated=交集(intersect), independent=并集(union)
         merged = raw_results[0] if raw_results else {}
         for i, jm in enumerate(self._join_modes):
             next_result = raw_results[i + 1]
@@ -336,10 +358,15 @@ class BacktestEngine:
         for sym, dates in merged.items():
             result.append({"symbol": sym, "match_dates": dates})
         result.sort(key=lambda x: x["match_dates"][-1], reverse=True)
+        logger.info("_run_screener_backtest: 完成, 选出%d只, 共%d条匹配", len(result), sum(len(r["match_dates"]) for r in result))
         return {"screened_symbols": result}
 
     def _run_backtest(self) -> dict:
         settings = self._trader.settings
+        logger.info(
+            "_run_backtest: 开始, initial_capital=%.0f, commission=%.4f, slippage=%.4f",
+            settings["initial_capital"], settings["commission_rate"], settings["slippage"],
+        )
         broker = Broker(
             initial_capital=settings["initial_capital"],
             commission_rate=settings["commission_rate"],
@@ -349,10 +376,12 @@ class BacktestEngine:
         ref_sym = self._all_symbols[0]
         ref_df = self._stock_data[ref_sym]
         n_bars = len(ref_df)
+        logger.info("_run_backtest: %d bars, %d只股票", n_bars, len(self._all_symbols))
 
         equity_curve = []
         days_since_rebalance = 0
         prev_closes: dict[str, float] = {}
+        # 周期缓存逻辑同_run_screener_backtest，按频率复用结果
         bt_screener_cache: dict[int, list[str]] = {}
         bt_prev_keys: dict[int, str] = {}
 

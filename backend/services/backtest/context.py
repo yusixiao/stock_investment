@@ -1,11 +1,15 @@
+import logging
 import math
 import pandas as pd
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
 from services.indicator_store import load_indicators
 from services.backtest.portfolio import Portfolio
 
+logger = logging.getLogger(__name__)
+
 
 class ScreenerContext:
+    """选股策略上下文，提供行情数据、指标计算等接口供策略调用。"""
     def __init__(
         self,
         stock_data: dict[str, pd.DataFrame],
@@ -31,9 +35,11 @@ class ScreenerContext:
         ref_sym = next(iter(stock_data))
         self._current_date = stock_data[ref_sym].iloc[current_idx]["date"]
 
+        # 缓存周期数据的索引位置，避免每次二分查找（同一bar内多次调用get_price/indicator）
         self._period_idx_cache: dict[str, int] = {}
 
     def _get_data_for_freq(self, symbol: str, freq: str | None = None) -> tuple[pd.DataFrame | None, int]:
+        # 根据频率选择对应数据源：daily直接用原始索引，weekly/monthly需查找当前日期对应的周期行
         f = freq or self._frequency
         if f == "daily":
             df = self._daily_data.get(symbol)
@@ -228,6 +234,7 @@ class ScreenerContext:
 
 
 class TraderContext(ScreenerContext):
+    """交易策略上下文，继承ScreenerContext并增加下单、持仓查询等交易接口。"""
     def __init__(
         self,
         stock_data: dict[str, pd.DataFrame],
