@@ -3,7 +3,7 @@
     <div class="available">
       <h3>可用策略</h3>
       <div v-for="s in availableStrategies" :key="s.class_name" class="strategy-card" @click="addToPipeline(s)">
-        <span :class="'badge ' + s.strategy_type">{{ s.strategy_type === 'screener' ? '筛选' : '交易' }}</span>
+        <span :class="'badge ' + s.strategy_type">{{ typeLabel(s.strategy_type) }}</span>
         <span v-if="s.frequency" :class="'freq-badge freq-' + s.frequency">{{ freqLabel(s.frequency) }}</span>
         <span class="name">{{ s.name }}</span>
       </div>
@@ -13,7 +13,7 @@
       <template v-for="(item, idx) in pipeline" :key="idx">
         <div class="pipeline-item">
           <span class="step">{{ idx + 1 }}.</span>
-          <span :class="'badge ' + item.strategy_type">{{ item.strategy_type === 'screener' ? '筛选' : '交易' }}</span>
+          <span :class="'badge ' + item.strategy_type">{{ typeLabel(item.strategy_type) }}</span>
           <span v-if="item.frequency" :class="'freq-badge freq-' + item.frequency">{{ freqLabel(item.frequency) }}</span>
           <span class="name">{{ item.name }}</span>
           <button class="remove-btn" @click="removeFromPipeline(idx)">✕</button>
@@ -45,9 +45,13 @@ const availableStrategies = computed(() => {
   return props.strategies
 })
 
+function typeLabel(t) { const map = { screener: '筛选', trader: '交易', buy: '买入', sell: '卖出' }; return map[t] || t }
+
 function addToPipeline(strategy) {
   const hasTrader = props.pipeline.some(s => s.strategy_type === 'trader')
   if (strategy.strategy_type === 'trader' && hasTrader) return
+  if (strategy.strategy_type === 'buy' && props.pipeline.some(s => s.strategy_type === 'buy')) return
+  if (strategy.strategy_type === 'sell' && props.pipeline.some(s => s.strategy_type === 'sell')) return
   if (strategy.strategy_type === 'trader') {
     emit('update:pipeline', [...props.pipeline, { ...strategy }])
   } else {
@@ -126,6 +130,8 @@ function removeFromPipeline(idx) {
 .badge { padding: 2px 6px; border-radius: 3px; font-size: 11px; color: white; }
 .badge.screener { background: #67c23a; }
 .badge.trader { background: #e6a23c; }
+.badge.buy { background: #10b981; color: white; }
+.badge.sell { background: #ef4444; color: white; }
 .name { font-size: 13px; }
 .freq-badge { padding: 2px 6px; border-radius: 3px; font-size: 10px; color: white; }
 .freq-daily { background: #909399; }

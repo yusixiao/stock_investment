@@ -42,6 +42,7 @@
         <div class="dialog-form">
           <label>开始日期: <input v-model="runStartDate" type="date" min="2010-01-04" /></label>
           <label>结束日期: <input v-model="runEndDate" type="date" min="2010-01-04" /></label>
+          <label>起始资金(万): <input v-model.number="runCapital" type="number" min="1" step="1" /></label>
           <label>执行模式:
             <select v-model="runMode">
               <option value="auto">一键执行</option>
@@ -73,6 +74,7 @@ const showRunDialog = ref(false)
 const runStartDate = ref('')
 const runEndDate = ref('')
 const runMode = ref('auto')
+const runCapital = ref(100)
 
 const freqMap = { daily: '日线', weekly: '周线', monthly: '月线' }
 function freqLabel(f) { return freqMap[f] || '日线' }
@@ -119,6 +121,7 @@ async function doRun() {
     start_date: runStartDate.value || undefined,
     end_date: runEndDate.value || undefined,
     execution_mode: runMode.value,
+    initial_capital: runCapital.value * 10000,
   })
   showRunDialog.value = false
   router.push(`/backtest/group/${groupId}/run/${data.run_id}`)
