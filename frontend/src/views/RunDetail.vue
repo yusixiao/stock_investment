@@ -88,6 +88,8 @@ const excludeReason = ref('')
 let pollTimer = null
 
 function stepName(index) {
+  const stepResult = run.value?.steps_result?.[index]
+  if (stepResult?.name) return stepResult.name
   if (group.value?.pipeline?.[index]) {
     const step = group.value.pipeline[index]
     return step.name || step.class_name

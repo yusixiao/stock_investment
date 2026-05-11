@@ -783,10 +783,12 @@ class GroupRunner:
                     join_modes=screener_join_modes,
                 )
 
+                trade_count = len(result.get("trades", []))
                 steps_result = [{
                     "step": 1,
+                    "name": "买卖回测",
                     "input_count": len(symbols) if symbols else 0,
-                    "output_count": 0,
+                    "output_count": trade_count,
                     "symbols": [],
                     "task_id": task_id,
                 }]
