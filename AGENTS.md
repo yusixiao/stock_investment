@@ -41,6 +41,7 @@ Build a personal A-share stock investment comprehensive platform (综合平台) 
 - **Critical performance issue found and solved**: Monthly strategies were causing N_days × N_stocks × monthly_aggregation computations. Fixed by: (1) engine precomputes weekly/monthly K-line caches at startup, (2) ScreenerContext auto-selects data by frequency, (3) period-based caching in backtest loop skips re-execution when period hasn't changed.
 - **Match date duplication bug**: When a monthly strategy's cached result was reused daily, match dates were recorded every day. Fix: only record matches when `any_executed` is True (at least one screener ran fresh).
 - `aggregate_kline()` in `services/stock_data.py` handles weekly (W-FRI) and monthly (M) aggregation.
+- **BuySellEngine 调仓逻辑（2026-05-11）**: 引擎维护 `target_symbols` 累计池。信号/选股产生新股票加入池；Seller 每天执行，平仓时通过 `ctx.remove_target()` 移除；Buyer 仅在有新增时执行。执行顺序：先 Seller 后 Buyer，不允许透支。TraderContext 提供 `target_symbols`、`new_symbols`、`remove_target()` 接口。
 
 ## Accomplished
 

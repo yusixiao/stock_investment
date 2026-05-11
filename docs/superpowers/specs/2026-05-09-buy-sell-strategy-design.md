@@ -123,6 +123,48 @@ BuyStrategy 和 SellStrategy 的 ctx 需要提供：
 
 如果没有 source_run_id 或 source run 没有 match_dates，则按完整模式执行（选股 + 买卖在同一循环中逐 bar 运行）。
 
+## 调仓逻辑（2026-05-11 确认）
+
+### target_symbols 累计语义
+
+引擎内部维护一个 `target_symbols: set[str]` 累计持仓目标池：
+- 信号表命中（或选股策略筛出新股票）时：新股票加入 target_symbols
+- Seller 平仓时：从 target_symbols 移除
+- target_symbols 是「应该持有的完整目标」，不是当日增量
+
+### Buyer 职责：仓位管理策略
+
+- Buyer 既能买也能卖（为调仓需要）
+- 被调用时看到完整 target_symbols + 持仓 + 可用现金
+- 调仓是 Buyer 的可选能力：可以只用现金买新标的，也可以卖出部分老持仓来加仓新标的
+- **触发条件**：仅在 target_symbols 有新增时调用（信号日新股票加入池时）
+- Seller 平仓后不触发 Buyer，资金闲置等下一个信号
+
+### Seller 职责：条件退出策略
+
+- 每天都执行，评估所有持仓
+- 触发时强制平仓并从 target_symbols 移除
+- 不依赖选股信号，任意日期均可触发
+
+### 执行顺序（每个 bar）
+
+1. Seller 先执行：评估持仓，平仓释放资金，从 target_symbols 移除
+2. Buyer 后执行：用全部可用资金分配仓位（含刚释放的）
+3. **不允许透支**：Broker 层面保证 cash 不足时订单不成交
+
+### Buyer 调用条件判断
+
+```
+has_new_symbols = len(today_new_symbols_added_to_target) > 0
+if has_new_symbols and buyer:
+    buyer.on_bar(ctx)  # ctx.target_symbols 提供完整累计池
+```
+
+### ctx 新增属性
+
+- `ctx.target_symbols: list[str]` — 完整的累计目标池（Buyer 可见）
+- `ctx.new_symbols: list[str]` — 本 bar 新加入的股票（供 Buyer 参考）
+
 ## 文件变更范围
 
 - `backend/services/backtest/base.py` — 新增 BuyStrategy、SellStrategy，删除 TraderStrategy
