@@ -248,12 +248,25 @@ class TraderContext(ScreenerContext):
         valuation_data: dict[str, pd.DataFrame] | None = None,
         dividend_data: dict[str, pd.DataFrame] | None = None,
         financial_data: dict[str, pd.DataFrame] | None = None,
+        target_symbols: list[str] | None = None,
+        new_symbols: list[str] | None = None,
+        on_remove_target: callable = None,
     ):
         super().__init__(stock_data, current_idx, "daily", weekly_data, monthly_data, valuation_data, dividend_data, financial_data)
         self._portfolio = portfolio
         self._broker_submit = broker_submit
         self.selected_symbols = selected_symbols
         self.days_since_rebalance = days_since_rebalance
+        self.target_symbols = target_symbols or []
+        self.new_symbols = new_symbols or []
+        self._on_remove_target = on_remove_target
+
+    def remove_target(self, symbol: str):
+        """Seller 调用：平仓后从 target_symbols 中移除，通知引擎更新累计池。"""
+        if self._on_remove_target:
+            self._on_remove_target(symbol)
+        if symbol in self.target_symbols:
+            self.target_symbols.remove(symbol)
 
     @property
     def available_cash(self) -> float:
