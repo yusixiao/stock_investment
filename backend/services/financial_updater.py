@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 from datetime import datetime, date
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+from concurrent.futures import TimeoutError as FutureTimeout
 
 import akshare as ak
 import pandas as pd
@@ -13,9 +13,21 @@ from config import FINANCIAL_DIR, LOG_DIR
 logger = logging.getLogger(__name__)
 
 COLUMNS = [
-    "股票代码", "股票简称", "每股收益", "营业总收入-营业总收入", "营业总收入-同比增长",
-    "营业总收入-季度环比增长", "净利润-净利润", "净利润-同比增长", "净利润-季度环比增长",
-    "每股净资产", "净资产收益率", "每股经营现金流量", "销售毛利率", "所处行业", "最新公告日期",
+    "股票代码",
+    "股票简称",
+    "每股收益",
+    "营业总收入-营业总收入",
+    "营业总收入-同比增长",
+    "营业总收入-季度环比增长",
+    "净利润-净利润",
+    "净利润-同比增长",
+    "净利润-季度环比增长",
+    "每股净资产",
+    "净资产收益率",
+    "每股经营现金流量",
+    "销售毛利率",
+    "所处行业",
+    "最新公告日期",
 ]
 
 SLEEP_BETWEEN_CALLS = 1.0
@@ -37,21 +49,14 @@ def _call_api(date_str: str) -> pd.DataFrame:
 
 
 def _run_with_timeout(fn, *args):
-    executor = ThreadPoolExecutor(max_workers=1)
-    try:
-        future = executor.submit(fn, *args)
-        return future.result(timeout=API_TIMEOUT)
-    except FutureTimeout:
-        executor.shutdown(wait=False, cancel_futures=True)
-        raise
-    except Exception:
-        executor.shutdown(wait=False, cancel_futures=True)
-        raise
-    else:
-        executor.shutdown(wait=False)
+    from services.api_utils import run_with_timeout
+
+    return run_with_timeout(fn, *args, timeout=API_TIMEOUT)
 
 
-def generate_quarter_dates(start_year: int = 2000, end_date: date | None = None) -> list[str]:
+def generate_quarter_dates(
+    start_year: int = 2000, end_date: date | None = None
+) -> list[str]:
     if end_date is None:
         end_date = date.today()
     quarter_ends = ["0331", "0630", "0930", "1231"]
@@ -72,11 +77,11 @@ def fetch_quarter(date_str: str) -> pd.DataFrame | None:
                 return None
             return df
         except FutureTimeout:
-            logger.warning(f"获取 {date_str} 业绩报表超时 (第{attempt+1}次)")
+            logger.warning(f"获取 {date_str} 业绩报表超时 (第{attempt + 1}次)")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_WAIT)
         except Exception as e:
-            logger.warning(f"获取 {date_str} 业绩报表失败 (第{attempt+1}次): {e}")
+            logger.warning(f"获取 {date_str} 业绩报表失败 (第{attempt + 1}次): {e}")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_WAIT)
     return None
@@ -118,7 +123,9 @@ def split_and_save(df: pd.DataFrame, quarter_date: str, financial_dir: Path) -> 
             existing = pd.read_parquet(filepath)
             existing = existing[existing["报告期"] != quarter_date_str]
             merged = pd.concat([new_row, existing], ignore_index=True)
-            merged = merged.sort_values("报告期", ascending=False).reset_index(drop=True)
+            merged = merged.sort_values("报告期", ascending=False).reset_index(
+                drop=True
+            )
             merged.to_parquet(filepath, index=False)
         else:
             new_row.to_parquet(filepath, index=False)
@@ -185,7 +192,9 @@ def run_financial_update(
             success += 1
 
         if i % 10 == 0 or i == total:
-            _log_progress(f"进度 {i}/{total} — 成功:{success} 失败:{failed} 写入:{total_saved}条")
+            _log_progress(
+                f"进度 {i}/{total} — 成功:{success} 失败:{failed} 写入:{total_saved}条"
+            )
 
         time.sleep(SLEEP_BETWEEN_CALLS)
 

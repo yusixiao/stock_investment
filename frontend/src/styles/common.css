@@ -1,0 +1,103 @@
+/* Dialog */
+.dialog-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.dialog {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  min-width: 400px;
+}
+.dialog h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dialog-form label {
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dialog-form input,
+.dialog-form select {
+  padding: 6px 10px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  flex: 1;
+}
+.dialog-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+/* Buttons */
+.btn-primary {
+  padding: 8px 16px;
+  background: #409eff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btn-primary:disabled {
+  background: #c0c4cc;
+  cursor: not-allowed;
+}
+.btn-secondary {
+  padding: 8px 16px;
+  background: white;
+  color: #606266;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 13px;
+}
+.view-btn {
+  padding: 6px 14px;
+  background: #67c23a;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+/* Freq badges */
+.freq-badge {
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: white;
+}
+.freq-daily { background: #909399; }
+.freq-weekly { background: #e6a23c; }
+.freq-monthly { background: #f56c6c; }
+
+/* Status badges */
+.status-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.status-success { background: #e8f5e9; color: #2e7d32; }
+.status-failed { background: #ffebee; color: #c62828; }
+.status-running { background: #fff3e0; color: #e65100; }
+.status-pending { background: #e3f2fd; color: #1565c0; }

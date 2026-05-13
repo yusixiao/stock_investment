@@ -26,9 +26,9 @@ class MonthlyLowScreener(ScreenerStrategy):
             if hist is None or len(hist) < lookback + 1:
                 continue
 
-            current_low = hist.iloc[-1]["low"]
-            past_data = hist.iloc[-(lookback + 1):-1]
-            hist_min_low = past_data["low"].min()
+            current_low = hist[-1]["low"]
+            past_lows = [bar["low"] for bar in hist[-(lookback + 1):-1]]
+            hist_min_low = min(past_lows)
 
             if current_low <= hist_min_low * range_ratio:
                 result.append(sym)

@@ -1,6 +1,7 @@
 import sys
 import logging
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "backend"))
 
 import pandas as pd
@@ -50,9 +51,11 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
             avg = (row[col_f] + row[col_m] + row[col_s]) / 3.0
             if avg == 0:
                 return False
-            if (abs(row[col_f] - avg) / avg > self.p.threshold or
-                    abs(row[col_m] - avg) / avg > self.p.threshold or
-                    abs(row[col_s] - avg) / avg > self.p.threshold):
+            if (
+                abs(row[col_f] - avg) / avg > self.p.threshold
+                or abs(row[col_m] - avg) / avg > self.p.threshold
+                or abs(row[col_s] - avg) / avg > self.p.threshold
+            ):
                 return False
         last = df.iloc[end]
         return last[col_s] < last[col_f]
@@ -61,8 +64,10 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
         avg = (row[col_f] + row[col_m] + row[col_s]) / 3.0
         if avg == 0:
             return False
-        if (abs(row[col_f] - avg) / avg <= self.p.spread_threshold or
-                abs(row[col_s] - avg) / avg <= self.p.spread_threshold):
+        if (
+            abs(row[col_f] - avg) / avg <= self.p.spread_threshold
+            or abs(row[col_s] - avg) / avg <= self.p.spread_threshold
+        ):
             return False
         return row[col_f] > row[col_m] > row[col_s]
 
@@ -70,15 +75,21 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
         result = []
         min_bars = self.p.slow + self.p.tangle_months + 1
         for sym in symbols:
-            history = ctx.get_history(sym, 99999)
+            history = ctx.get_history(sym, 500)
             if len(history) < min_bars:
-                logger.debug("%s: 历史数据不足(%d < %d)，跳过", sym, len(history), min_bars)
+                logger.debug(
+                    "%s: 历史数据不足(%d < %d)，跳过", sym, len(history), min_bars
+                )
                 continue
             df = pd.DataFrame(history)
             col_f = f"ma{self.p.fast}"
             col_m = f"ma{self.p.mid}"
             col_s = f"ma{self.p.slow}"
-            for w, col in [(self.p.fast, col_f), (self.p.mid, col_m), (self.p.slow, col_s)]:
+            for w, col in [
+                (self.p.fast, col_f),
+                (self.p.mid, col_m),
+                (self.p.slow, col_s),
+            ]:
                 df[col] = df["close"].rolling(window=w, min_periods=w).mean()
             df = df.dropna(subset=[col_f, col_m, col_s]).reset_index(drop=True)
 
@@ -119,7 +130,9 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
 
                 # vol_red_bars=0 表示不要求连续阳线，直接用缠绕结束后第一天作为匹配日期
                 if self.p.vol_red_bars > 0:
-                    first_red_date = self._find_first_red_run(spread_rows, self.p.vol_red_bars)
+                    first_red_date = self._find_first_red_run(
+                        spread_rows, self.p.vol_red_bars
+                    )
                     if first_red_date is not None:
                         latest_match_date = first_red_date
                         skip_until = spread_window_end - 1

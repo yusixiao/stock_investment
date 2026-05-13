@@ -195,6 +195,7 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>
 
 <style scoped>
+@import '../styles/common.css';
 .run-detail-page { padding: 20px; max-width: 1200px; margin: 0 auto; }
 .page-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .page-header h1 { margin: 0; }
@@ -211,9 +212,6 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .symbol-tag { padding: 2px 8px; background: #f5f7fa; border: 1px solid #ebeef5; border-radius: 3px; font-size: 12px; cursor: pointer; }
 .symbol-tag:hover { background: #409eff; color: white; }
 .next-step-section { display: flex; align-items: center; }
-.btn-primary { padding: 8px 16px; background: #409eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
-.btn-primary:disabled { background: #c0c4cc; cursor: not-allowed; }
-.btn-secondary { padding: 8px 16px; background: white; color: #606266; border: 1px solid #dcdfe6; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .running-msg { color: #e6a23c; font-size: 14px; }
 .error-msg { color: #f56c6c; font-size: 14px; padding: 8px 12px; background: #ffebee; border-radius: 4px; }
 .final-result { margin-top: 24px; }
@@ -231,13 +229,5 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .excluded-row { opacity: 0.45; }
 .excluded-row td { color: #909399; }
 .reason-cell { font-style: italic; }
-.view-btn { padding: 6px 14px; background: #67c23a; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
 .loading { color: #909399; font-size: 14px; }
-.dialog-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.dialog { background: white; border-radius: 8px; padding: 24px; min-width: 400px; }
-.dialog h3 { margin: 0 0 16px; font-size: 16px; }
-.dialog-form { display: flex; flex-direction: column; gap: 12px; }
-.dialog-form label { font-size: 14px; display: flex; align-items: center; gap: 8px; }
-.dialog-form input { padding: 6px 10px; border: 1px solid #dcdfe6; border-radius: 4px; flex: 1; }
-.dialog-actions { margin-top: 20px; display: flex; gap: 12px; justify-content: flex-end; }
 </style>

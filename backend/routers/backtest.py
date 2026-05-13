@@ -1,34 +1,24 @@
-import math
 import threading
 import pandas as pd
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Body
 
-from config import RAW_KLINE_DIR, STRATEGY_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
+from config import (
+    RAW_KLINE_DIR,
+    STRATEGY_DIR,
+    VALUATION_DIR,
+    DIVIDEND_DIR,
+    FINANCIAL_DIR,
+)
 from services.qfq_cache import get_qfq_kline
 from services.backtest.strategy_loader import scan_strategies, load_strategy_from_file
 from services.backtest.engine import BacktestEngine
 from services.backtest.base import ScreenerStrategy, TraderStrategy
 from services.backtest.task_manager import task_manager
+from services.api_utils import safe_json
 
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
-
-
-def _safe_json(obj):
-    def _clean(v):
-        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-            return None
-        return v
-
-    def _clean_obj(o):
-        if isinstance(o, dict):
-            return {k: _clean_obj(v) for k, v in o.items()}
-        if isinstance(o, list):
-            return [_clean_obj(i) for i in o]
-        return _clean(o)
-
-    return _clean_obj(obj)
 
 
 def _extract_symbols(screened_symbols: list) -> list[str]:
@@ -77,16 +67,25 @@ def api_run_backtest(body: dict = Body(...)):
     if source_task_id:
         src_result = task_manager.get_result(source_task_id)
         if src_result is None:
-            raise HTTPException(status_code=400, detail=f"源任务 {source_task_id} 不存在")
+            raise HTTPException(
+                status_code=400, detail=f"源任务 {source_task_id} 不存在"
+            )
         if src_result["status"] != "success":
-            raise HTTPException(status_code=400, detail=f"源任务 {source_task_id} 未成功完成")
+            raise HTTPException(
+                status_code=400, detail=f"源任务 {source_task_id} 未成功完成"
+            )
         result_data = src_result.get("result") or {}
         screened = result_data.get("screened_symbols")
         if screened is None:
-            raise HTTPException(status_code=400, detail=f"源任务 {source_task_id} 不是选股任务，无选股结果")
+            raise HTTPException(
+                status_code=400,
+                detail=f"源任务 {source_task_id} 不是选股任务，无选股结果",
+            )
         syms = _extract_symbols(screened)
         if not syms:
-            raise HTTPException(status_code=400, detail=f"源任务 {source_task_id} 未选出任何股票")
+            raise HTTPException(
+                status_code=400, detail=f"源任务 {source_task_id} 未选出任何股票"
+            )
         symbols = syms
         source_matches = _extract_source_matches(screened)
         start_date = src_result.get("start_date") or start_date
@@ -101,7 +100,10 @@ def api_run_backtest(body: dict = Body(...)):
         classes = load_strategy_from_file(filepath)
         cls = next((c for c in classes if c.__name__ == class_name), None)
         if cls is None:
-            raise HTTPException(status_code=400, detail=f"Strategy class {class_name} not found in {filepath}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Strategy class {class_name} not found in {filepath}",
+            )
         instance = cls(param_overrides=overrides)
         if isinstance(instance, TraderStrategy):
             trader = instance
@@ -128,7 +130,13 @@ def api_run_backtest(body: dict = Body(...)):
     pipeline_info = {"strategies": screener_infos}
     if join_modes:
         pipeline_info["join_modes"] = join_modes
-    task_id = task_manager.create_task(task_type=task_type, pipeline_info=pipeline_info, start_date=start_date, end_date=end_date, source_task_id=source_task_id)
+    task_id = task_manager.create_task(
+        task_type=task_type,
+        pipeline_info=pipeline_info,
+        start_date=start_date,
+        end_date=end_date,
+        source_task_id=source_task_id,
+    )
 
     def on_progress(current, total, phase):
         task_manager.update_progress(task_id, current, total, phase)
@@ -140,10 +148,25 @@ def api_run_backtest(body: dict = Body(...)):
             valuation_data = _load_valuation_data(list(stock_data.keys()))
             dividend_data = _load_dividend_data(list(stock_data.keys()))
             financial_data = _load_financial_data(list(stock_data.keys()))
-            task_manager.update_progress(task_id, len(stock_data), len(stock_data), f"数据加载完成 ({len(stock_data)} 只)")
-            engine = BacktestEngine(stock_data=stock_data, screeners=screeners, trader=trader, on_progress=on_progress, join_modes=join_modes, valuation_data=valuation_data, dividend_data=dividend_data, financial_data=financial_data, source_matches=source_matches)
+            task_manager.update_progress(
+                task_id,
+                len(stock_data),
+                len(stock_data),
+                f"数据加载完成 ({len(stock_data)} 只)",
+            )
+            engine = BacktestEngine(
+                stock_data=stock_data,
+                screeners=screeners,
+                trader=trader,
+                on_progress=on_progress,
+                join_modes=join_modes,
+                valuation_data=valuation_data,
+                dividend_data=dividend_data,
+                financial_data=financial_data,
+                source_matches=source_matches,
+            )
             result = engine.run()
-            result = _safe_json(result)
+            result = safe_json(result)
             task_manager.complete_task(task_id, result)
         except Exception as e:
             task_manager.fail_task(task_id, str(e))
@@ -212,7 +235,9 @@ def _load_valuation_data(symbols: list[str]) -> dict[str, pd.DataFrame]:
     return valuation_data
 
 
-def _load_stock_data(start_date: str = None, end_date: str = None, symbols: list[str] = None) -> dict[str, pd.DataFrame]:
+def _load_stock_data(
+    start_date: str = None, end_date: str = None, symbols: list[str] = None
+) -> dict[str, pd.DataFrame]:
     stock_data = {}
     if symbols is not None:
         target_symbols = symbols

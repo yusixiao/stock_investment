@@ -22,52 +22,9 @@ class TaskManager:
     def _init_table(self):
         conn = self._get_conn()
         try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS backtest_tasks (
-                    task_id TEXT PRIMARY KEY,
-                    status TEXT NOT NULL,
-                    task_type TEXT NOT NULL DEFAULT 'screener',
-                    pipeline_info TEXT,
-                    start_date TEXT,
-                    end_date TEXT,
-                    summary TEXT,
-                    result TEXT,
-                    error TEXT,
-                    created_at TEXT NOT NULL
-                )
-            """)
-            for col, typedef in [("task_type", "TEXT NOT NULL DEFAULT 'screener'"), ("summary", "TEXT"), ("pipeline_info", "TEXT"), ("start_date", "TEXT"), ("end_date", "TEXT"), ("source_task_id", "TEXT"), ("deleted", "INTEGER NOT NULL DEFAULT 0")]:
-                try:
-                    conn.execute(f"ALTER TABLE backtest_tasks ADD COLUMN {col} {typedef}")
-                except Exception:
-                    pass
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS strategy_groups (
-                    group_id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    pipeline TEXT NOT NULL,
-                    join_modes TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS group_runs (
-                    run_id TEXT PRIMARY KEY,
-                    group_id TEXT NOT NULL,
-                    start_date TEXT,
-                    end_date TEXT,
-                    execution_mode TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    current_step INTEGER DEFAULT 0,
-                    steps_result TEXT,
-                    final_result TEXT,
-                    summary TEXT,
-                    error TEXT,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (group_id) REFERENCES strategy_groups(group_id)
-                )
-            """)
+            from services.db_schema import init_backtest_tables
+
+            init_backtest_tables(conn)
             conn.execute(
                 "UPDATE backtest_tasks SET status = ?, error = ? WHERE status = ?",
                 ("failed", "服务重启，任务中断", "running"),
@@ -76,14 +33,32 @@ class TaskManager:
         finally:
             conn.close()
 
-    def create_task(self, task_type: str = "screener", pipeline_info: list[dict] | dict | None = None, start_date: str | None = None, end_date: str | None = None, source_task_id: str | None = None) -> str:
+    def create_task(
+        self,
+        task_type: str = "screener",
+        pipeline_info: list[dict] | dict | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        source_task_id: str | None = None,
+    ) -> str:
         task_id = str(uuid.uuid4())[:8]
-        pi_json = json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
+        pi_json = (
+            json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
+        )
         conn = self._get_conn()
         try:
             conn.execute(
                 "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, start_date, end_date, source_task_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (task_id, "running", task_type, pi_json, start_date, end_date, source_task_id, datetime.now().isoformat()),
+                (
+                    task_id,
+                    "running",
+                    task_type,
+                    pi_json,
+                    start_date,
+                    end_date,
+                    source_task_id,
+                    datetime.now().isoformat(),
+                ),
             )
             conn.commit()
         finally:
@@ -107,12 +82,15 @@ class TaskManager:
             return json.dumps({"screened_count": count}, ensure_ascii=False)
         if "metrics" in result:
             m = result["metrics"]
-            return json.dumps({
-                "total_return": m.get("total_return"),
-                "annual_return": m.get("annual_return"),
-                "max_drawdown": m.get("max_drawdown"),
-                "trade_count": m.get("trade_count"),
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "total_return": m.get("total_return"),
+                    "annual_return": m.get("annual_return"),
+                    "max_drawdown": m.get("max_drawdown"),
+                    "trade_count": m.get("trade_count"),
+                },
+                ensure_ascii=False,
+            )
         return ""
 
     def complete_task(self, task_id: str, result: dict):

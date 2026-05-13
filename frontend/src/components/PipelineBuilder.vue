@@ -35,6 +35,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { freqLabel } from '../utils/format'
 
 const props = defineProps({
   strategies: { type: Array, default: () => [] },
@@ -119,9 +120,6 @@ function addToPipeline(strategy) {
     }
   }
 }
-
-const freqMap = { daily: '日线', weekly: '周线', monthly: '月线' }
-function freqLabel(f) { return freqMap[f] || f }
 
 function screenerIndices() {
   return props.pipeline

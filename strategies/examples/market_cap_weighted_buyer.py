@@ -28,7 +28,7 @@ class MarketCapWeightedBuyer(BuyStrategy):
 
     def on_bar(self, ctx):
 
-        current_date = ctx._current_date
+        current_date = ctx.current_date
         new_symbols = ctx.new_symbols
 
         # 为新增股票创建买入计划（按市值比例分配）

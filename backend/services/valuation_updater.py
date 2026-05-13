@@ -3,7 +3,7 @@ import logging
 import signal
 from pathlib import Path
 from typing import Callable
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+from concurrent.futures import TimeoutError as FutureTimeout
 
 import akshare as ak
 import pandas as pd
@@ -28,22 +28,15 @@ RETRY_WAIT = 5
 
 
 def _call_api(symbol: str, indicator: str, period: str) -> pd.DataFrame:
-    return ak.stock_zh_valuation_baidu(symbol=symbol, indicator=indicator, period=period)
+    return ak.stock_zh_valuation_baidu(
+        symbol=symbol, indicator=indicator, period=period
+    )
 
 
 def _run_with_timeout(fn, *args):
-    executor = ThreadPoolExecutor(max_workers=1)
-    try:
-        future = executor.submit(fn, *args)
-        return future.result(timeout=API_TIMEOUT)
-    except FutureTimeout:
-        executor.shutdown(wait=False, cancel_futures=True)
-        raise
-    except Exception:
-        executor.shutdown(wait=False, cancel_futures=True)
-        raise
-    else:
-        executor.shutdown(wait=False)
+    from services.api_utils import run_with_timeout
+
+    return run_with_timeout(fn, *args, timeout=API_TIMEOUT)
 
 
 def fetch_single_indicator(
@@ -55,11 +48,11 @@ def fetch_single_indicator(
             df = df.rename(columns={"value": col_name})
             return df[["date", col_name]]
         except FutureTimeout:
-            logger.warning(f"获取 {symbol} {indicator} 超时 (第{attempt+1}次)")
+            logger.warning(f"获取 {symbol} {indicator} 超时 (第{attempt + 1}次)")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_WAIT)
         except Exception as e:
-            logger.warning(f"获取 {symbol} {indicator} 失败 (第{attempt+1}次): {e}")
+            logger.warning(f"获取 {symbol} {indicator} 失败 (第{attempt + 1}次): {e}")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_WAIT)
     return None
@@ -154,7 +147,9 @@ def run_valuation_update(
                 new_rows = new_df[new_df["date"] > latest_date]
                 if not new_rows.empty:
                     merged = pd.concat([new_rows, existing], ignore_index=True)
-                    merged = merged.sort_values("date", ascending=False).reset_index(drop=True)
+                    merged = merged.sort_values("date", ascending=False).reset_index(
+                        drop=True
+                    )
                     merged.to_parquet(filepath, index=False)
                 success += 1
 
@@ -163,7 +158,9 @@ def run_valuation_update(
             on_progress(i, total, phase)
 
         if i % 100 == 0 or i == total:
-            _log_progress(f"进度 {i}/{total} — 成功:{success} 跳过:{skipped} 失败:{failed}")
+            _log_progress(
+                f"进度 {i}/{total} — 成功:{success} 跳过:{skipped} 失败:{failed}"
+            )
 
     _log_progress(f"完成! 成功:{success} 跳过:{skipped} 失败:{failed}")
     return {

@@ -6,14 +6,14 @@ from typing import Callable
 import pandas as pd
 from services.backtest.base import ScreenerStrategy, BuyStrategy, SellStrategy
 from services.backtest.broker import Broker
-from services.backtest.context import ScreenerContext, TraderContext
+from services.backtest.context import TraderContext, MarketData
 from services.backtest.analyzer import compute_metrics
-from services.stock_data import aggregate_kline
+from services.backtest.engine_base import BaseEngine, parse_screen_result
 
 logger = logging.getLogger(__name__)
 
 
-class BuySellEngine:
+class BuySellEngine(BaseEngine):
     """买卖回测引擎。
 
     支持两种选股模式:
@@ -39,32 +39,21 @@ class BuySellEngine:
         financial_data: dict[str, pd.DataFrame] | None = None,
         join_modes: list[str] | None = None,
     ):
-        self._stock_data = {}
-        for sym, df in stock_data.items():
-            self._stock_data[sym] = df.sort_values("date").reset_index(drop=True)
-
-        self._screeners = screeners or []
+        super().__init__(
+            stock_data=stock_data,
+            screeners=screeners,
+            on_progress=on_progress,
+            join_modes=join_modes,
+            valuation_data=valuation_data,
+            dividend_data=dividend_data,
+            financial_data=financial_data,
+        )
         self._buyer = buyer
         self._seller = seller
         self._initial_capital = initial_capital
         self._commission_rate = commission_rate
         self._slippage = slippage
-        self._on_progress = on_progress
         self._signal_table = signal_table
-        self._valuation_data = valuation_data or {}
-        self._dividend_data = dividend_data or {}
-        self._financial_data = financial_data or {}
-        self._all_symbols = list(self._stock_data.keys())
-
-        # join_modes 长度应为 screeners 数 - 1，不足的用 "independent" 填充
-        n = max(0, len(self._screeners) - 1)
-        self._join_modes = (join_modes or [])[:n]
-        while len(self._join_modes) < n:
-            self._join_modes.append("independent")
-
-        self._weekly_data: dict[str, pd.DataFrame] = {}
-        self._monthly_data: dict[str, pd.DataFrame] = {}
-        self._precompute_periods()
 
         logger.info(
             "BuySellEngine 初始化: symbols=%d, screeners=%d, signal_table=%s, capital=%.0f",
@@ -74,66 +63,6 @@ class BuySellEngine:
             self._initial_capital,
         )
 
-    def _report(self, current: int, total: int, phase: str):
-        if self._on_progress:
-            self._on_progress(current, total, phase)
-
-    def _precompute_periods(self):
-        """预计算周线/月线数据，避免回测循环中重复聚合。"""
-        needs_weekly = any(
-            getattr(s, "frequency", "daily") == "weekly" for s in self._screeners
-        )
-        needs_monthly = any(
-            getattr(s, "frequency", "daily") == "monthly" for s in self._screeners
-        )
-        if not needs_weekly and not needs_monthly:
-            return
-        logger.info("开始预计算周期数据: weekly=%s, monthly=%s", needs_weekly, needs_monthly)
-        total = len(self._stock_data)
-        count = 0
-        for sym, df in self._stock_data.items():
-            if needs_weekly:
-                self._weekly_data[sym] = aggregate_kline(df, period="weekly")
-            if needs_monthly:
-                self._monthly_data[sym] = aggregate_kline(df, period="monthly")
-            count += 1
-            if count % 500 == 0 or count == total:
-                self._report(count, total, "预计算周期数据")
-        logger.info("周期数据预计算完成: %d 只股票", total)
-
-    def _period_key(self, date_str: str, freq: str) -> str:
-        """根据频率生成周期键，用于判断是否需要重新执行筛选。"""
-        if freq == "monthly":
-            return date_str[:7]
-        if freq == "weekly":
-            from datetime import date as _date
-            dt = _date.fromisoformat(date_str)
-            yr, wk, _ = dt.isocalendar()
-            return f"{yr}-W{wk:02d}"
-        return date_str
-
-    def _make_screener_ctx(self, screener: ScreenerStrategy, idx: int) -> ScreenerContext:
-        return ScreenerContext(
-            stock_data=self._stock_data,
-            current_idx=idx,
-            frequency=getattr(screener, "frequency", "daily"),
-            weekly_data=self._weekly_data,
-            monthly_data=self._monthly_data,
-            valuation_data=self._valuation_data,
-            dividend_data=self._dividend_data,
-            financial_data=self._financial_data,
-        )
-
-    def _parse_screen_result(self, result):
-        """统一解析筛选结果: 支持 list[str] 和 list[dict] 两种格式。"""
-        symbols = []
-        for item in result:
-            if isinstance(item, dict):
-                symbols.append(item["symbol"])
-            else:
-                symbols.append(item)
-        return symbols
-
     def run(self) -> dict:
         """执行回测主循环，返回 metrics/equity_curve/trades。
 
@@ -141,9 +70,11 @@ class BuySellEngine:
         - 每日从 signal_table/screener 获取今日信号
         - 仅新增股票加入 target_symbols 并标记为 new_symbols
         - Seller 每日执行，可通过 ctx.remove_target 移除股票
-        - Buyer 仅在有新增时执行
+        - Buyer 每日执行（DCA等策略需要持续跟踪买入计划）
         """
-        mode_desc = "signal_table" if self._signal_table is not None else "screener+trader"
+        mode_desc = (
+            "signal_table" if self._signal_table is not None else "screener+trader"
+        )
         logger.info("开始运行回测, 模式: %s", mode_desc)
 
         broker = Broker(
@@ -160,27 +91,14 @@ class BuySellEngine:
         prev_closes: dict[str, float] = {}
         screener_cache: dict[int, list[str]] = {}
         prev_period_keys: dict[int, str] = {}
-
         target_symbols: set[str] = set()
 
         for idx in range(n_bars):
             if idx % 10 == 0 or idx == n_bars - 1:
                 self._report(idx + 1, n_bars, "回测中")
 
-            current_bars = {}
-            current_prices = {}
-            for sym, df in self._stock_data.items():
-                if idx < len(df):
-                    row = df.iloc[idx]
-                    current_bars[sym] = {
-                        "open": row["open"],
-                        "close": row["close"],
-                        "high": row["high"],
-                        "low": row["low"],
-                    }
-                    current_prices[sym] = row["close"]
+            current_bars, current_prices = self._build_bar_data(idx)
 
-            # T+1 成交: 用前一日收盘价作为涨跌停判断基准，在当日开盘时撮合昨日挂单
             if idx > 0:
                 broker.fill_orders(ref_df.iloc[idx]["date"], current_bars, prev_closes)
 
@@ -188,88 +106,33 @@ class BuySellEngine:
             available_symbols = [s for s in self._all_symbols if s in current_bars]
 
             # --- 选股逻辑: 获取今日信号 ---
-            if self._signal_table is not None:
-                today_signals = self._signal_table.get(current_date, [])
-                if today_signals:
-                    logger.debug("signal_table 命中: date=%s, count=%d", current_date, len(today_signals))
-            elif self._screeners:
-                screener_sets: list[set[str]] = []
-                for si, screener in enumerate(self._screeners):
-                    freq = getattr(screener, "frequency", "daily")
-                    pk = self._period_key(current_date, freq)
-                    need_run = (si not in prev_period_keys) or (pk != prev_period_keys[si])
-                    if need_run:
-                        ctx = self._make_screener_ctx(screener, idx)
-                        raw_result = screener.screen(ctx, list(available_symbols))
-                        symbols = self._parse_screen_result(raw_result)
-                        screener_cache[si] = list(symbols)
-                        prev_period_keys[si] = pk
-                        logger.debug(
-                            "选股 %s: 输入 %d 只, 通过 %d 只, 过滤 %d 只",
-                            screener.__class__.__name__, len(available_symbols), len(symbols), len(available_symbols) - len(symbols),
-                        )
-                    screener_sets.append(set(screener_cache.get(si, [])))
-
-                # 按 join_modes 合并多个 screener 结果 (correlated=交集, independent=并集)
-                merged_set = screener_sets[0] if screener_sets else set()
-                for i, jm in enumerate(self._join_modes):
-                    next_set = screener_sets[i + 1]
-                    if jm == "correlated":
-                        merged_set = merged_set & next_set
-                    else:
-                        merged_set = merged_set | next_set
-                today_signals = [s for s in available_symbols if s in merged_set]
-            else:
-                today_signals = []
+            today_signals = self._get_today_signals(
+                idx, current_date, available_symbols, screener_cache, prev_period_keys
+            )
 
             # --- 累计池逻辑: 仅新增股票触发 buyer ---
             new_symbols = [s for s in today_signals if s not in target_symbols]
             target_symbols.update(new_symbols)
-            has_new = len(new_symbols) > 0
 
             def on_remove_target(sym, _ts=target_symbols):
                 _ts.discard(sym)
 
             # Seller 每日执行
             if self._seller:
-                seller_ctx = TraderContext(
-                    stock_data=self._stock_data,
-                    current_idx=idx,
-                    portfolio=broker.portfolio,
-                    broker_submit=broker.submit_order,
-                    selected_symbols=list(target_symbols),
-                    days_since_rebalance=0,
-                    weekly_data=self._weekly_data,
-                    monthly_data=self._monthly_data,
-                    valuation_data=self._valuation_data,
-                    dividend_data=self._dividend_data,
-                    financial_data=self._financial_data,
-                    target_symbols=list(target_symbols),
-                    new_symbols=list(new_symbols),
-                    on_remove_target=on_remove_target,
+                seller_ctx = self._make_trader_ctx(
+                    idx, broker, target_symbols, new_symbols, on_remove_target
                 )
                 try:
                     self._seller.on_bar(seller_ctx)
                 except Exception as e:
-                    logger.warning("Seller 执行异常: date=%s, error=%s", current_date, e)
+                    logger.warning(
+                        "Seller 执行异常: date=%s, error=%s", current_date, e
+                    )
 
-            # Buyer 每日执行（DCA等策略需要持续跟踪买入计划），由策略内部判断是否下单
+            # Buyer 每日执行
             if self._buyer:
-                buyer_ctx = TraderContext(
-                    stock_data=self._stock_data,
-                    current_idx=idx,
-                    portfolio=broker.portfolio,
-                    broker_submit=broker.submit_order,
-                    selected_symbols=list(target_symbols),
-                    days_since_rebalance=0,
-                    weekly_data=self._weekly_data,
-                    monthly_data=self._monthly_data,
-                    valuation_data=self._valuation_data,
-                    dividend_data=self._dividend_data,
-                    financial_data=self._financial_data,
-                    target_symbols=list(target_symbols),
-                    new_symbols=list(new_symbols),
-                    on_remove_target=on_remove_target,
+                buyer_ctx = self._make_trader_ctx(
+                    idx, broker, target_symbols, new_symbols, on_remove_target
                 )
                 try:
                     self._buyer.on_bar(buyer_ctx)
@@ -278,10 +141,11 @@ class BuySellEngine:
 
             snap = broker.portfolio.snapshot(current_date, current_prices)
             equity_curve.append(snap)
-
             prev_closes = dict(current_prices)
 
-        metrics = compute_metrics(equity_curve, broker.all_trades, self._initial_capital)
+        metrics = compute_metrics(
+            equity_curve, broker.all_trades, self._initial_capital
+        )
 
         logger.info(
             "回测完成: bars=%d, trades=%d, final_equity=%.2f",
@@ -295,3 +159,49 @@ class BuySellEngine:
             "equity_curve": equity_curve,
             "trades": broker.all_trades,
         }
+
+    def _get_today_signals(
+        self,
+        idx: int,
+        current_date: str,
+        available_symbols: list[str],
+        screener_cache: dict[int, list[str]],
+        prev_period_keys: dict[int, str],
+    ) -> list[str]:
+        """获取今日选股信号，支持 signal_table 和 screener 两种模式。"""
+        if self._signal_table is not None:
+            signals = self._signal_table.get(current_date, [])
+            if signals:
+                logger.debug(
+                    "signal_table 命中: date=%s, count=%d", current_date, len(signals)
+                )
+            return signals
+
+        if self._screeners:
+            merged_set = self._run_screeners_at(
+                idx, current_date, available_symbols, screener_cache, prev_period_keys
+            )
+            return [s for s in available_symbols if s in merged_set]
+
+        return []
+
+    def _make_trader_ctx(
+        self,
+        idx: int,
+        broker: Broker,
+        target_symbols: set[str],
+        new_symbols: list[str],
+        on_remove_target,
+    ) -> TraderContext:
+        return TraderContext(
+            stock_data=self._stock_data,
+            current_idx=idx,
+            portfolio=broker.portfolio,
+            broker_submit=broker.submit_order,
+            selected_symbols=list(target_symbols),
+            days_since_rebalance=0,
+            market_data=self._market_data,
+            target_symbols=list(target_symbols),
+            new_symbols=list(new_symbols),
+            on_remove_target=on_remove_target,
+        )

@@ -1,46 +1,50 @@
 """元数据相关 API — 流通股数等。"""
 
-import threading
 from fastapi import APIRouter
 
-from services.circulating_shares import update_circulating_shares, get_circulating_shares
+from services.circulating_shares import (
+    update_circulating_shares,
+    get_circulating_shares,
+)
+from services.api_utils import BackgroundTaskRunner
 
 router = APIRouter(prefix="/api/meta", tags=["meta"])
 
-_status = {"status": "idle", "result": None, "phase": None}
+_runner = BackgroundTaskRunner()
+
+
+def _run_circulating_update(on_progress=None, **kwargs):
+    """适配 BackgroundTaskRunner 的签名，将 on_progress 映射为 on_phase。"""
+
+    def on_phase(p):
+        if on_progress:
+            on_progress(0, 0, p)
+
+    return update_circulating_shares(on_phase=on_phase)
 
 
 @router.post("/circulating-shares/update")
 def api_update_circulating_shares():
     """触发流通股数快照更新（后台执行）。"""
-    if _status["status"] == "running":
-        return {"message": "already running", "phase": _status["phase"]}
-
-    def _task():
-        _status["status"] = "running"
-        _status["result"] = None
-        _status["phase"] = "获取数据中..."
-        try:
-            result = update_circulating_shares(
-                on_phase=lambda p: _status.update({"phase": p})
-            )
-            _status["status"] = "success"
-            _status["result"] = result
-            _status["phase"] = "完成"
-        except Exception as e:
-            _status["status"] = "failed"
-            _status["result"] = {"error": str(e)}
-            _status["phase"] = None
-
-    t = threading.Thread(target=_task, daemon=True)
-    t.start()
+    if not _runner.start(_run_circulating_update):
+        status = _runner.get_status()
+        return {
+            "message": "already running",
+            "phase": status.get("progress", {}).get("phase"),
+        }
     return {"message": "started"}
 
 
 @router.get("/circulating-shares/status")
 def api_circulating_shares_status():
     """查询更新状态。"""
-    return {"status": _status["status"], "phase": _status["phase"], "result": _status["result"]}
+    status = _runner.get_status()
+    progress = status.get("progress") or {}
+    return {
+        "status": status["status"],
+        "phase": progress.get("phase"),
+        "result": status["result"],
+    }
 
 
 @router.get("/circulating-shares")

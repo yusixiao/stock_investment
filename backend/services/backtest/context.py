@@ -1,5 +1,7 @@
 import logging
 import math
+from dataclasses import dataclass, field
+
 import pandas as pd
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
 from services.indicator_store import load_indicators
@@ -8,8 +10,21 @@ from services.backtest.portfolio import Portfolio
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class MarketData:
+    """行情数据容器，封装各周期和维度的数据字典，减少参数传递。"""
+
+    daily: dict[str, pd.DataFrame] = field(default_factory=dict)
+    weekly: dict[str, pd.DataFrame] = field(default_factory=dict)
+    monthly: dict[str, pd.DataFrame] = field(default_factory=dict)
+    valuation: dict[str, pd.DataFrame] = field(default_factory=dict)
+    dividend: dict[str, pd.DataFrame] = field(default_factory=dict)
+    financial: dict[str, pd.DataFrame] = field(default_factory=dict)
+
+
 class ScreenerContext:
     """选股策略上下文，提供行情数据、指标计算等接口供策略调用。"""
+
     def __init__(
         self,
         stock_data: dict[str, pd.DataFrame],
@@ -20,25 +35,36 @@ class ScreenerContext:
         valuation_data: dict[str, pd.DataFrame] | None = None,
         dividend_data: dict[str, pd.DataFrame] | None = None,
         financial_data: dict[str, pd.DataFrame] | None = None,
+        *,
+        market_data: MarketData | None = None,
     ):
-        self._daily_data = stock_data
-        self._weekly_data = weekly_data or {}
-        self._monthly_data = monthly_data or {}
-        self._valuation_data = valuation_data or {}
-        self._dividend_data = dividend_data or {}
-        self._financial_data = financial_data or {}
+        if market_data is not None:
+            self._daily_data = market_data.daily
+            self._weekly_data = market_data.weekly
+            self._monthly_data = market_data.monthly
+            self._valuation_data = market_data.valuation
+            self._dividend_data = market_data.dividend
+            self._financial_data = market_data.financial
+        else:
+            self._daily_data = stock_data
+            self._weekly_data = weekly_data or {}
+            self._monthly_data = monthly_data or {}
+            self._valuation_data = valuation_data or {}
+            self._dividend_data = dividend_data or {}
+            self._financial_data = financial_data or {}
         self._current_idx = current_idx
         self._frequency = frequency
         self._indicator_cache: dict[str, pd.DataFrame] = {}
         self._precomputed_cache: dict[str, pd.DataFrame | None] = {}
 
-        ref_sym = next(iter(stock_data))
-        self._current_date = stock_data[ref_sym].iloc[current_idx]["date"]
+        ref_sym = next(iter(self._daily_data))
+        self._current_date = self._daily_data[ref_sym].iloc[current_idx]["date"]
 
-        # 缓存周期数据的索引位置，避免每次二分查找（同一bar内多次调用get_price/indicator）
         self._period_idx_cache: dict[str, int] = {}
 
-    def _get_data_for_freq(self, symbol: str, freq: str | None = None) -> tuple[pd.DataFrame | None, int]:
+    def _get_data_for_freq(
+        self, symbol: str, freq: str | None = None
+    ) -> tuple[pd.DataFrame | None, int]:
         # 根据频率选择对应数据源：daily直接用原始索引，weekly/monthly需查找当前日期对应的周期行
         f = freq or self._frequency
         if f == "daily":
@@ -136,7 +162,10 @@ class ScreenerContext:
     def _get_precomputed(self, symbol: str, freq: str) -> pd.DataFrame | None:
         cache_key = f"{symbol}_{freq}"
         if cache_key not in self._precomputed_cache:
-            self._precomputed_cache[cache_key] = load_indicators(symbol, freq)
+            df = load_indicators(symbol, freq)
+            if df is not None:
+                df = df.sort_values("date").reset_index(drop=True)
+            self._precomputed_cache[cache_key] = df
         return self._precomputed_cache[cache_key]
 
     def _precomputed_value(self, symbol: str, freq: str, col: str) -> float | None:
@@ -147,14 +176,15 @@ class ScreenerContext:
         pre_df = self._get_precomputed(symbol, freq)
         if pre_df is None or col not in pre_df.columns:
             return None
-        pre_sorted = pre_df.sort_values("date")
-        mask = pre_sorted["date"] <= current_date
+        mask = pre_df["date"] <= current_date
         if not mask.any():
             return None
-        val = pre_sorted.loc[mask, col].iloc[-1]
+        val = pre_df.loc[mask, col].iloc[-1]
         return None if (isinstance(val, float) and math.isnan(val)) else float(val)
 
-    def indicator(self, symbol: str, ind_type: str, *args, period: str | None = None) -> float | None:
+    def indicator(
+        self, symbol: str, ind_type: str, *args, period: str | None = None
+    ) -> float | None:
         freq = period or self._frequency
 
         if ind_type == "ma":
@@ -189,45 +219,57 @@ class ScreenerContext:
             window = args[0] if args else 5
             cache_key = f"{symbol}_{freq}_ma_{window}"
             if cache_key not in self._indicator_cache:
-                self._indicator_cache[cache_key] = calc_ma(data_up_to, windows=[window])
+                computed = calc_ma(data_up_to, windows=[window])
+                self._indicator_cache[cache_key] = computed.sort_values(
+                    "date"
+                ).reset_index(drop=True)
             result_df = self._indicator_cache[cache_key]
             col = f"ma{window}"
             if col not in result_df.columns:
                 return None
-            val = result_df.sort_values("date")[col].iloc[-1]
+            val = result_df[col].iloc[-1]
             return None if (isinstance(val, float) and math.isnan(val)) else float(val)
 
         elif ind_type == "macd":
             field_name = args[0] if args else "dif"
             cache_key = f"{symbol}_{freq}_macd"
             if cache_key not in self._indicator_cache:
-                self._indicator_cache[cache_key] = calc_macd(data_up_to)
+                computed = calc_macd(data_up_to)
+                self._indicator_cache[cache_key] = computed.sort_values(
+                    "date"
+                ).reset_index(drop=True)
             result_df = self._indicator_cache[cache_key]
             if field_name not in result_df.columns:
                 return None
-            val = result_df.sort_values("date")[field_name].iloc[-1]
+            val = result_df[field_name].iloc[-1]
             return None if (isinstance(val, float) and math.isnan(val)) else float(val)
 
         elif ind_type == "kdj":
             field_name = args[0] if args else "k"
             cache_key = f"{symbol}_{freq}_kdj"
             if cache_key not in self._indicator_cache:
-                self._indicator_cache[cache_key] = calc_kdj(data_up_to)
+                computed = calc_kdj(data_up_to)
+                self._indicator_cache[cache_key] = computed.sort_values(
+                    "date"
+                ).reset_index(drop=True)
             result_df = self._indicator_cache[cache_key]
             if field_name not in result_df.columns:
                 return None
-            val = result_df.sort_values("date")[field_name].iloc[-1]
+            val = result_df[field_name].iloc[-1]
             return None if (isinstance(val, float) and math.isnan(val)) else float(val)
 
         elif ind_type == "boll":
             field_name = args[0] if args else "boll_mid"
             cache_key = f"{symbol}_{freq}_boll"
             if cache_key not in self._indicator_cache:
-                self._indicator_cache[cache_key] = calc_boll(data_up_to)
+                computed = calc_boll(data_up_to)
+                self._indicator_cache[cache_key] = computed.sort_values(
+                    "date"
+                ).reset_index(drop=True)
             result_df = self._indicator_cache[cache_key]
             if field_name not in result_df.columns:
                 return None
-            val = result_df.sort_values("date")[field_name].iloc[-1]
+            val = result_df[field_name].iloc[-1]
             return None if (isinstance(val, float) and math.isnan(val)) else float(val)
 
         return None
@@ -235,6 +277,7 @@ class ScreenerContext:
 
 class TraderContext(ScreenerContext):
     """交易策略上下文，继承ScreenerContext并增加下单、持仓查询等交易接口。"""
+
     def __init__(
         self,
         stock_data: dict[str, pd.DataFrame],
@@ -251,8 +294,20 @@ class TraderContext(ScreenerContext):
         target_symbols: list[str] | None = None,
         new_symbols: list[str] | None = None,
         on_remove_target: callable = None,
+        *,
+        market_data: MarketData | None = None,
     ):
-        super().__init__(stock_data, current_idx, "daily", weekly_data, monthly_data, valuation_data, dividend_data, financial_data)
+        super().__init__(
+            stock_data,
+            current_idx,
+            "daily",
+            weekly_data,
+            monthly_data,
+            valuation_data,
+            dividend_data,
+            financial_data,
+            market_data=market_data,
+        )
         self._portfolio = portfolio
         self._broker_submit = broker_submit
         self.selected_symbols = selected_symbols

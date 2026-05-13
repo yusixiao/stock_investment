@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as echarts from 'echarts'
 
 const props = defineProps({
@@ -16,8 +16,15 @@ const props = defineProps({
 const chartRef = ref(null)
 let chart = null
 
+const sortByDate = (arr) => [...arr].sort((a, b) => a.date.localeCompare(b.date))
+const sortedKline = computed(() => sortByDate(props.klineData))
+const sortedMa = computed(() => props.indicators.ma ? sortByDate(props.indicators.ma) : null)
+const sortedBoll = computed(() => props.indicators.boll ? sortByDate(props.indicators.boll) : null)
+const sortedMacd = computed(() => props.indicators.macd ? sortByDate(props.indicators.macd) : null)
+const sortedKdj = computed(() => props.indicators.kdj ? sortByDate(props.indicators.kdj) : null)
+
 function buildOption() {
-  const data = [...props.klineData].sort((a, b) => a.date.localeCompare(b.date))
+  const data = sortedKline.value
   const dates = data.map(d => d.date)
   const ohlc = data.map(d => [d.open, d.close, d.low, d.high])
   const volumes = data.map(d => d.volume)
@@ -45,8 +52,8 @@ function buildOption() {
 
   let subGridIdx = 2
 
-  if (props.indicators.ma && props.maLines.length) {
-    const maData = [...props.indicators.ma].sort((a, b) => a.date.localeCompare(b.date))
+  if (sortedMa.value && props.maLines.length) {
+    const maData = sortedMa.value
     const maColors = { ma5: '#ff9800', ma10: '#2196f3', ma20: '#9c27b0', ma60: '#4caf50' }
     for (const key of ['ma5', 'ma10', 'ma20', 'ma60']) {
       if (!props.maLines.includes(key)) continue
@@ -58,8 +65,8 @@ function buildOption() {
     }
   }
 
-  if (props.indicators.boll) {
-    const bollData = [...props.indicators.boll].sort((a, b) => a.date.localeCompare(b.date))
+  if (sortedBoll.value) {
+    const bollData = sortedBoll.value
     for (const [key, color] of [['boll_upper', '#e91e63'], ['boll_mid', '#ff9800'], ['boll_lower', '#2196f3']]) {
       series.push({
         name: key, type: 'line', data: bollData.map(d => d[key]),
@@ -69,8 +76,8 @@ function buildOption() {
     }
   }
 
-  if (props.indicators.macd) {
-    const macdData = [...props.indicators.macd].sort((a, b) => a.date.localeCompare(b.date))
+  if (sortedMacd.value) {
+    const macdData = sortedMacd.value
     const top = `${parseInt(grids[1].top) + 15}%`
     grids.push({ left: '8%', right: '3%', top, height: '12%' })
     xAxes.push({ type: 'category', data: dates, gridIndex: subGridIdx, axisLabel: { show: false } })
@@ -83,8 +90,8 @@ function buildOption() {
     subGridIdx++
   }
 
-  if (props.indicators.kdj) {
-    const kdjData = [...props.indicators.kdj].sort((a, b) => a.date.localeCompare(b.date))
+  if (sortedKdj.value) {
+    const kdjData = sortedKdj.value
     const prevTop = grids[grids.length - 1]
     const top = `${parseInt(prevTop.top) + parseInt(prevTop.height) + 3}%`
     grids.push({ left: '8%', right: '3%', top, height: '12%' })

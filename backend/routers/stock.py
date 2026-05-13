@@ -1,5 +1,4 @@
 import json
-import math
 
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import Response
@@ -10,22 +9,7 @@ from config import RAW_KLINE_DIR
 from services.stock_data import list_stocks, get_kline, aggregate_kline
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
 from services.qfq_cache import get_qfq_kline
-
-
-def _safe_json(obj):
-    def _clean(v):
-        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-            return None
-        return v
-
-    def _clean_obj(o):
-        if isinstance(o, dict):
-            return {k: _clean_obj(v) for k, v in o.items()}
-        if isinstance(o, list):
-            return [_clean_obj(i) for i in o]
-        return _clean(o)
-
-    return _clean_obj(obj)
+from services.api_utils import safe_json
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
@@ -40,7 +24,12 @@ def api_list_stocks(
     total = len(all_stocks)
     start = (page - 1) * page_size
     end = start + page_size
-    return {"stocks": all_stocks[start:end], "total": total, "page": page, "page_size": page_size}
+    return {
+        "stocks": all_stocks[start:end],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.get("/{symbol}/kline")
@@ -91,11 +80,15 @@ def api_get_indicators(
 
     if "ma" in indicator_types:
         ma_df = calc_ma(df)
-        result["ma"] = ma_df[["date", "ma5", "ma10", "ma20", "ma60"]].to_dict(orient="records")
+        result["ma"] = ma_df[["date", "ma5", "ma10", "ma20", "ma60"]].to_dict(
+            orient="records"
+        )
 
     if "macd" in indicator_types:
         macd_df = calc_macd(df)
-        result["macd"] = macd_df[["date", "dif", "dea", "macd"]].to_dict(orient="records")
+        result["macd"] = macd_df[["date", "dif", "dea", "macd"]].to_dict(
+            orient="records"
+        )
 
     if "kdj" in indicator_types:
         kdj_df = calc_kdj(df)
@@ -103,9 +96,11 @@ def api_get_indicators(
 
     if "boll" in indicator_types:
         boll_df = calc_boll(df)
-        result["boll"] = boll_df[["date", "boll_upper", "boll_mid", "boll_lower"]].to_dict(orient="records")
+        result["boll"] = boll_df[
+            ["date", "boll_upper", "boll_mid", "boll_lower"]
+        ].to_dict(orient="records")
 
     return Response(
-        content=json.dumps(_safe_json(result), ensure_ascii=False),
+        content=json.dumps(safe_json(result), ensure_ascii=False),
         media_type="application/json",
     )

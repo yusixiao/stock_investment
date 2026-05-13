@@ -77,6 +77,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchBacktestResult, importFromBacktest } from '../api'
+import { freqLabel } from '../utils/format'
 import MetricCards from '../components/MetricCards.vue'
 import EquityCurve from '../components/EquityCurve.vue'
 import DrawdownChart from '../components/DrawdownChart.vue'
@@ -91,8 +92,6 @@ const joinModesInfo = ref([])
 const dateRange = ref('')
 const loading = ref(true)
 const error = ref('')
-const freqMap = { daily: '日线', weekly: '周线', monthly: '月线' }
-function freqLabel(f) { return freqMap[f] || f }
 const showImport = ref(false)
 const importName = ref('')
 const importError = ref('')

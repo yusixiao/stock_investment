@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+from concurrent.futures import TimeoutError as FutureTimeout
 
 import akshare as ak
 import pandas as pd
@@ -14,10 +14,25 @@ from services.qfq_cache import invalidate_cache
 logger = logging.getLogger(__name__)
 
 EM_COLUMNS = [
-    "报告期", "业绩披露日期", "送转股份-送转总比例", "送转股份-送股比例", "送转股份-转股比例",
-    "现金分红-现金分红比例", "现金分红-现金分红比例描述", "现金分红-股息率",
-    "每股收益", "每股净资产", "每股公积金", "每股未分配利润", "净利润同比增长", "总股本",
-    "预案公告日", "股权登记日", "除权除息日", "方案进度", "最新公告日期",
+    "报告期",
+    "业绩披露日期",
+    "送转股份-送转总比例",
+    "送转股份-送股比例",
+    "送转股份-转股比例",
+    "现金分红-现金分红比例",
+    "现金分红-现金分红比例描述",
+    "现金分红-股息率",
+    "每股收益",
+    "每股净资产",
+    "每股公积金",
+    "每股未分配利润",
+    "净利润同比增长",
+    "总股本",
+    "预案公告日",
+    "股权登记日",
+    "除权除息日",
+    "方案进度",
+    "最新公告日期",
 ]
 
 SINA_TO_EM_MAP = {
@@ -53,18 +68,9 @@ def _call_sina_api(symbol: str) -> pd.DataFrame:
 
 
 def _run_with_timeout(fn, *args):
-    executor = ThreadPoolExecutor(max_workers=1)
-    try:
-        future = executor.submit(fn, *args)
-        return future.result(timeout=API_TIMEOUT)
-    except FutureTimeout:
-        executor.shutdown(wait=False, cancel_futures=True)
-        raise
-    except Exception:
-        executor.shutdown(wait=False, cancel_futures=True)
-        raise
-    else:
-        executor.shutdown(wait=False)
+    from services.api_utils import run_with_timeout
+
+    return run_with_timeout(fn, *args, timeout=API_TIMEOUT)
 
 
 def fetch_dividend_em(symbol: str) -> pd.DataFrame | None:
@@ -76,11 +82,11 @@ def fetch_dividend_em(symbol: str) -> pd.DataFrame | None:
                     df[col] = None
             return df[EM_COLUMNS]
         except FutureTimeout:
-            logger.warning(f"东方财富 {symbol} 超时 (第{attempt+1}次)")
+            logger.warning(f"东方财富 {symbol} 超时 (第{attempt + 1}次)")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_WAIT)
         except Exception as e:
-            logger.warning(f"东方财富 {symbol} 失败 (第{attempt+1}次): {e}")
+            logger.warning(f"东方财富 {symbol} 失败 (第{attempt + 1}次): {e}")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_WAIT)
     return None
@@ -92,11 +98,11 @@ def fetch_dividend_sina(symbol: str) -> pd.DataFrame | None:
             df = _run_with_timeout(_call_sina_api, symbol)
             return df
         except FutureTimeout:
-            logger.warning(f"新浪 {symbol} 超时 (第{attempt+1}次)")
+            logger.warning(f"新浪 {symbol} 超时 (第{attempt + 1}次)")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_WAIT)
         except Exception as e:
-            logger.warning(f"新浪 {symbol} 失败 (第{attempt+1}次): {e}")
+            logger.warning(f"新浪 {symbol} 失败 (第{attempt + 1}次): {e}")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_WAIT)
     return None
@@ -185,10 +191,14 @@ def run_dividend_update(
                 errors.append(sym)
                 _log_progress(f"[失败] {sym}")
             else:
-                key_col = "报告期" if "报告期" in existing.columns else existing.columns[0]
+                key_col = (
+                    "报告期" if "报告期" in existing.columns else existing.columns[0]
+                )
                 merged = pd.concat([new_df, existing], ignore_index=True)
                 merged = merged.drop_duplicates(subset=[key_col], keep="first")
-                merged = merged.sort_values(key_col, ascending=False).reset_index(drop=True)
+                merged = merged.sort_values(key_col, ascending=False).reset_index(
+                    drop=True
+                )
                 merged.to_parquet(filepath, index=False)
                 success += 1
                 updated_symbols.append(sym)
@@ -198,7 +208,9 @@ def run_dividend_update(
             on_progress(i, total, phase)
 
         if i % 100 == 0 or i == total:
-            _log_progress(f"进度 {i}/{total} — 成功:{success} 跳过:{skipped} 失败:{failed}")
+            _log_progress(
+                f"进度 {i}/{total} — 成功:{success} 跳过:{skipped} 失败:{failed}"
+            )
 
         time.sleep(SLEEP_BETWEEN_CALLS)
 

@@ -1,6 +1,8 @@
 import sqlite3
+import pandas as pd
 from fastapi import APIRouter, HTTPException, Body
 
+from config import RAW_KLINE_DIR
 from services.portfolio.db import get_connection, init_db
 from services.portfolio.manager import PortfolioManager
 from services.backtest.task_manager import task_manager
@@ -69,20 +71,36 @@ def api_get_trades(portfolio_id: int):
     return mgr.get_trades(portfolio_id)
 
 
+def _get_latest_close(symbol: str) -> float | None:
+    """从parquet文件读取最新收盘价。"""
+    candidates = list(RAW_KLINE_DIR.glob(f"{symbol}.*.parquet"))
+    if not candidates:
+        return None
+    df = pd.read_parquet(candidates[0], columns=["close"])
+    if df.empty:
+        return None
+    return float(df.iloc[0]["close"])
+
+
 @router.get("/{portfolio_id}/holdings")
 def api_get_holdings(portfolio_id: int):
     mgr = _get_manager()
     holdings = mgr.compute_holdings(portfolio_id)
     result = []
     for sym, h in holdings.items():
+        current_price = _get_latest_close(sym) or h["avg_cost"]
+        market_value = h["shares"] * current_price
+        cost_value = h["shares"] * h["avg_cost"]
+        pnl = market_value - cost_value
+        pnl_pct = (pnl / cost_value * 100) if cost_value > 0 else 0.0
         result.append({
             "symbol": sym,
             "shares": h["shares"],
             "avg_cost": h["avg_cost"],
-            "current_price": h["avg_cost"],
-            "market_value": h["shares"] * h["avg_cost"],
-            "pnl": 0.0,
-            "pnl_pct": 0.0,
+            "current_price": current_price,
+            "market_value": market_value,
+            "pnl": round(pnl, 2),
+            "pnl_pct": round(pnl_pct, 2),
         })
     return result
 
