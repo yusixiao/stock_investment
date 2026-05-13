@@ -7,25 +7,30 @@ from services.circulating_shares import update_circulating_shares, get_circulati
 
 router = APIRouter(prefix="/api/meta", tags=["meta"])
 
-_status = {"status": "idle", "result": None}
+_status = {"status": "idle", "result": None, "phase": None}
 
 
 @router.post("/circulating-shares/update")
 def api_update_circulating_shares():
     """触发流通股数快照更新（后台执行）。"""
     if _status["status"] == "running":
-        return {"message": "already running"}
+        return {"message": "already running", "phase": _status["phase"]}
 
     def _task():
         _status["status"] = "running"
         _status["result"] = None
+        _status["phase"] = "获取数据中..."
         try:
-            result = update_circulating_shares()
+            result = update_circulating_shares(
+                on_phase=lambda p: _status.update({"phase": p})
+            )
             _status["status"] = "success"
             _status["result"] = result
+            _status["phase"] = "完成"
         except Exception as e:
             _status["status"] = "failed"
             _status["result"] = {"error": str(e)}
+            _status["phase"] = None
 
     t = threading.Thread(target=_task, daemon=True)
     t.start()
@@ -35,7 +40,7 @@ def api_update_circulating_shares():
 @router.get("/circulating-shares/status")
 def api_circulating_shares_status():
     """查询更新状态。"""
-    return _status
+    return {"status": _status["status"], "phase": _status["phase"], "result": _status["result"]}
 
 
 @router.get("/circulating-shares")

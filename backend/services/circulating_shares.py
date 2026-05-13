@@ -13,14 +13,20 @@ logger = logging.getLogger(__name__)
 CIRCULATING_SHARES_FILE = META_DIR / "circulating_shares.parquet"
 
 
-def update_circulating_shares() -> dict:
+def update_circulating_shares(on_phase: callable = None) -> dict:
     """调用 stock_zh_a_spot_em 获取全部 A 股实时行情，计算流通股数并保存。
 
     流通股数 = 流通市值 / 最新价
     返回: {"count": N, "update_date": "YYYY-MM-DD"}
     """
+    def _phase(msg):
+        if on_phase:
+            on_phase(msg)
+
     logger.info("开始获取流通股数数据...")
+    _phase("调用 AKShare API 获取数据...")
     df = ak.stock_zh_a_spot_em()
+    _phase(f"获取到 {len(df)} 条记录，计算流通股数...")
 
     # 提取需要的列：代码、最新价、流通市值
     required_cols = {"代码", "最新价", "流通市值"}
@@ -41,6 +47,7 @@ def update_circulating_shares() -> dict:
     df["update_date"] = today
 
     result = df[["symbol", "circulating_shares", "update_date"]].reset_index(drop=True)
+    _phase(f"保存 {len(result)} 只股票数据...")
     result.to_parquet(CIRCULATING_SHARES_FILE, index=False)
 
     logger.info("流通股数保存完成: %d 只股票, 日期=%s", len(result), today)

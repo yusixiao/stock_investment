@@ -120,18 +120,20 @@ def test_target_symbols_accumulates():
     )
     engine.run()
 
-    # Buyer should be called exactly 2 times (on day4 and day6 when new symbols appear)
-    assert len(buyer.calls) == 2
+    # Buyer 每日执行（DCA策略需要），data有10天
+    assert len(buyer.calls) == 10
 
-    # First call: target_symbols = [SH600001], new_symbols = [SH600001]
-    assert "SH600001" in buyer.calls[0]["target_symbols"]
-    assert "SH600001" in buyer.calls[0]["new_symbols"]
+    # 信号日 2024-01-04 (idx=2): target_symbols = [SH600001], new_symbols = [SH600001]
+    day4_call = buyer.calls[2]
+    assert "SH600001" in day4_call["target_symbols"]
+    assert "SH600001" in day4_call["new_symbols"]
 
-    # Second call: target_symbols contains both, new_symbols = [SH600002]
-    assert "SH600001" in buyer.calls[1]["target_symbols"]
-    assert "SH600002" in buyer.calls[1]["target_symbols"]
-    assert "SH600002" in buyer.calls[1]["new_symbols"]
-    assert "SH600001" not in buyer.calls[1]["new_symbols"]
+    # 信号日 2024-01-06 (idx=4): target_symbols contains both, new_symbols = [SH600002]
+    day6_call = buyer.calls[4]
+    assert "SH600001" in day6_call["target_symbols"]
+    assert "SH600002" in day6_call["target_symbols"]
+    assert "SH600002" in day6_call["new_symbols"]
+    assert "SH600001" not in day6_call["new_symbols"]
 
 
 def test_seller_removes_from_target():
@@ -152,9 +154,11 @@ def test_seller_removes_from_target():
     )
     engine.run()
 
-    # Buyer only called once on day3 (signal day)
-    assert len(buyer.calls) == 1
-    assert buyer.calls[0]["target_symbols"] == ["SH600001"]
+    # Buyer 每日执行（10 bars）
+    assert len(buyer.calls) == 10
+    # 信号日 2024-01-03 (idx=1): target_symbols = [SH600001]
+    day3_call = [c for c in buyer.calls if c["date"] == "2024-01-03"][0]
+    assert day3_call["target_symbols"] == ["SH600001"]
 
     # Seller called every day (10 bars)
     assert len(seller.calls) == 10

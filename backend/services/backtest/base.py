@@ -1,8 +1,10 @@
 class ParamAccessor:
     def __init__(self, params: dict, overrides: dict = None):
         self._values = {}
+        self._types = {}
         for key, conf in params.items():
             self._values[key] = conf["default"]
+            self._types[key] = conf.get("type", "")
         if overrides:
             for key, val in overrides.items():
                 if key in self._values:
@@ -11,6 +13,27 @@ class ParamAccessor:
                         self._values[key] = val["default"]
                     else:
                         self._values[key] = val
+        # 根据 params 中声明的 type 或 default 值类型，强制转换字符串为数值
+        for key in self._values:
+            v = self._values[key]
+            if isinstance(v, str):
+                t = self._types.get(key, "")
+                if t == "int":
+                    self._values[key] = int(v)
+                elif t == "float":
+                    self._values[key] = float(v)
+                elif t == "" and params.get(key, {}).get("default") is not None:
+                    default_val = params[key]["default"]
+                    if isinstance(default_val, int):
+                        try:
+                            self._values[key] = int(v)
+                        except (ValueError, TypeError):
+                            pass
+                    elif isinstance(default_val, float):
+                        try:
+                            self._values[key] = float(v)
+                        except (ValueError, TypeError):
+                            pass
 
     def __getattr__(self, name):
         if name.startswith("_"):

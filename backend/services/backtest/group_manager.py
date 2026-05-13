@@ -541,6 +541,8 @@ def _execute_buy_sell_steps(
             raise ValueError(f"Strategy class {seller_config['class_name']} not found in {filepath}")
         seller = cls(param_overrides=seller_config.get("params", {}))
 
+
+
     if symbols is not None:
         target_symbols = symbols
     else:
@@ -756,6 +758,15 @@ class GroupRunner:
         if source_run_id:
             initial_symbols = gm.get_effective_symbols(source_run_id)
             logger.debug("从 source_run_id=%s 获取初始股票池: %d 只", source_run_id, len(initial_symbols) if initial_symbols else 0)
+            # 未指定日期时继承 source run 的日期范围
+            source_run_meta = gm.get_run(source_run_id)
+            if source_run_meta:
+                if not start_date:
+                    start_date = source_run_meta.get("start_date")
+                    logger.info("继承 source run start_date=%s", start_date)
+                if not end_date:
+                    end_date = source_run_meta.get("end_date")
+                    logger.info("继承 source run end_date=%s", end_date)
 
         try:
             if self._has_buy_sell(pipeline):

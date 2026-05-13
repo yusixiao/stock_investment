@@ -100,21 +100,31 @@ class MaTangleBreakoutScreener(ScreenerStrategy):
                     continue
 
                 spread_start = tangle_end + 1
-                spread_window_end = min(spread_start + sm, n)
                 if last_idx < spread_start:
                     continue
 
-                spread_rows = df.iloc[spread_start:spread_window_end]
-                all_spread = all(
-                    self._check_spread_bar(spread_rows.iloc[j], col_f, col_m, col_s)
-                    for j in range(len(spread_rows))
-                )
-                if not all_spread:
-                    continue
+                # spread_months=0 表示不要求发散条件
+                if sm > 0:
+                    spread_window_end = min(spread_start + sm, n)
+                    spread_rows = df.iloc[spread_start:spread_window_end]
+                    all_spread = all(
+                        self._check_spread_bar(spread_rows.iloc[j], col_f, col_m, col_s)
+                        for j in range(len(spread_rows))
+                    )
+                    if not all_spread:
+                        continue
+                else:
+                    spread_window_end = spread_start + 1
+                    spread_rows = df.iloc[spread_start:spread_window_end]
 
-                first_red_date = self._find_first_red_run(spread_rows, self.p.vol_red_bars)
-                if first_red_date is not None:
-                    latest_match_date = first_red_date
+                # vol_red_bars=0 表示不要求连续阳线，直接用缠绕结束后第一天作为匹配日期
+                if self.p.vol_red_bars > 0:
+                    first_red_date = self._find_first_red_run(spread_rows, self.p.vol_red_bars)
+                    if first_red_date is not None:
+                        latest_match_date = first_red_date
+                        skip_until = spread_window_end - 1
+                else:
+                    latest_match_date = df.iloc[spread_start]["date"]
                     skip_until = spread_window_end - 1
 
             if latest_match_date is not None:

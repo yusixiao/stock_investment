@@ -122,13 +122,16 @@ def test_signal_table_seller_runs_every_bar():
     buy_trades = [t for t in trades if t["direction"] == "buy"]
     sell_trades = [t for t in trades if t["direction"] == "sell"]
 
-    assert len(buy_trades) == 1
+    # 第一次买入：信号日2024-01-03 → T+1成交2024-01-04
     assert buy_trades[0]["symbol"] == "000001"
     assert buy_trades[0]["date"] == "2024-01-04"
 
     assert len(sell_trades) == 1
     assert sell_trades[0]["symbol"] == "000001"
     assert sell_trades[0]["date"] == "2024-01-09"
+
+    # Buyer 每日执行，卖出后因 target_symbols 仍有000001，会再次买入
+    assert len(buy_trades) >= 2
 
     assert sell_date not in signal_table
 

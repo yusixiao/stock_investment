@@ -16,7 +16,14 @@
           <span :class="'badge ' + item.strategy_type">{{ typeLabel(item.strategy_type) }}</span>
           <span v-if="item.frequency" :class="'freq-badge freq-' + item.frequency">{{ freqLabel(item.frequency) }}</span>
           <span class="name">{{ item.name }}</span>
+          <button v-if="hasParams(item)" class="param-toggle" @click="toggleParams(idx)">{{ expandedIdx === idx ? '收起' : '参数' }}</button>
           <button class="remove-btn" @click="removeFromPipeline(idx)">✕</button>
+        </div>
+        <div v-if="expandedIdx === idx && hasParams(item)" class="param-section">
+          <div v-for="(conf, key) in getParamDefs(item)" :key="key" class="param-row">
+            <label>{{ conf.label || key }}:</label>
+            <input :type="conf.type === 'float' ? 'number' : 'text'" :value="getParamValue(item, key, conf)" @input="updateParam(idx, key, $event.target.value, conf)" />
+          </div>
         </div>
         <div v-if="showJoinToggle(idx)" class="join-toggle" @click="toggleJoinMode(idx)">
           <span :class="'join-badge join-' + getJoinMode(idx)">{{ getJoinMode(idx) === 'correlated' ? '关联' : '独立' }}</span>
@@ -27,7 +34,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps({
   strategies: { type: Array, default: () => [] },
@@ -37,6 +44,53 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:pipeline', 'update:joinModes'])
+
+const expandedIdx = ref(null)
+
+function toggleParams(idx) {
+  expandedIdx.value = expandedIdx.value === idx ? null : idx
+}
+
+function hasParams(item) {
+  const defs = getParamDefs(item)
+  return Object.keys(defs).length > 0
+}
+
+function getParamDefs(item) {
+  const params = item.params || {}
+  const defs = {}
+  for (const [key, val] of Object.entries(params)) {
+    if (val && typeof val === 'object' && 'default' in val) {
+      defs[key] = val
+    } else {
+      defs[key] = { default: val, label: key, type: typeof val === 'number' ? 'int' : 'str' }
+    }
+  }
+  return defs
+}
+
+function getParamValue(item, key, conf) {
+  const params = item.params || {}
+  const val = params[key]
+  if (val && typeof val === 'object' && 'default' in val) return val.default
+  return val !== undefined ? val : conf.default
+}
+
+function updateParam(idx, key, rawValue, conf) {
+  const newPipeline = [...props.pipeline]
+  const item = { ...newPipeline[idx], params: { ...newPipeline[idx].params } }
+  let val = rawValue
+  if (conf.type === 'int') val = parseInt(rawValue) || 0
+  else if (conf.type === 'float') val = parseFloat(rawValue) || 0
+  const existing = item.params[key]
+  if (existing && typeof existing === 'object' && 'default' in existing) {
+    item.params[key] = { ...existing, default: val }
+  } else {
+    item.params[key] = val
+  }
+  newPipeline[idx] = item
+  emit('update:pipeline', newPipeline)
+}
 
 const availableStrategies = computed(() => {
   if (props.mode === 'screener') {
@@ -138,6 +192,12 @@ function removeFromPipeline(idx) {
 .freq-weekly { background: #409eff; }
 .freq-monthly { background: #e6a23c; }
 .remove-btn { margin-left: auto; border: none; background: none; color: #f56c6c; cursor: pointer; font-size: 14px; }
+.param-toggle { border: 1px solid #dcdfe6; background: #f5f7fa; color: #606266; border-radius: 3px; font-size: 11px; padding: 2px 8px; cursor: pointer; }
+.param-toggle:hover { border-color: #409eff; color: #409eff; }
+.param-section { background: #fafafa; border: 1px solid #ebeef5; border-radius: 4px; padding: 8px 12px; margin: -4px 0 8px 0; }
+.param-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.param-row label { font-size: 12px; color: #606266; min-width: 100px; }
+.param-row input { padding: 3px 8px; border: 1px solid #dcdfe6; border-radius: 4px; width: 80px; font-size: 12px; }
 .join-toggle { display: flex; justify-content: center; margin: -4px 0 8px; cursor: pointer; }
 .join-badge { padding: 2px 10px; border-radius: 10px; font-size: 11px; user-select: none; }
 .join-independent { background: #e4e7ed; color: #909399; }

@@ -253,8 +253,8 @@ class BuySellEngine:
                 except Exception as e:
                     logger.warning("Seller 执行异常: date=%s, error=%s", current_date, e)
 
-            # Buyer 仅在有新增时执行
-            if has_new and self._buyer:
+            # Buyer 每日执行（DCA等策略需要持续跟踪买入计划），由策略内部判断是否下单
+            if self._buyer:
                 buyer_ctx = TraderContext(
                     stock_data=self._stock_data,
                     current_idx=idx,

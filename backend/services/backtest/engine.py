@@ -293,6 +293,9 @@ class BacktestEngine:
         return df.iloc[idx]["date"]
 
     def _run_screener_backtest(self) -> dict:
+        if not self._all_symbols:
+            logger.warning("_run_screener_backtest: 无股票数据，返回空结果")
+            return {"screened_symbols": []}
         ref_sym = self._all_symbols[0]
         ref_df = self._stock_data[ref_sym]
         n_bars = len(ref_df)
@@ -371,6 +374,9 @@ class BacktestEngine:
             "_run_backtest: 开始, initial_capital=%.0f, commission=%.4f, slippage=%.4f",
             settings["initial_capital"], settings["commission_rate"], settings["slippage"],
         )
+        if not self._all_symbols:
+            logger.warning("_run_backtest: 无股票数据，返回空结果")
+            return {"metrics": {}, "equity_curve": [], "trades": []}
         broker = Broker(
             initial_capital=settings["initial_capital"],
             commission_rate=settings["commission_rate"],

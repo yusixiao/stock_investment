@@ -21,16 +21,12 @@ class MarketCapWeightedBuyer(BuyStrategy):
 
     def __init__(self, param_overrides=None):
         super().__init__(param_overrides)
-        # 买入计划: {symbol: {"weekly_amount": float, "start_date": str, "weeks_bought": int}}
+        # 买入计划: {symbol: {"weekly_amount": float, "start_date": str, "weeks_bought": int, "market_cap": float}}
         self._buy_plans: dict[str, dict] = {}
-        self._initial_capital: float | None = None
-        # 记录已处理过的月份+股票组合，避免重复分配
+        # 记录已处理过的股票，避免重复分配
         self._allocated_symbols: set[str] = set()
 
     def on_bar(self, ctx):
-        if self._initial_capital is None:
-            portfolio = ctx.get_portfolio()
-            self._initial_capital = portfolio["total_value"]
 
         current_date = ctx._current_date
         new_symbols = ctx.new_symbols
@@ -43,7 +39,7 @@ class MarketCapWeightedBuyer(BuyStrategy):
         self._execute_weekly_buys(ctx, current_date)
 
     def _create_buy_plans(self, ctx, new_symbols: list[str], current_date: str):
-        """为新增股票按市值比例分配资金并创建买入计划。"""
+        """为新增股票按市值比例分配当前可用资金并创建买入计划。"""
         # 获取各股票总市值
         mv_map = {}
         for sym in new_symbols:
@@ -61,10 +57,11 @@ class MarketCapWeightedBuyer(BuyStrategy):
 
         total_mv = sum(mv_map.values())
         buy_weeks = self.p.buy_weeks
+        available = ctx.available_cash
 
         for sym, mv in mv_map.items():
             ratio = mv / total_mv
-            allocated_amount = self._initial_capital * ratio
+            allocated_amount = available * ratio
             weekly_amount = allocated_amount / buy_weeks
 
             self._buy_plans[sym] = {
@@ -73,16 +70,25 @@ class MarketCapWeightedBuyer(BuyStrategy):
                 "weeks_bought": 0,
                 "start_week_key": self._week_key(current_date),
                 "last_buy_week_key": None,
+                "market_cap": mv,
             }
             self._allocated_symbols.add(sym)
 
     def _execute_weekly_buys(self, ctx, current_date: str):
-        """检查每只股票是否需要在本周买入。"""
+        """检查每只股票是否需要在本周买入，按总市值从大到小排序优先买入。"""
         current_week = self._week_key(current_date)
         buy_weeks = self.p.buy_weeks
 
+        # 按市值降序排列，资金不足时优先保证大市值股票成交
+        sorted_plans = sorted(
+            self._buy_plans.items(),
+            key=lambda x: x[1].get("market_cap", 0),
+            reverse=True,
+        )
+
         finished = []
-        for sym, plan in self._buy_plans.items():
+        pending_cost = 0.0
+        for sym, plan in sorted_plans:
             if plan["weeks_bought"] >= buy_weeks:
                 finished.append(sym)
                 continue
@@ -106,9 +112,9 @@ class MarketCapWeightedBuyer(BuyStrategy):
             if price is None or price <= 0:
                 continue
 
-            # 计算本周应买金额和股数
+            # 扣除本轮已预留的资金，避免同一bar内多笔下单超额
             target_amount = plan["weekly_amount"]
-            available = ctx.available_cash
+            available = ctx.available_cash - pending_cost
             actual_amount = min(target_amount, available)
 
             shares = int(actual_amount / price)
@@ -117,6 +123,7 @@ class MarketCapWeightedBuyer(BuyStrategy):
 
             if shares >= 100:
                 ctx.order_shares(sym, shares)
+                pending_cost += shares * price
                 plan["weeks_bought"] += 1
                 plan["last_buy_week_key"] = current_week
 
