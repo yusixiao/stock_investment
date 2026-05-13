@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+/* ============ CSS 变量 - 金融终端风格 ============ */
+:root {
+  --color-cyan: #00d4ff;
+  --color-cyan-dim: #00a8cc;
+  --color-cyan-glow: rgba(0, 212, 255, 0.4);
+
+  --color-purple: #6f61f1;
+  --color-purple-dim: #5a4ed4;
+  --color-purple-glow: rgba(168, 85, 247, 0.3);
+
+  --color-success: #00ff88;
+  --color-warning: #ffaa00;
+  --color-danger: #ff4466;
+
+  --bg-base: #08080c;
+  --bg-card: #0d0d14;
+  --bg-elevated: #12121a;
+  --bg-hover: #1a1a24;
+
+  --border-dim: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-accent: rgba(0, 212, 255, 0.3);
+  --border-purple: rgba(47, 165, 245, 0.3);
+
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0b0;
+  --text-muted: #606070;
+
+  font-family: 'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============ Light Theme ============ */
+:root.light {
+  --color-cyan: #0099cc;
+  --color-cyan-dim: #007aa3;
+  --color-cyan-glow: rgba(0, 153, 204, 0.25);
+
+  --color-purple: #5a4ed4;
+  --color-purple-dim: #4a3fb8;
+  --color-purple-glow: rgba(90, 78, 212, 0.2);
+
+  --color-success: #00b860;
+  --color-warning: #d48a00;
+  --color-danger: #e03050;
+
+  --bg-base: #f4f5f7;
+  --bg-card: #ffffff;
+  --bg-elevated: #f9fafb;
+  --bg-hover: #eef0f3;
+
+  --border-dim: rgba(0, 0, 0, 0.04);
+  --border-default: rgba(0, 0, 0, 0.1);
+  --border-accent: rgba(0, 153, 204, 0.35);
+  --border-purple: rgba(90, 78, 212, 0.3);
+
+  --text-primary: #1a1a2e;
+  --text-secondary: #5a5a72;
+  --text-muted: #9a9ab0;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+/* ============ 终端卡片样式 ============ */
+.terminal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.terminal-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(85, 198, 247, 0.2) 0%,
+    rgba(0, 212, 255, 0.1) 50%,
+    rgba(85, 198, 247, 0.2) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.terminal-card-hover {
+  transition: all 0.3s ease;
+}
+
+.terminal-card-hover:hover {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.1);
+}
+
+/* ============ 渐变边框卡片 ============ */
+.gradient-border-card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  position: relative;
+  padding: 1px;
+}
+
+.gradient-border-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  padding: 1px;
+  background: linear-gradient(
+    180deg,
+    rgba(67, 178, 246, 0.4) 0%,
+    rgba(168, 85, 247, 0.1) 50%,
+    rgba(0, 212, 255, 0.2) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.gradient-border-card-inner {
+  background: var(--bg-card);
+  border-radius: 11px;
+  height: 100%;
+}
+
+/* ============ 毛玻璃卡片 ============ */
+.glass-card {
+  background: rgba(13, 13, 20, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(85, 209, 247, 0.25) 0%,
+    rgba(0, 212, 255, 0.15) 50%,
+    rgba(85, 209, 247, 0.1) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.glass-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 50%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+/* ============ 历史记录列表项 ============ */
+.history-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(18, 18, 26, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: all 0.2s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.history-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(85, 185, 247, 0.15) 0%,
+    transparent 50%,
+    rgba(0, 212, 255, 0.1) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.history-item:hover {
+  background: rgba(26, 26, 36, 0.8);
+  border-color: rgba(255, 255, 255, 0.08);
+  transform: translateX(2px);
+}
+
+.history-item:hover::before {
+  opacity: 1;
+}
+
+.history-item.active {
+  background: rgba(0, 212, 255, 0.08);
+  border-color: rgba(0, 212, 255, 0.25);
+}
+
+.history-item.active::before {
+  opacity: 1;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 212, 255, 0.3) 0%,
+    rgba(168, 85, 247, 0.15) 100%
+  );
+}
