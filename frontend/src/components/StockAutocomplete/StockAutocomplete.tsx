@@ -5,12 +5,11 @@
  * Supports keyboard navigation, IME input method, graceful degradation
  */
 
-import { Component, useRef, useEffect, useState } from 'react';
+import { Component, useRef, useState, useEffect } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useStockIndex } from '../../hooks/useStockIndex';
-import { useAutocomplete } from '../../hooks/useAutocomplete';
+import { useStockSearch } from '../../hooks/useStockSearch';
 import { SuggestionsList } from './SuggestionsList';
 import { cn } from '../../utils/cn';
 
@@ -99,9 +98,7 @@ function StockAutocompleteInner({
   placeholder = '输入股票代码或名称',
   className,
 }: StockAutocompleteProps) {
-  const { index, loading, fallback } = useStockIndex();
   const {
-    // query,
     setQuery,
     suggestions,
     isOpen,
@@ -110,15 +107,12 @@ function StockAutocompleteInner({
     highlightPrevious,
     highlightNext,
     close,
-    // reset,
     isComposing,
     setIsComposing,
-    runtimeFallback,
-    error: autocompleteError,
-  } = useAutocomplete(index);
+    loading,
+  } = useStockSearch();
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const prevValueRef = useRef(value);
   const [dropdownStyle, setDropdownStyle] = useState<{ top: number; left: number; width: string } | null>(null);
 
   const updateDropdownPosition = () => {
@@ -140,13 +134,10 @@ function StockAutocompleteInner({
     setDropdownStyle(null);
   };
 
-  // Sync external value with internal query (only when value truly changes)
-  useEffect(() => {
-    if (prevValueRef.current !== value) {
-      setQuery(value);
-      prevValueRef.current = value;
-    }
-  }, [value, setQuery]);
+  const handleInputChange = (newValue: string) => {
+    onChange(newValue);
+    setQuery(newValue);
+  };
 
   // Calculate suggestion box position (using fixed positioning)
   useEffect(() => {
@@ -165,13 +156,7 @@ function StockAutocompleteInner({
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!autocompleteError) {
-      return;
-    }
 
-    console.error('Autocomplete runtime fallback activated.', autocompleteError);
-  }, [autocompleteError]);
 
   // Keyboard event handling
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -221,19 +206,7 @@ function StockAutocompleteInner({
     setTimeout(() => closeSuggestions(), 200);
   };
 
-  // Fallback mode: use normal input
-  if (fallback || loading || runtimeFallback) {
-    return (
-      <FallbackInput
-        value={value}
-        onChange={onChange}
-        onSubmit={onSubmit}
-        disabled={disabled}
-        placeholder={placeholder}
-        className={className}
-      />
-    );
-  }
+
 
   return (
     <div className="relative stock-autocomplete">
@@ -241,7 +214,7 @@ function StockAutocompleteInner({
         ref={inputRef}
         type="text"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => handleInputChange(e.target.value)}
         onKeyDown={handleKeyDown}
         onCompositionStart={handleCompositionStart}
         onCompositionEnd={handleCompositionEnd}

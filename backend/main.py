@@ -42,6 +42,8 @@ from routers.financial import router as financial_router
 from routers.strategy_group import router as strategy_group_router
 from routers.meta import router as meta_router
 from routers.market_update import router as market_update_router
+from routers.stock_search import router as stock_search_router
+from routers.market_kline import router as market_kline_router
 from scheduler import start_scheduler, shutdown_scheduler
 
 
@@ -49,9 +51,11 @@ from scheduler import start_scheduler, shutdown_scheduler
 async def lifespan(app: FastAPI):
     from services.portfolio.db import init_db
     from services.duckdb_store import init_duckdb, shutdown_duckdb
+    from services.stock_index import init_stock_index
 
     init_db()
     init_duckdb()
+    init_stock_index()
     start_scheduler()
     yield
     shutdown_scheduler()
@@ -79,6 +83,8 @@ app.include_router(financial_router)
 app.include_router(strategy_group_router)
 app.include_router(meta_router)
 app.include_router(market_update_router)
+app.include_router(stock_search_router)
+app.include_router(market_kline_router)
 
 
 @app.get("/api/health")
