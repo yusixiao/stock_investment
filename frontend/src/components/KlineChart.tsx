@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries, type IChartApi, type ISeriesApi, type CandlestickData, type HistogramData, type LineData, ColorType } from 'lightweight-charts';
 
 export interface KlineDataPoint {
@@ -27,10 +27,30 @@ export interface VolMaDataPoint {
   vol_ma10: number | null;
 }
 
+export interface PriceMaDataPoint {
+  date: string;
+  ma5: number | null;
+  ma10: number | null;
+  ma20: number | null;
+  ma30: number | null;
+  ma60: number | null;
+}
+
+const MA_CONFIGS = [
+  { key: 'ma5', label: 'MA5', color: '#f59e0b' },
+  { key: 'ma10', label: 'MA10', color: '#8b5cf6' },
+  { key: 'ma20', label: 'MA20', color: '#06b6d4' },
+  { key: 'ma30', label: 'MA30', color: '#10b981' },
+  { key: 'ma60', label: 'MA60', color: '#ec4899' },
+] as const;
+
+type MaKey = typeof MA_CONFIGS[number]['key'];
+
 interface KlineChartProps {
   data: KlineDataPoint[];
   macd?: MacdDataPoint[];
   volMa?: VolMaDataPoint[];
+  priceMa?: PriceMaDataPoint[];
   className?: string;
 }
 
@@ -46,7 +66,7 @@ function formatAmount(v: number): string {
   return v.toFixed(2);
 }
 
-export function KlineChart({ data, macd, volMa, className }: KlineChartProps) {
+export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -56,14 +76,34 @@ export function KlineChart({ data, macd, volMa, className }: KlineChartProps) {
   const macdBarSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const difSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const deaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const priceMaSeriesRef = useRef<Record<MaKey, ISeriesApi<'Line'> | null>>({
+    ma5: null, ma10: null, ma20: null, ma30: null, ma60: null,
+  });
   const dataMapRef = useRef<Map<string, KlineDataPoint>>(new Map());
   const macdMapRef = useRef<Map<string, MacdDataPoint>>(new Map());
   const volMaMapRef = useRef<Map<string, VolMaDataPoint>>(new Map());
+  const priceMaMapRef = useRef<Map<string, PriceMaDataPoint>>(new Map());
   const [hoverData, setHoverData] = useState<KlineDataPoint | null>(null);
   const [hoverMacd, setHoverMacd] = useState<MacdDataPoint | null>(null);
   const [hoverVolMa, setHoverVolMa] = useState<VolMaDataPoint | null>(null);
+  const [hoverPriceMa, setHoverPriceMa] = useState<PriceMaDataPoint | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [volPaneTop, setVolPaneTop] = useState<number | null>(null);
   const [macdPaneTop, setMacdPaneTop] = useState<number | null>(null);
+  const [maVisible, setMaVisible] = useState<Record<MaKey, boolean>>({
+    ma5: true, ma10: true, ma20: true, ma30: true, ma60: true,
+  });
+
+  const toggleMa = useCallback((key: MaKey) => {
+    setMaVisible(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      const series = priceMaSeriesRef.current[key];
+      if (series) {
+        series.applyOptions({ visible: next[key] });
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -93,6 +133,19 @@ export function KlineChart({ data, macd, volMa, className }: KlineChartProps) {
       lastValueVisible: false,
       priceLineVisible: false,
     }, 0);
+
+    // Pane 0: 价格均线
+    const maSeriesMap: Record<MaKey, ISeriesApi<'Line'>> = {} as any;
+    for (const cfg of MA_CONFIGS) {
+      const s = chart.addSeries(LineSeries, {
+        color: cfg.color,
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      }, 0);
+      maSeriesMap[cfg.key] = s;
+    }
+    priceMaSeriesRef.current = maSeriesMap;
 
     // Pane 1: 成交量
     chart.addPane();
@@ -143,16 +196,20 @@ export function KlineChart({ data, macd, volMa, className }: KlineChartProps) {
     }, 2);
 
     chart.subscribeCrosshairMove((param) => {
-      if (!param.time) {
+      if (!param.time || !param.point) {
         setHoverData(null);
         setHoverMacd(null);
         setHoverVolMa(null);
+        setHoverPriceMa(null);
+        setTooltipPos(null);
         return;
       }
       const timeStr = param.time as string;
       setHoverData(dataMapRef.current.get(timeStr) || null);
       setHoverMacd(macdMapRef.current.get(timeStr) || null);
       setHoverVolMa(volMaMapRef.current.get(timeStr) || null);
+      setHoverPriceMa(priceMaMapRef.current.get(timeStr) || null);
+      setTooltipPos({ x: param.point.x, y: param.point.y });
     });
 
     chartRef.current = chart;
@@ -251,6 +308,29 @@ export function KlineChart({ data, macd, volMa, className }: KlineChartProps) {
     volMa10SeriesRef.current.setData(ma10Data);
   }, [volMa]);
 
+  useEffect(() => {
+    if (!priceMa?.length) return;
+
+    const map = new Map<string, PriceMaDataPoint>();
+    const seriesData: Record<MaKey, LineData[]> = {
+      ma5: [], ma10: [], ma20: [], ma30: [], ma60: [],
+    };
+
+    for (const d of priceMa) {
+      map.set(d.date, d);
+      for (const cfg of MA_CONFIGS) {
+        const val = d[cfg.key];
+        if (val != null) seriesData[cfg.key].push({ time: d.date, value: val });
+      }
+    }
+
+    priceMaMapRef.current = map;
+    for (const cfg of MA_CONFIGS) {
+      const series = priceMaSeriesRef.current[cfg.key];
+      if (series) series.setData(seriesData[cfg.key]);
+    }
+  }, [priceMa]);
+
   const d = hoverData;
   const change = d && d.preclose ? d.close - d.preclose : null;
   const pctChg = d?.pctChg ?? (d && d.preclose ? ((d.close - d.preclose) / d.preclose * 100) : null);
@@ -260,26 +340,47 @@ export function KlineChart({ data, macd, volMa, className }: KlineChartProps) {
 
   return (
     <div className={`relative ${className || ''}`} style={{ width: '100%', height: '100%' }}>
-      {d && (
-        <div className="absolute top-2 left-2 z-10 flex flex-wrap gap-x-4 gap-y-0.5 text-xs pointer-events-none">
-          <span className="text-secondary-text">{d.date}</span>
-          <span>开 <span className={priceColor}>{d.open.toFixed(2)}</span></span>
-          <span>收 <span className={priceColor}>{d.close.toFixed(2)}</span></span>
-          <span>高 <span className={priceColor}>{d.high.toFixed(2)}</span></span>
-          <span>低 <span className={priceColor}>{d.low.toFixed(2)}</span></span>
-          {change !== null && (
-            <span>涨跌额 <span className={changeColor}>{change > 0 ? '+' : ''}{change.toFixed(2)}</span></span>
-          )}
-          {pctChg !== null && (
-            <span>涨跌幅 <span className={changeColor}>{pctChg > 0 ? '+' : ''}{pctChg.toFixed(2)}%</span></span>
-          )}
-          <span>成交量 <span className="text-primary-text">{formatVolume(d.volume)}</span></span>
-          {d.amount != null && d.amount > 0 && (
-            <span>成交额 <span className="text-primary-text">{formatAmount(d.amount)}</span></span>
-          )}
-          {d.turn != null && d.turn > 0 && (
-            <span>换手率 <span className="text-primary-text">{d.turn.toFixed(2)}%</span></span>
-          )}
+      <div className="absolute top-1 left-2 z-10 flex gap-x-3 text-xs pointer-events-auto">
+        <span className="text-secondary-text">均线</span>
+        {MA_CONFIGS.map(cfg => {
+          const val = hoverPriceMa?.[cfg.key];
+          return (
+            <span
+              key={cfg.key}
+              onClick={() => toggleMa(cfg.key)}
+              className={`cursor-pointer select-none ${!maVisible[cfg.key] ? 'opacity-30 line-through' : ''}`}
+              style={{ color: cfg.color }}
+            >
+              {cfg.label} {val != null ? val.toFixed(2) : '——'}
+            </span>
+          );
+        })}
+      </div>
+      {d && tooltipPos && (
+        <div
+          className="absolute z-20 pointer-events-none rounded bg-[rgba(20,20,30,0.88)] px-2.5 py-2 text-xs leading-relaxed shadow-lg border border-white/10"
+          style={{ left: tooltipPos.x + 16, top: tooltipPos.y + 16 }}
+        >
+          <div className="text-secondary-text mb-1">{d.date}</div>
+          <div className="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5">
+            <span className="text-secondary-text">开</span><span className={priceColor}>{d.open.toFixed(2)}</span>
+            <span className="text-secondary-text">收</span><span className={priceColor}>{d.close.toFixed(2)}</span>
+            <span className="text-secondary-text">高</span><span className={priceColor}>{d.high.toFixed(2)}</span>
+            <span className="text-secondary-text">低</span><span className={priceColor}>{d.low.toFixed(2)}</span>
+            {change !== null && (
+              <><span className="text-secondary-text">涨跌额</span><span className={changeColor}>{change > 0 ? '+' : ''}{change.toFixed(2)}</span></>
+            )}
+            {pctChg !== null && (
+              <><span className="text-secondary-text">涨跌幅</span><span className={changeColor}>{pctChg > 0 ? '+' : ''}{pctChg.toFixed(2)}%</span></>
+            )}
+            <span className="text-secondary-text">成交量</span><span className="text-primary-text">{formatVolume(d.volume)}</span>
+            {d.amount != null && d.amount > 0 && (
+              <><span className="text-secondary-text">成交额</span><span className="text-primary-text">{formatAmount(d.amount)}</span></>
+            )}
+            {d.turn != null && d.turn > 0 && (
+              <><span className="text-secondary-text">换手率</span><span className="text-primary-text">{d.turn.toFixed(2)}%</span></>
+            )}
+          </div>
         </div>
       )}
       {volPaneTop !== null && (

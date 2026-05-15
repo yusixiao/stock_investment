@@ -165,13 +165,23 @@ def get_market_kline(
         macd_df[["date", "dif", "dea", "macd"]].round(4).to_dict(orient="records")
     )
 
-    # 计算成交量 MA5/MA10
+    # 计算价格 MA5/10/20/30/60
     df = df.sort_values("date")
+    ma_periods = [5, 10, 20, 30, 60]
+    for p in ma_periods:
+        df[f"ma{p}"] = df["close"].rolling(p).mean().round(4)
+    price_ma_records = df[["date"] + [f"ma{p}" for p in ma_periods]].to_dict(
+        orient="records"
+    )
+
+    # 计算成交量 MA5/MA10
     df["vol_ma5"] = df["volume"].rolling(5).mean().round(0)
     df["vol_ma10"] = df["volume"].rolling(10).mean().round(0)
     vol_ma_records = df[["date", "vol_ma5", "vol_ma10"]].to_dict(orient="records")
 
-    records = df.drop(columns=["vol_ma5", "vol_ma10"]).to_dict(orient="records")
+    records = df.drop(
+        columns=["vol_ma5", "vol_ma10"] + [f"ma{p}" for p in ma_periods]
+    ).to_dict(orient="records")
     return ORJSONResponse(
         content={
             "code": code,
@@ -179,6 +189,7 @@ def get_market_kline(
             "adjust": adjust,
             "data": records,
             "macd": macd_records,
+            "price_ma": price_ma_records,
             "vol_ma": vol_ma_records,
         }
     )
