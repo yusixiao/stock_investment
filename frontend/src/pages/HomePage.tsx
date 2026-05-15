@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { StockAutocomplete } from '../components/StockAutocomplete';
-import { KlineChart, type KlineDataPoint } from '../components/KlineChart';
+import { KlineChart, type KlineDataPoint, type MacdDataPoint, type VolMaDataPoint } from '../components/KlineChart';
 import apiClient from '../api';
 
 type Period = 'daily' | 'weekly' | 'monthly';
@@ -24,6 +24,8 @@ const HomePage: React.FC = () => {
   const [selectedCode, setSelectedCode] = useState('');
   const [selectedName, setSelectedName] = useState('');
   const [klineData, setKlineData] = useState<KlineDataPoint[]>([]);
+  const [macdData, setMacdData] = useState<MacdDataPoint[]>([]);
+  const [volMaData, setVolMaData] = useState<VolMaDataPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [period, setPeriod] = useState<Period>('daily');
@@ -41,6 +43,8 @@ const HomePage: React.FC = () => {
         params: { period: p, adjust: a },
       });
       setKlineData(resp.data.data || []);
+      setMacdData(resp.data.macd || []);
+      setVolMaData(resp.data.vol_ma || []);
     } catch {
       setError(`加载 ${code} K线数据失败`);
       setKlineData([]);
@@ -150,7 +154,7 @@ const HomePage: React.FC = () => {
           </div>
         )}
         {!loading && !error && klineData.length > 0 && (
-          <KlineChart data={klineData} className="h-full w-full rounded-xl overflow-hidden" />
+          <KlineChart data={klineData} macd={macdData} volMa={volMaData} className="h-full w-full rounded-xl overflow-hidden" />
         )}
         {!loading && !error && klineData.length === 0 && (
           <div className="flex h-full items-center justify-center text-secondary-text">

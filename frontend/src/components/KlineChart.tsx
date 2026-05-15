@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createChart, CandlestickSeries, HistogramSeries, type IChartApi, type ISeriesApi, type CandlestickData, type HistogramData, ColorType } from 'lightweight-charts';
+import { createChart, CandlestickSeries, HistogramSeries, LineSeries, type IChartApi, type ISeriesApi, type CandlestickData, type HistogramData, type LineData, ColorType } from 'lightweight-charts';
 
 export interface KlineDataPoint {
   date: string;
@@ -14,8 +14,23 @@ export interface KlineDataPoint {
   pctChg?: number;
 }
 
+export interface MacdDataPoint {
+  date: string;
+  dif: number;
+  dea: number;
+  macd: number;
+}
+
+export interface VolMaDataPoint {
+  date: string;
+  vol_ma5: number | null;
+  vol_ma10: number | null;
+}
+
 interface KlineChartProps {
   data: KlineDataPoint[];
+  macd?: MacdDataPoint[];
+  volMa?: VolMaDataPoint[];
   className?: string;
 }
 
@@ -31,13 +46,24 @@ function formatAmount(v: number): string {
   return v.toFixed(2);
 }
 
-export function KlineChart({ data, className }: KlineChartProps) {
+export function KlineChart({ data, macd, volMa, className }: KlineChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const volMa5SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const volMa10SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const macdBarSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const difSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const deaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const dataMapRef = useRef<Map<string, KlineDataPoint>>(new Map());
+  const macdMapRef = useRef<Map<string, MacdDataPoint>>(new Map());
+  const volMaMapRef = useRef<Map<string, VolMaDataPoint>>(new Map());
   const [hoverData, setHoverData] = useState<KlineDataPoint | null>(null);
+  const [hoverMacd, setHoverMacd] = useState<MacdDataPoint | null>(null);
+  const [hoverVolMa, setHoverVolMa] = useState<VolMaDataPoint | null>(null);
+  const [volPaneTop, setVolPaneTop] = useState<number | null>(null);
+  const [macdPaneTop, setMacdPaneTop] = useState<number | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -52,10 +78,11 @@ export function KlineChart({ data, className }: KlineChartProps) {
         horzLines: { color: 'rgba(255,255,255,0.04)' },
       },
       crosshair: { mode: 0 },
-      rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' },
+      rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)', visible: false },
       timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: false, fixLeftEdge: true, fixRightEdge: true },
     });
 
+    // Pane 0: K线
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#ef4444',
       downColor: '#22c55e',
@@ -63,39 +90,96 @@ export function KlineChart({ data, className }: KlineChartProps) {
       borderDownColor: '#22c55e',
       wickUpColor: '#ef4444',
       wickDownColor: '#22c55e',
-    });
+      lastValueVisible: false,
+      priceLineVisible: false,
+    }, 0);
 
+    // Pane 1: 成交量
+    chart.addPane();
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
-      priceScaleId: 'volume',
-    });
+      lastValueVisible: false,
+      priceLineVisible: false,
+    }, 1);
 
-    chart.priceScale('volume').applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
-    });
+    const volMa5Series = chart.addSeries(LineSeries, {
+      color: '#f59e0b',
+      lineWidth: 1,
+      priceFormat: { type: 'volume' },
+      lastValueVisible: false,
+      priceLineVisible: false,
+    }, 1);
+
+    const volMa10Series = chart.addSeries(LineSeries, {
+      color: '#8b5cf6',
+      lineWidth: 1,
+      priceFormat: { type: 'volume' },
+      lastValueVisible: false,
+      priceLineVisible: false,
+    }, 1);
+
+    // Pane 2: MACD
+    chart.addPane();
+    const macdBarSeries = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'price', precision: 4, minMove: 0.0001 },
+      lastValueVisible: false,
+      priceLineVisible: false,
+    }, 2);
+
+    const difSeries = chart.addSeries(LineSeries, {
+      color: '#f59e0b',
+      lineWidth: 1,
+      priceFormat: { type: 'price', precision: 4, minMove: 0.0001 },
+      lastValueVisible: false,
+      priceLineVisible: false,
+    }, 2);
+
+    const deaSeries = chart.addSeries(LineSeries, {
+      color: '#8b5cf6',
+      lineWidth: 1,
+      priceFormat: { type: 'price', precision: 4, minMove: 0.0001 },
+      lastValueVisible: false,
+      priceLineVisible: false,
+    }, 2);
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.time) {
         setHoverData(null);
+        setHoverMacd(null);
+        setHoverVolMa(null);
         return;
       }
       const timeStr = param.time as string;
-      const point = dataMapRef.current.get(timeStr);
-      setHoverData(point || null);
+      setHoverData(dataMapRef.current.get(timeStr) || null);
+      setHoverMacd(macdMapRef.current.get(timeStr) || null);
+      setHoverVolMa(volMaMapRef.current.get(timeStr) || null);
     });
 
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
+    volMa5SeriesRef.current = volMa5Series;
+    volMa10SeriesRef.current = volMa10Series;
+    macdBarSeriesRef.current = macdBarSeries;
+    difSeriesRef.current = difSeries;
+    deaSeriesRef.current = deaSeries;
 
-    const resizeObserver = new ResizeObserver(() => {
+    const updateLayout = () => {
       if (containerRef.current) {
         chart.applyOptions({
           width: containerRef.current.clientWidth,
           height: containerRef.current.clientHeight,
         });
       }
-    });
+      try {
+        const pane0 = chart.paneSize(0);
+        const pane1 = chart.paneSize(1);
+        setVolPaneTop(pane0.height);
+        setMacdPaneTop(pane0.height + pane1.height);
+      } catch { /* pane not ready */ }
+    };
+
+    const resizeObserver = new ResizeObserver(updateLayout);
     resizeObserver.observe(containerRef.current);
 
     return () => {
@@ -117,7 +201,7 @@ export function KlineChart({ data, className }: KlineChartProps) {
     const volumeData: HistogramData[] = data.map(d => ({
       time: d.date,
       value: d.volume,
-      color: d.close >= d.open ? 'rgba(239,68,68,0.4)' : 'rgba(34,197,94,0.4)',
+      color: d.close >= d.open ? 'rgba(239,68,68,0.6)' : 'rgba(34,197,94,0.6)',
     }));
 
     dataMapRef.current = map;
@@ -126,6 +210,46 @@ export function KlineChart({ data, className }: KlineChartProps) {
     chartRef.current?.timeScale().fitContent();
     setHoverData(null);
   }, [data]);
+
+  useEffect(() => {
+    if (!macdBarSeriesRef.current || !difSeriesRef.current || !deaSeriesRef.current || !macd?.length) return;
+
+    const macdMap = new Map<string, MacdDataPoint>();
+    const barData: HistogramData[] = macd.map(d => {
+      macdMap.set(d.date, d);
+      return {
+        time: d.date,
+        value: d.macd,
+        color: d.macd >= 0 ? 'rgba(239,68,68,0.6)' : 'rgba(34,197,94,0.6)',
+      };
+    });
+
+    const difData: LineData[] = macd.map(d => ({ time: d.date, value: d.dif }));
+    const deaData: LineData[] = macd.map(d => ({ time: d.date, value: d.dea }));
+
+    macdMapRef.current = macdMap;
+    macdBarSeriesRef.current.setData(barData);
+    difSeriesRef.current.setData(difData);
+    deaSeriesRef.current.setData(deaData);
+  }, [macd]);
+
+  useEffect(() => {
+    if (!volMa5SeriesRef.current || !volMa10SeriesRef.current || !volMa?.length) return;
+
+    const map = new Map<string, VolMaDataPoint>();
+    const ma5Data: LineData[] = [];
+    const ma10Data: LineData[] = [];
+
+    for (const d of volMa) {
+      map.set(d.date, d);
+      if (d.vol_ma5 != null) ma5Data.push({ time: d.date, value: d.vol_ma5 });
+      if (d.vol_ma10 != null) ma10Data.push({ time: d.date, value: d.vol_ma10 });
+    }
+
+    volMaMapRef.current = map;
+    volMa5SeriesRef.current.setData(ma5Data);
+    volMa10SeriesRef.current.setData(ma10Data);
+  }, [volMa]);
 
   const d = hoverData;
   const change = d && d.preclose ? d.close - d.preclose : null;
@@ -155,6 +279,29 @@ export function KlineChart({ data, className }: KlineChartProps) {
           )}
           {d.turn != null && d.turn > 0 && (
             <span>换手率 <span className="text-primary-text">{d.turn.toFixed(2)}%</span></span>
+          )}
+        </div>
+      )}
+      {volPaneTop !== null && (
+        <div className="absolute left-2 z-10 flex gap-x-4 text-xs pointer-events-none" style={{ top: volPaneTop + 4 }}>
+          <span>VOL</span>
+          {hoverVolMa?.vol_ma5 != null && (
+            <span>MA5 <span className="text-[#f59e0b]">{formatVolume(hoverVolMa.vol_ma5)}</span></span>
+          )}
+          {hoverVolMa?.vol_ma10 != null && (
+            <span>MA10 <span className="text-[#8b5cf6]">{formatVolume(hoverVolMa.vol_ma10)}</span></span>
+          )}
+        </div>
+      )}
+      {macdPaneTop !== null && (
+        <div className="absolute left-2 z-10 flex gap-x-4 text-xs pointer-events-none" style={{ top: macdPaneTop + 4 }}>
+          <span>MACD</span>
+          {hoverMacd && (
+            <>
+              <span>DIF <span className="text-[#f59e0b]">{hoverMacd.dif.toFixed(4)}</span></span>
+              <span>DEA <span className="text-[#8b5cf6]">{hoverMacd.dea.toFixed(4)}</span></span>
+              <span>MACD <span className={hoverMacd.macd >= 0 ? 'text-danger' : 'text-success'}>{hoverMacd.macd.toFixed(4)}</span></span>
+            </>
           )}
         </div>
       )}

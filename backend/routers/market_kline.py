@@ -7,6 +7,7 @@ from typing import Optional
 import pandas as pd
 
 from services.duckdb_store import get_store
+from services.indicator import calc_macd
 
 router = APIRouter(prefix="/api/market", tags=["market-kline"])
 
@@ -158,7 +159,26 @@ def get_market_kline(
         if col in df.columns:
             df[col] = df[col].round(4)
 
-    records = df.to_dict(orient="records")
+    # 计算 MACD
+    macd_df = calc_macd(df)
+    macd_records = (
+        macd_df[["date", "dif", "dea", "macd"]].round(4).to_dict(orient="records")
+    )
+
+    # 计算成交量 MA5/MA10
+    df = df.sort_values("date")
+    df["vol_ma5"] = df["volume"].rolling(5).mean().round(0)
+    df["vol_ma10"] = df["volume"].rolling(10).mean().round(0)
+    vol_ma_records = df[["date", "vol_ma5", "vol_ma10"]].to_dict(orient="records")
+
+    records = df.drop(columns=["vol_ma5", "vol_ma10"]).to_dict(orient="records")
     return ORJSONResponse(
-        content={"code": code, "period": period, "adjust": adjust, "data": records}
+        content={
+            "code": code,
+            "period": period,
+            "adjust": adjust,
+            "data": records,
+            "macd": macd_records,
+            "vol_ma": vol_ma_records,
+        }
     )
