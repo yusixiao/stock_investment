@@ -31,16 +31,52 @@ def _snapshot_job():
     conn.close()
 
 
+def _market_update_job():
+    """每日增量更新三市场 K线数据"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("Scheduled market update started")
+    try:
+        from services.market_updater import update_all_markets
+
+        update_all_markets(parallel=True)
+    except Exception as e:
+        logger.error(f"Scheduled market update failed: {e}")
+
+
+def _backup_job():
+    """每周备份 data/market/ 到百度网盘"""
+    import logging
+    import subprocess
+    from pathlib import Path
+
+    logger = logging.getLogger(__name__)
+    logger.info("Scheduled backup started")
+    script = Path(__file__).resolve().parent.parent / "scripts" / "backup_to_baidu.py"
+    try:
+        result = subprocess.run(
+            ["python", str(script)],
+            capture_output=True,
+            text=True,
+            timeout=7200,
+        )
+        if result.returncode == 0:
+            logger.info("Scheduled backup completed")
+        else:
+            logger.error(f"Backup failed: {result.stderr[-500:]}")
+    except Exception as e:
+        logger.error(f"Backup exception: {e}")
+
+
 def start_scheduler():
-    from routers.data_update import run_update_task
     scheduler.add_job(
-        run_update_task,
+        _market_update_job,
         "cron",
-        args=["scheduled"],
         day_of_week="mon-fri",
-        hour=SCHEDULER_HOUR,
-        minute=SCHEDULER_MINUTE,
-        id="daily_update",
+        hour=6,
+        minute=0,
+        id="daily_market_update",
         replace_existing=True,
     )
     scheduler.add_job(
@@ -50,6 +86,15 @@ def start_scheduler():
         hour=SCHEDULER_HOUR,
         minute=SCHEDULER_MINUTE + 10,
         id="daily_snapshot",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _backup_job,
+        "cron",
+        day_of_week="sun",
+        hour=3,
+        minute=0,
+        id="weekly_backup",
         replace_existing=True,
     )
     scheduler.start()

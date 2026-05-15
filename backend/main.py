@@ -12,15 +12,19 @@ _file_handler = logging.handlers.TimedRotatingFileHandler(
     _log_file, when="midnight", backupCount=90, encoding="utf-8"
 )
 _file_handler.setLevel(logging.DEBUG)
-_file_handler.setFormatter(logging.Formatter(
-    "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-))
+_file_handler.setFormatter(
+    logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+)
 
 _console_handler = logging.StreamHandler()
 _console_handler.setLevel(logging.INFO)
-_console_handler.setFormatter(logging.Formatter(
-    "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
-))
+_console_handler.setFormatter(
+    logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
+    )
+)
 
 logging.basicConfig(level=logging.DEBUG, handlers=[_file_handler, _console_handler])
 # 降低第三方库的日志级别
@@ -37,16 +41,21 @@ from routers.dividend import router as dividend_router
 from routers.financial import router as financial_router
 from routers.strategy_group import router as strategy_group_router
 from routers.meta import router as meta_router
+from routers.market_update import router as market_update_router
 from scheduler import start_scheduler, shutdown_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from services.portfolio.db import init_db
+    from services.duckdb_store import init_duckdb, shutdown_duckdb
+
     init_db()
+    init_duckdb()
     start_scheduler()
     yield
     shutdown_scheduler()
+    shutdown_duckdb()
 
 
 app = FastAPI(title="Stock Investment Platform", lifespan=lifespan)
@@ -69,6 +78,7 @@ app.include_router(dividend_router)
 app.include_router(financial_router)
 app.include_router(strategy_group_router)
 app.include_router(meta_router)
+app.include_router(market_update_router)
 
 
 @app.get("/api/health")
