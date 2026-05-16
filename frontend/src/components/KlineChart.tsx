@@ -54,10 +54,10 @@ interface KlineChartProps {
   className?: string;
 }
 
-function formatVolume(v: number): string {
-  if (v >= 1e8) return (v / 1e8).toFixed(2) + '亿';
-  if (v >= 1e4) return (v / 1e4).toFixed(2) + '万';
-  return v.toFixed(0);
+function formatVolume(v: number, unit = ''): string {
+  if (v >= 1e8) return (v / 1e8).toFixed(2) + '亿' + unit;
+  if (v >= 1e4) return (v / 1e4).toFixed(2) + '万' + unit;
+  return v.toFixed(0) + unit;
 }
 
 function formatAmount(v: number): string {
@@ -118,7 +118,8 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
         horzLines: { color: 'rgba(255,255,255,0.04)' },
       },
       crosshair: { mode: 0 },
-      rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)', visible: false },
+      leftPriceScale: { borderColor: 'rgba(255,255,255,0.1)', visible: false },
+      rightPriceScale: { borderColor: 'rgba(255,255,255,0.06)', visible: true },
       timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: false, fixLeftEdge: true, fixRightEdge: true },
     });
 
@@ -132,6 +133,7 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
       wickDownColor: '#22c55e',
       lastValueVisible: false,
       priceLineVisible: false,
+      priceScaleId: 'right',
     }, 0);
 
     // Pane 0: 价格均线
@@ -142,6 +144,7 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
         lineWidth: 1,
         lastValueVisible: false,
         priceLineVisible: false,
+        priceScaleId: 'right',
       }, 0);
       maSeriesMap[cfg.key] = s;
     }
@@ -153,6 +156,7 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
       priceFormat: { type: 'volume' },
       lastValueVisible: false,
       priceLineVisible: false,
+      priceScaleId: 'right',
     }, 1);
 
     const volMa5Series = chart.addSeries(LineSeries, {
@@ -161,6 +165,7 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
       priceFormat: { type: 'volume' },
       lastValueVisible: false,
       priceLineVisible: false,
+      priceScaleId: 'right',
     }, 1);
 
     const volMa10Series = chart.addSeries(LineSeries, {
@@ -169,6 +174,7 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
       priceFormat: { type: 'volume' },
       lastValueVisible: false,
       priceLineVisible: false,
+      priceScaleId: 'right',
     }, 1);
 
     // Pane 2: MACD
@@ -177,6 +183,7 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
       priceFormat: { type: 'price', precision: 4, minMove: 0.0001 },
       lastValueVisible: false,
       priceLineVisible: false,
+      priceScaleId: 'right',
     }, 2);
 
     const difSeries = chart.addSeries(LineSeries, {
@@ -185,6 +192,7 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
       priceFormat: { type: 'price', precision: 4, minMove: 0.0001 },
       lastValueVisible: false,
       priceLineVisible: false,
+      priceScaleId: 'right',
     }, 2);
 
     const deaSeries = chart.addSeries(LineSeries, {
@@ -193,14 +201,11 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
       priceFormat: { type: 'price', precision: 4, minMove: 0.0001 },
       lastValueVisible: false,
       priceLineVisible: false,
+      priceScaleId: 'right',
     }, 2);
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.time || !param.point) {
-        setHoverData(null);
-        setHoverMacd(null);
-        setHoverVolMa(null);
-        setHoverPriceMa(null);
         setTooltipPos(null);
         return;
       }
@@ -264,8 +269,14 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
     dataMapRef.current = map;
     candleSeriesRef.current.setData(candleData);
     volumeSeriesRef.current.setData(volumeData);
-    chartRef.current?.timeScale().fitContent();
-    setHoverData(null);
+    const totalBars = candleData.length;
+    if (totalBars > 150) {
+      chartRef.current?.timeScale().setVisibleLogicalRange({ from: totalBars - 150, to: totalBars - 1 });
+    } else {
+      chartRef.current?.timeScale().fitContent();
+    }
+    const lastPoint = data[data.length - 1];
+    setHoverData(lastPoint || null);
   }, [data]);
 
   useEffect(() => {
@@ -288,6 +299,8 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
     macdBarSeriesRef.current.setData(barData);
     difSeriesRef.current.setData(difData);
     deaSeriesRef.current.setData(deaData);
+    const lastMacd = macd[macd.length - 1];
+    setHoverMacd(lastMacd || null);
   }, [macd]);
 
   useEffect(() => {
@@ -306,6 +319,8 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
     volMaMapRef.current = map;
     volMa5SeriesRef.current.setData(ma5Data);
     volMa10SeriesRef.current.setData(ma10Data);
+    const lastVolMa = volMa[volMa.length - 1];
+    setHoverVolMa(lastVolMa || null);
   }, [volMa]);
 
   useEffect(() => {
@@ -329,6 +344,8 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
       const series = priceMaSeriesRef.current[cfg.key];
       if (series) series.setData(seriesData[cfg.key]);
     }
+    const lastPriceMa = priceMa[priceMa.length - 1];
+    setHoverPriceMa(lastPriceMa || null);
   }, [priceMa]);
 
   const d = hoverData;
@@ -387,10 +404,10 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
         <div className="absolute left-2 z-10 flex gap-x-4 text-xs pointer-events-none" style={{ top: volPaneTop + 4 }}>
           <span>VOL</span>
           {hoverVolMa?.vol_ma5 != null && (
-            <span>MA5 <span className="text-[#f59e0b]">{formatVolume(hoverVolMa.vol_ma5)}</span></span>
+            <span>MA5 <span className="text-[#f59e0b]">{formatVolume(hoverVolMa.vol_ma5, '股')}</span></span>
           )}
           {hoverVolMa?.vol_ma10 != null && (
-            <span>MA10 <span className="text-[#8b5cf6]">{formatVolume(hoverVolMa.vol_ma10)}</span></span>
+            <span>MA10 <span className="text-[#8b5cf6]">{formatVolume(hoverVolMa.vol_ma10, '股')}</span></span>
           )}
         </div>
       )}
