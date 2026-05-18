@@ -117,8 +117,8 @@ strategies/utils/
 
 **回测范围**:个股 vs 全市场两种模式当前后端已支持,新设计**完整保留**。
 
-- API 入参 `symbols: list[str] | None`(沿用)
-  - `None` → 全市场:`_load_stock_data` 扫 `RAW_KLINE_DIR.glob("*.parquet")` 加载所有股票
+- API 入参 `symbols: list[str] | None`(沿用)+ `market: "A" | "HK" | "US"`(默认 "A",新增,见 D8)
+  - `None` → 全市场:`_load_stock_data` 调 `duckdb_store.list_symbols(market)` 取代码列表(替换原 `RAW_KLINE_DIR.glob`,见 D8 Layer A)
   - `["000001.SZ"]` → 个股回测:仅加载传入列表
 - 前端 `BacktestConfig.tsx` 的 `mode === 'single' / 'all'` 切换继续按现在的方式工作
 
@@ -135,6 +135,141 @@ strategies/utils/
 - 日线策略:每个交易日都触发
 
 用户感受到的回测时长 = `end_date - start_date`,与 frequency 无关。frequency 只影响该期间内 `screen()` 被调用的次数。
+
+### D8. 数据访问统一收敛到 DuckDB(新增,Layer A + Layer B)
+
+**问题诊断**:本次重构暴露出数据访问层有两处架构遗留,与「单一数据源」原则冲突,**必须在本次合并中一并清理**:
+
+| 位置 | 现状 | 问题 |
+|---|---|---|
+| `backend/routers/backtest.py:_load_stock_data` (~239-251 行) | `RAW_KLINE_DIR.glob("*.parquet")` 枚举全市场 | 1) 走旧路径 `data/kline/A/raw/`;2) 只支持 A 股(HK/US 拿不到);3) 绕过 DuckDB |
+| `backend/services/qfq_cache.py` 全文件 | `from config import RAW_KLINE_DIR, QFQ_KLINE_DIR` 直接读旧路径 parquet,且自己从 dividend 数据现场计算复权因子 | 1) 旧路径已停止增量更新,qfq 缓存的"raw 最新日期"将永远停在某天;2) 自实现复权公式,而 `data/market/A/adjust_factor/` 已存预计算 BaoStock 因子,重复造轮子 |
+
+**核心原则**(本次落地,需同步写入 AGENTS.md):
+
+1. **DuckDB 是唯一业务数据源**:所有业务代码(回测、选股、K 线展示、财务/估值/分红查询)**必须**经 `services/duckdb_store.py` 访问数据,**禁止**直接 `glob` parquet 或读旧路径文件
+2. **DuckDB 视图唯一来源 = `data/market/`**:`data/market/{A,HK,US}/{daily,adjust_factor,financial/*}/*.parquet`,这是唯一被业务读的物理路径
+3. **旧路径仅作校验用**:`data/kline/A/raw/`、`data/kline/A/qfq/` 中已存在的 parquet **不再被业务代码读取**,只保留作为新管线输出的对照基准。新数据**不再写入**这两个目录
+4. **新增数据访问能力的唯一入口**:`DuckDBStore` 类。需要新查询 → 在该类上加方法或视图;不允许业务模块绕过
+
+#### Layer A:Router 去 glob
+
+**改造点**:`backend/routers/backtest.py::_load_stock_data`
+
+```python
+# 之前(旧)
+all_files = list(RAW_KLINE_DIR.glob("*.parquet"))
+symbols = [f.stem for f in all_files]
+
+# 之后(新)
+from services.duckdb_store import get_store
+store = get_store()
+symbols = store.list_symbols(market="A")  # 全市场模式
+# 个股模式直接用入参 symbols 列表,不查 store
+```
+
+K 线读取也从「直接读 parquet」改为「`get_qfq_kline()` (Layer B 后) 或 `store.query_kline(market, symbol, start, end)` 」,由 D6.1 定义的日期范围切片。
+
+**多市场扩展**:API 入参增加 `market: "A" | "HK" | "US"`(默认 "A" 向后兼容),`store.list_symbols(market)` 自然支持。本次重构不强制实现 HK/US 回测全链路,但拆掉 A 股硬编码这一基础设施。
+
+#### Layer B:qfq 计算改用 `data/market/A/adjust_factor/`(预计算因子)
+
+**目标**:`qfq_cache.py` **彻底重写数据来源**:不再读 `data/kline/A/raw/`,也不再从 `data/dividend/A/` 推导复权因子,改为:
+- raw 价格:DuckDB 视图 `v_a_daily`(底层 `data/market/A/daily/`)
+- 复权因子:DuckDB 视图 `v_a_adjust_factor`(底层 `data/market/A/adjust_factor/`),BaoStock 格式已预计算
+
+**为什么换数据源**:`data/market/A/adjust_factor/{symbol}.parquet` 已存储每个除权日的 `foreAdjustFactor / backAdjustFactor / adjustFactor`(由 BaoStockAdapter 按 BaoStock 官方算法生成),覆盖完整除权历史。直接用这份数据做 qfq 比从 dividend 现场推导更可靠:
+1. **无需自己实现公式**:省掉 `(pre_close - cash) / (pre_close × (1 + bonus + transfer))` 计算 + pre_close 查找逻辑(`compute_qfq` 50+ 行可全部删除)
+2. **无需处理 dividend schema 异常**:`方案进度`、`现金分红-现金分红比例` 等中文列名解析、空值处理、单位换算 (除以 10) 这些边界全部消失
+3. **数据源职责分离**:dividend 数据用于"分红事件查询/选股"(连续分红年数等),adjust_factor 用于"价格复权",各司其职
+4. **多市场一致性**:`adjust_factor/` 目录在 A/HK/US 三个市场都存在(已有视图 `v_a_adjust_factor / v_hk_adjust_factor / v_us_adjust_factor`),qfq 逻辑一次写完通吃三市
+
+**adjust_factor parquet schema**(BaoStock 格式,实测 `000001.SZ` 16 行):
+
+| 列 | 类型 | 含义 |
+|---|---|---|
+| `code` | str | 股票代码 |
+| `dividOperateDate` | str | 除权除息日 |
+| `foreAdjustFactor` | float | **前复权因子(本次重点用)** |
+| `backAdjustFactor` | float | 后复权因子 |
+| `adjustFactor` | float | 单次因子 |
+
+每行对应一个除权日,因子值随时间递增(累积)。
+
+**qfq 计算方法**(BaoStock 官方约定):
+
+```
+对 raw 数据每根 bar(date d):
+  factor_d = max(foreAdjustFactor where dividOperateDate <= d)  # 该日生效的累积因子
+            (没有任何除权日 ≤ d 时,factor_d = 0,价格保持 raw)
+  factor_latest = 最新除权日的 foreAdjustFactor(全表 max)
+
+  qfq_price[d] = raw_price[d] × factor_d / factor_latest
+```
+
+效果:最新交易日 `factor_d == factor_latest`,qfq = raw;历史价格被按比例下调以保证除权日前后曲线连续。
+
+**在 DuckDB 中可纯 SQL 实现**(用 `ASOF JOIN`):
+
+```sql
+-- 一只股票的 qfq 价格(伪 SQL)
+WITH latest AS (
+  SELECT MAX(foreAdjustFactor) AS f_latest
+  FROM v_a_adjust_factor WHERE code = ?
+)
+SELECT
+  d.date,
+  d.open  * COALESCE(af.foreAdjustFactor, 1) / latest.f_latest AS open,
+  d.high  * COALESCE(af.foreAdjustFactor, 1) / latest.f_latest AS high,
+  d.low   * COALESCE(af.foreAdjustFactor, 1) / latest.f_latest AS low,
+  d.close * COALESCE(af.foreAdjustFactor, 1) / latest.f_latest AS close,
+  d.volume, d.amount
+FROM v_a_daily d
+LEFT ASOF JOIN v_a_adjust_factor af
+  ON af.code = d.code AND af.dividOperateDate <= d.date
+CROSS JOIN latest
+WHERE d.code = ? AND d.date BETWEEN ? AND ?
+ORDER BY d.date
+```
+
+**架构影响**:**qfq_cache 模块整体可以删除**
+
+既然 DuckDB 能纯 SQL 出 qfq,且 `adjust_factor` 表行数极少(每只股票 ≤ 几十行),实时计算成本几乎为零,**parquet 缓存层 + `_meta.json` 三态模型不再必要**:
+
+- 删除 `backend/services/qfq_cache.py`(全文件 179 行)
+- 删除 `data/kline/A/qfq/` 目录(包括 `_meta.json`)
+- 删除 `compute_qfq` 函数及相关的 dividend 公式实现
+- 在 `DuckDBStore` 上新增方法 `query_qfq_kline(market, symbol, start_date, end_date)`(执行上述 SQL)
+- 所有原本调 `qfq_cache.get_qfq_kline()` 的代码改调 `store.query_qfq_kline(...)`
+
+**与 2026-05-08 spec 的关系**:`2026-05-08-qfq-cache-refactor-design.md` **整体被 D8 Layer B superseded**。该 spec 的核心模型(raw + dividend 派生 qfq + 三态缓存)在 adjust_factor 数据已就绪的前提下不再适用。需要在该 spec 顶部加 superseded-by 注记指向本 spec。
+
+**非目标(本期不做)**:
+- 不删除 `data/kline/A/raw/` 与 `data/kline/A/qfq/` 目录的旧 parquet(留作历史对照,后续单独清理任务)
+- 不迁移分红/财务/估值的 parquet 物理位置
+- HK/US 市场的 qfq 查询同步可用(只要 `adjust_factor/` 目录有数据),但本期不验证回测全链路
+
+#### Layer A + B 实施顺序
+
+放入 Phase 4(数据库迁移 + 后端路由简化)同期完成,因为两者都触及 `routers/backtest.py` 与数据加载链路:
+
+1. 扩 `DuckDBStore`:新增 `query_qfq_kline(market, symbol, start, end)`(ASOF JOIN SQL,见上),单测覆盖几个有除权/无除权/早于首次除权的边界
+2. 用旧 `qfq_cache.get_qfq_kline()` 与新 `store.query_qfq_kline()` 对若干股票做**全历史价格 diff**,误差应在浮点精度内(若有显著偏离说明算法理解有误,先排查)
+3. 全局替换调用点:`grep -rn "from services.qfq_cache\|qfq_cache\." backend/ strategies/` 列出后逐处改为 `store.query_qfq_kline(...)`
+4. 改 `routers/backtest.py::_load_stock_data`:全市场分支用 `store.list_symbols("A")`;K 线加载走 `store.query_qfq_kline("A", symbol, start, end)`
+5. 删除 `backend/services/qfq_cache.py` + `data/kline/A/qfq/`(含 `_meta.json`)
+6. 跑全量回测回归测试,与 Phase 4 前的旧实现做信号集对比
+7. 验证旧路径文件**不再被任何业务代码读取**:`grep -rn "RAW_KLINE_DIR\|QFQ_KLINE_DIR" backend/` 应只剩 `config.py`(常量定义,可后续清理)
+
+#### 风险与缓解
+
+| 风险 | 缓解 |
+|---|---|
+| DuckDB 视图首次注册时,`data/market/A/daily/` 或 `adjust_factor/` 必须有数据,否则视图为空,所有回测失败 | 启动 `init_duckdb()` 后立即跑 `len(store.list_symbols("A")) > 0` + `store.query("SELECT count(*) FROM v_a_adjust_factor")` 健康检查,失败报错 |
+| `data/market/A/daily/` 的 parquet schema 是否与 `data/kline/A/raw/` 完全一致(列名、date 格式、排序方向) | Phase 4 前先跑对照脚本 `scripts/diff_market_vs_kline.py`(本期新建),抽样 10 只股票 diff,确认一致后再切换 |
+| BaoStock 的 `foreAdjustFactor` 用法理解可能有误(归一化基准、是否需 `factor_d / factor_latest`) | Phase 4 第 2 步用旧 qfq_cache 输出做 ground truth 对比,若 diff 超过浮点精度则查 BaoStock 文档/源码 校正 SQL |
+| 部分股票完全无除权记录(`adjust_factor/` 中无文件或空表)| ASOF JOIN 命中失败时 `factor_d = NULL`,SQL 用 `COALESCE(factor, 1) / COALESCE(latest, 1)` 退化为 raw = qfq;单测覆盖此分支 |
+| 个别股票 raw 价格本身已是复权(早期数据源不规范)| 不在本次范围,通过对照脚本发现的异常股票单独标记,不阻塞迁移 |
 
 ### D7. 合并后策略
 
@@ -605,7 +740,7 @@ JSONL 格式(决策层文件):
 1. **Phase 1**:新增 utils 库 + `Strategy` 基类(向后兼容,旧基类保留)→ 跑通新单测
 2. **Phase 2**:新增 `MaTangleValueStrategy` + 决策日志 → 集成测通过
 3. **Phase 3**:重写 Engine + Context,迁移旧策略测试
-4. **Phase 4**:数据库迁移 + 后端路由简化
+4. **Phase 4**:数据库迁移 + 后端路由简化 + **D8 数据访问统一**(Layer A: router 去 glob;Layer B: 删除 qfq_cache 模块,qfq 改由 DuckDB 用 `adjust_factor` 视图实时算)
 5. **Phase 5**:前端 BacktestConfig API 入参收敛 + 策略类型副标签调整 + K线周期字段移除 + 历史列表软删过滤(StrategyGroup 前端无需删除,从未存在)
 6. **Phase 6**:删除 7 个旧策略 + 旧基类 + 旧引擎 + 旧路由
 7. **Phase 7**:决策日志查询面板(可选,后续迭代)

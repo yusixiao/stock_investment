@@ -1,5 +1,14 @@
 # QFQ 数据重构：从源数据到缓存模式
 
+> **⚠️ Superseded by `2026-05-18-merge-strategies-design.md` D8 Layer B(2026-05-18)**
+>
+> 本 spec 定义的「raw + dividend 派生 qfq + parquet 三态缓存」模型已实施(`backend/services/qfq_cache.py`),但 2026-05-18 决策改为:
+> - 复权因子直接用 `data/market/A/adjust_factor/`(BaoStock `foreAdjustFactor` 预计算),不再从 dividend 推导公式
+> - qfq 由 DuckDB ASOF JOIN SQL 实时计算,**删除整个 qfq_cache 模块 + `data/kline/A/qfq/` 缓存目录**
+> - 详见 `2026-05-18-merge-strategies-design.md` § D8 Layer B
+>
+> 本文件保留作历史参考。
+
 ## 背景
 
 当前系统维护两份 K 线数据：`data/kline/A/raw/`（不复权）和 `data/kline/A/qfq/`（前复权）。日常增量更新通过 `stock_zh_a_spot_em` 只能获取不复权的当日行情，无法正确增量更新 qfq 数据。前复权数据在发生除权除息时需要全量重算历史价格，无法简单追加。
