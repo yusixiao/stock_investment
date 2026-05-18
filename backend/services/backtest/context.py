@@ -95,8 +95,8 @@ class ScreenerContext:
             return None
         return df.iloc[idx].to_dict()
 
-    def get_history(self, symbol: str, n: int) -> list[dict]:
-        df, idx = self._get_data_for_freq(symbol)
+    def get_history(self, symbol: str, n: int, freq: str | None = None) -> list[dict]:
+        df, idx = self._get_data_for_freq(symbol, freq)
         if df is None or idx < 0:
             return []
         start = max(0, idx - n + 1)

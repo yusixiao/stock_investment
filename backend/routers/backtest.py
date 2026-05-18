@@ -58,11 +58,12 @@ def api_run_backtest(body: dict = Body(...)):
     param_overrides = body.get("param_overrides", {})
     source_task_id = body.get("source_task_id")
     join_modes = body.get("join_modes")
+    target_symbols = body.get("symbols")
 
     if not pipeline:
         raise HTTPException(status_code=400, detail="Pipeline cannot be empty")
 
-    symbols = None
+    symbols = target_symbols
     source_matches = None
     if source_task_id:
         src_result = task_manager.get_result(source_task_id)
