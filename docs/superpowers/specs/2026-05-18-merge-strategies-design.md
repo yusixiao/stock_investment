@@ -24,7 +24,41 @@
 - `on_buy()` → pass
 - `on_sell()` → pass(永久持有)
 
-`frequency` / `settings` 整合到主类。子类按需覆盖,不强制 `NotImplementedError`。
+`frequency` / `frequency_overridable` / `settings` 整合到主类。子类按需覆盖,不强制 `NotImplementedError`。
+
+### D1.1 频率(frequency)语义与可覆盖性
+
+**频率定义**:`frequency` 不是"读什么数据",而是 **`screen()` 被调用的节奏**。每个策略都必须有一个 frequency,基类默认 `"daily"` 兜底。不存在"无频率"策略——任何策略都要在某根 K 线 bar 上评估。
+
+**频率可覆盖性**:基类引入 `frequency_overridable: bool = False`(**默认 False,锁死**)。
+
+判定规则:**只要策略中有任何一个组件对频率有语义依赖,整个策略就必须锁定频率**(`frequency_overridable = False`)。
+
+| utils 函数 | 频率依赖 | 改频率后果 |
+|---|---|---|
+| `kline.detect_ma_tangle_breakout` | ✋ 强依赖 | 月线 MA 缠绕变周线 MA 缠绕,完全不同的策略 |
+| `kline.is_at_history_low` | ✋ 强依赖 | "过去 N 月最低"变"过去 N 周最低" |
+| `kline.has_consecutive_red_bars` | ✋ 强依赖 | "连续 4 月阳"变"连续 4 周阳" |
+| `dividend.filter_by_dividend_years` | ✓ 无依赖 | 触发节奏变,结果不变 |
+| `valuation.filter_by_pe_pb_product` | ✓ 无依赖 | 同上 |
+| `financial.filter_by_roe` | ✓ 无依赖 | 同上 |
+
+**应用到 5 策略合并**:
+- `MaTangleValueStrategy` 用了 `detect_ma_tangle_breakout`(强依赖)→ `frequency = "monthly"`, `frequency_overridable = False`
+- 假想的纯基本面策略(如未来的 `PeOver20SellStrategy` 只用 `valuation.*`)→ `frequency = "daily"`, `frequency_overridable = True`,UI 暴露下拉给用户选
+
+**默认 False 的设计意图**:策略作者必须**主动思考**才能放开,避免无意中允许用户用错误频率跑某策略导致语义错误。
+
+### D1.2 UI 行为(频率字段)
+
+`StrategyInfo` API 返回的字段中包含 `frequency` 与 `frequency_overridable`。前端按下表渲染:
+
+| `frequency_overridable` | UI 表现 |
+|---|---|
+| `False`(默认) | 只读展示:`评估频率: 月线 (由策略决定)`,灰色不可点 |
+| `True` | 可选下拉:`评估频率: [日线 ▼]`,默认值 = `strategy.frequency`,用户可改 |
+
+后端 `runBacktest` 入参增加可选 `frequency_override: str | None`。Engine 接收后,优先级:**用户输入 > 策略默认**。如果策略 `frequency_overridable=False` 但请求中带了 `frequency_override`,后端拒绝(400)。
 
 ### D2. 取消 Pipeline / StrategyGroup / 链式回测
 
@@ -104,8 +138,9 @@ class Strategy:
     name: str = ""
     description: str = ""
     params: dict = {}
-    frequency: str = "daily"   # screen() 调用周期 (daily/weekly/monthly)
-    settings: dict = {}        # initial_capital / commission_rate / slippage,有默认
+    frequency: str = "daily"            # screen() 调用周期 (daily/weekly/monthly)
+    frequency_overridable: bool = False # 是否允许用户在 UI 改频率,默认锁死
+    settings: dict = {}                 # initial_capital / commission_rate / slippage,有默认
 
     def __init__(self, param_overrides: dict = None):
         self.p = ParamAccessor(self.params, overrides=param_overrides)
@@ -370,6 +405,7 @@ class MaTangleValueStrategy(Strategy):
         "命中后按市值加权 8 周分批买入,默认永久持有。"
     )
     frequency = "monthly"
+    frequency_overridable = False   # 强依赖:detect_ma_tangle_breakout 必须月线
 
     params = {
         # 基本面池
@@ -506,7 +542,7 @@ JSONL 格式(决策层文件):
 **调整**(均在 `frontend/src/components/backtest/BacktestConfig.tsx` + `frontend/src/api/backtestEngine.ts`):
 1. `runBacktest()` 入参从 `{pipeline: [{filepath, class_name}], param_overrides: {className: {...}}}` 简化为 `{strategy_class, params}`(对应后端 API 收敛)
 2. 策略下拉的副标签 `s.strategyType === 'screener' ? '选股' : '交易'` 去掉(单一 Strategy 后无此区分),改为按 `s.frequency` 显示「日/周/月」标签
-3. 「K线周期」字段(行 227-238)删除 — `frequency` 由 Strategy 类自己声明,UI 暴露会与 `MaTangleValueStrategy.frequency = "monthly"` 冲突
+3. 「K线周期」字段(行 227-238)行为变更:不再独立编辑,改为根据所选策略的 `frequency_overridable` 自动切换:`False` → 只读展示策略声明的频率;`True` → 可选下拉,默认值 = `strategy.frequency`。`runBacktest` 入参增加可选 `frequency_override`,后端校验非法覆盖时返回 400
 4. `BacktestResult.tsx / BacktestHistory.tsx` 展示从 `pipeline_info` 嵌套结构改为直接显示 `strategy_class + params`(实施时核对当前实现)
 5. 历史列表加上 `is_deleted` 软删过滤(默认 `is_deleted=False`),并提供「显示已删除」开关
 
