@@ -113,6 +113,29 @@ strategies/utils/
 - DROP `group_runs` 表
 - 旧任务记录保留可读(展示历史),不可重跑
 
+### D6.1 回测范围与时间段(保留并强化)
+
+**回测范围**:个股 vs 全市场两种模式当前后端已支持,新设计**完整保留**。
+
+- API 入参 `symbols: list[str] | None`(沿用)
+  - `None` → 全市场:`_load_stock_data` 扫 `RAW_KLINE_DIR.glob("*.parquet")` 加载所有股票
+  - `["000001.SZ"]` → 个股回测:仅加载传入列表
+- 前端 `BacktestConfig.tsx` 的 `mode === 'single' / 'all'` 切换继续按现在的方式工作
+
+**时间段**:从"可选"改为"必填"。
+
+- API 入参 `start_date: str`(YYYY-MM-DD)、`end_date: str`(YYYY-MM-DD),**两者必填**,缺失或非法格式返回 400
+- `_load_stock_data` 接收日期切片数据(由 `get_qfq_kline(start_date, end_date)` 完成),Engine `for idx in range(n_bars)` 自动覆盖此范围
+- 校验规则:`start_date <= end_date`,且 `start_date` 不早于市场最早数据日期(可后续放宽,本期最简版)
+- 前端目前已经默认填了起止日期(`startDate='2023-01-01'`, `endDate=今天`),无需 UI 改动,但增加非空提交校验
+
+**时间段如何作用于不同 frequency 的策略**:
+- 月线策略(如 `MaTangleValueStrategy`):Engine 以日线 bar 推进,但 `screen()` 仅在月切换时触发(spec 第 3 节 Engine 工作流)。因此用户给出"2020-01-01 ~ 2024-12-31"的日期范围,该策略会评估约 60 个月切换点。
+- 周线策略:在每周一切换日触发 `screen()`
+- 日线策略:每个交易日都触发
+
+用户感受到的回测时长 = `end_date - start_date`,与 frequency 无关。frequency 只影响该期间内 `screen()` 被调用的次数。
+
 ### D7. 合并后策略
 
 `MaTangleValueStrategy`(月线均线缠绕价值策略)合并 5 个原策略:
@@ -168,7 +191,7 @@ class BacktestEngine:
     def __init__(
         self,
         strategy: Strategy,
-        stock_data: dict[str, pd.DataFrame],
+        stock_data: dict[str, pd.DataFrame],   # 已被 router 按 symbols + start/end 切片好
         valuation_data: dict | None = None,
         dividend_data: dict | None = None,
         financial_data: dict | None = None,
@@ -176,6 +199,12 @@ class BacktestEngine:
         log_dir: Path | None = None,
         enable_decision_log: bool = True,
     ):
+        # 注:Engine 不直接接收 symbols / start_date / end_date。
+        # 这些过滤在 router._load_stock_data 完成,Engine 只对收到的数据
+        # 做完整迭代(for idx in range(n_bars))。
+        # 个股回测 = router 传入 symbols=["000001.SZ"]
+        # 全市场回测 = router 传入 symbols=None,扫整目录
+        # 时间段 = get_qfq_kline(start_date, end_date) 切片,Engine 自然覆盖
         self._strategy = strategy
         self._broker = Broker(**strategy.settings)
         self._market_data = MarketData(...)  # 按 strategy.frequency 预聚合
