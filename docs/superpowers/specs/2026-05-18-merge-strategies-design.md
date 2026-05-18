@@ -125,7 +125,7 @@ strategies/utils/
 **时间段**:从"可选"改为"必填"。
 
 - API 入参 `start_date: str`(YYYY-MM-DD)、`end_date: str`(YYYY-MM-DD),**两者必填**,缺失或非法格式返回 400
-- `_load_stock_data` 接收日期切片数据(由 `get_qfq_kline(start_date, end_date)` 完成),Engine `for idx in range(n_bars)` 自动覆盖此范围
+- `_load_stock_data` 接收日期切片数据(由 `store.query_qfq_kline(market, symbol, start_date, end_date)` 完成,见 D8 Layer B),Engine `for idx in range(n_bars)` 自动覆盖此范围
 - 校验规则:`start_date <= end_date`,且 `start_date` 不早于市场最早数据日期(可后续放宽,本期最简版)
 - 前端目前已经默认填了起止日期(`startDate='2023-01-01'`, `endDate=今天`),无需 UI 改动,但增加非空提交校验
 
@@ -168,7 +168,7 @@ symbols = store.list_symbols(market="A")  # 全市场模式
 # 个股模式直接用入参 symbols 列表,不查 store
 ```
 
-K 线读取也从「直接读 parquet」改为「`get_qfq_kline()` (Layer B 后) 或 `store.query_kline(market, symbol, start, end)` 」,由 D6.1 定义的日期范围切片。
+K 线读取也从「直接读 parquet」改为 `store.query_qfq_kline(market, symbol, start, end)`(Layer B 提供),由 D6.1 定义的日期范围切片。
 
 **多市场扩展**:API 入参增加 `market: "A" | "HK" | "US"`(默认 "A" 向后兼容),`store.list_symbols(market)` 自然支持。本次重构不强制实现 HK/US 回测全链路,但拆掉 A 股硬编码这一基础设施。
 
@@ -249,6 +249,19 @@ ORDER BY d.date
 - 不迁移分红/财务/估值的 parquet 物理位置
 - HK/US 市场的 qfq 查询同步可用(只要 `adjust_factor/` 目录有数据),但本期不验证回测全链路
 
+#### D8 范围:K 线之外的数据访问
+
+D8 改造**只覆盖 K 线 + 复权因子**。其余数据按 DuckDB 视图就绪情况分级处理:
+
+| 数据 | DuckDB 视图 | 本期处理 |
+|---|---|---|
+| 财务三表 + 指标 | ✅ `v_a_income / v_a_balance / v_a_cashflow / v_a_indicator` 已注册 | `Context.get_financial()` 同步切到 `store.query_financial(...)`,Engine 不再接 `financial_data` dict 入参 |
+| 分红 | ❌ 无视图 | `Context.get_dividend()` 暂保留现有 `repositories/event_repo` 路径,**标注 TODO** 后续单独 spec 加视图 |
+| 估值(PE/PB/市值) | ❌ 无视图 | `Context.get_valuation()` 暂保留现有 `valuation_updater` parquet 读取,**标注 TODO** |
+| 流通股本 | ❌ 无视图 | 同上,保留 `circulating_shares.py` 现状 |
+
+**原则**:本次 D8 不阻塞在补全所有视图上,但建立「能走 DuckDB 的就必须走」规则,后续每加一个视图,对应 Context 方法立即切换,不再增加直读 parquet 的代码路径。
+
 #### Layer A + B 实施顺序
 
 放入 Phase 4(数据库迁移 + 后端路由简化)同期完成,因为两者都触及 `routers/backtest.py` 与数据加载链路:
@@ -257,9 +270,18 @@ ORDER BY d.date
 2. 用旧 `qfq_cache.get_qfq_kline()` 与新 `store.query_qfq_kline()` 对若干股票做**全历史价格 diff**,误差应在浮点精度内(若有显著偏离说明算法理解有误,先排查)
 3. 全局替换调用点:`grep -rn "from services.qfq_cache\|qfq_cache\." backend/ strategies/` 列出后逐处改为 `store.query_qfq_kline(...)`
 4. 改 `routers/backtest.py::_load_stock_data`:全市场分支用 `store.list_symbols("A")`;K 线加载走 `store.query_qfq_kline("A", symbol, start, end)`
-5. 删除 `backend/services/qfq_cache.py` + `data/kline/A/qfq/`(含 `_meta.json`)
-6. 跑全量回测回归测试,与 Phase 4 前的旧实现做信号集对比
+5. **跑全量回测回归测试**,与 Phase 4 前的旧实现做信号集对比 — 通过后才进入下一步
+6. 删除 `backend/services/qfq_cache.py` + `data/kline/A/qfq/`(含 `_meta.json`)— 此时旧 ground truth 失效,删除前必须保证步骤 2/5 都已通过
 7. 验证旧路径文件**不再被任何业务代码读取**:`grep -rn "RAW_KLINE_DIR\|QFQ_KLINE_DIR" backend/` 应只剩 `config.py`(常量定义,可后续清理)
+
+**健康检查放置**:DuckDB 视图在 `backend/main.py` lifespan 的 `init_duckdb()` 之后立即跑:
+```python
+store = get_store()
+assert len(store.list_symbols("A")) > 0, "v_a_daily 视图为空,data/market/A/daily/ 无数据"
+assert store.query("SELECT count(*) AS c FROM v_a_adjust_factor")["c"][0] > 0, \
+    "v_a_adjust_factor 视图为空,data/market/A/adjust_factor/ 无数据"
+```
+失败抛 RuntimeError 阻止启动,避免回测在运行时才发现数据缺失。
 
 #### 风险与缓解
 
@@ -338,8 +360,8 @@ class BacktestEngine:
         # 这些过滤在 router._load_stock_data 完成,Engine 只对收到的数据
         # 做完整迭代(for idx in range(n_bars))。
         # 个股回测 = router 传入 symbols=["000001.SZ"]
-        # 全市场回测 = router 传入 symbols=None,扫整目录
-        # 时间段 = get_qfq_kline(start_date, end_date) 切片,Engine 自然覆盖
+        # 全市场回测 = router 调 store.list_symbols(market) 取代码列表
+        # 时间段 = store.query_qfq_kline(market, sym, start, end) 切片,Engine 自然覆盖
         self._strategy = strategy
         self._broker = Broker(**strategy.settings)
         self._market_data = MarketData(...)  # 按 strategy.frequency 预聚合
@@ -678,6 +700,8 @@ JSONL 格式(决策层文件):
 
 **新增**:
 - `backend/services/backtest/decision_log.py`(`DecisionLogSink` JSONL 写入器,带缓冲)
+- `DuckDBStore.query_qfq_kline(market, symbol, start, end)` 方法(D8 Layer B,ASOF JOIN SQL)
+- `scripts/diff_market_vs_kline.py`(D8 校对脚本:对比 `data/market/A/daily/` 与 `data/kline/A/raw/` schema + 数值)
 - `strategies/utils/__init__.py`
 - `strategies/utils/kline.py / financial.py / dividend.py / valuation.py`
 - `strategies/utils/composite/__init__.py`
@@ -690,6 +714,8 @@ JSONL 格式(决策层文件):
 - `backend/services/backtest/engine_base.py`(合并入 engine.py)
 - `backend/services/backtest/date_utils.py` 中 join_mode 相关函数(`date_belongs_to` 等若仅 join_mode 使用则删,否则保留)
 - `backend/routers/strategy_group.py`
+- `backend/services/qfq_cache.py`(D8 Layer B 替代:DuckDB ASOF JOIN 实时算)
+- `data/kline/A/qfq/` 目录及 `_meta.json`(D8 Layer B,缓存层不再需要)
 - 7 个旧 `strategies/examples/*.py`(逻辑已迁移到 utils 后删)
 
 ### 数据库
@@ -720,9 +746,10 @@ JSONL 格式(决策层文件):
 
 - 后端:`backend/tests/services/backtest/` 全面重写(原 ~80 个回测测试)
   - 删除 join_mode / chain / signal_table / strategy_group 相关
-  - 新增 utils 函数级测试(每个 filter_by_* / detect_* 各一组)
+  - 新增 utils 函数级测试(每个 filter_by_* / detect_* 各一组,**Phase 1 用 mock Context** — 真实 Context 在 Phase 3 才到位)
   - 新增 `MaTangleValueStrategy` 集成测试(全链路)
   - 新增 `DecisionLogSink` 单测
+  - 新增 `DuckDBStore.query_qfq_kline` 单测(D8 Layer B):有除权/无除权/早于首次除权三个边界 + 与旧 `qfq_cache` 对照 diff 测试
 - 前端:删除 StrategyGroup 相关测试
 
 ## 测试策略
@@ -737,7 +764,7 @@ JSONL 格式(决策层文件):
 
 ## 实施阶段(高层)
 
-1. **Phase 1**:新增 utils 库 + `Strategy` 基类(向后兼容,旧基类保留)→ 跑通新单测
+1. **Phase 1**:新增 utils 库 + `Strategy` 基类(向后兼容,旧基类保留)→ 跑通新单测(utils 单测用 mock Context,真实 Context 在 Phase 3 完成)
 2. **Phase 2**:新增 `MaTangleValueStrategy` + 决策日志 → 集成测通过
 3. **Phase 3**:重写 Engine + Context,迁移旧策略测试
 4. **Phase 4**:数据库迁移 + 后端路由简化 + **D8 数据访问统一**(Layer A: router 去 glob;Layer B: 删除 qfq_cache 模块,qfq 改由 DuckDB 用 `adjust_factor` 视图实时算)
