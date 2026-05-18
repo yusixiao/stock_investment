@@ -501,17 +501,20 @@ JSONL 格式(决策层文件):
 
 ### 前端
 
-**删除**(StrategyGroup 三层页面):
-- `src/pages/StrategyGroup*` / `src/components/strategyGroup/*`
-- 相关路由、API client、store
+**实际状态**:前端从未实现 StrategyGroup 页面,且 `BacktestConfig.tsx` 当前 UI 已经是「单 strategy 选择 + 自动参数表单」形态(只是底层 API 调用还包成单元素 pipeline 数组)。改动远小于最初评估。
 
-**简化**:
-- `src/components/backtest/BacktestConfig.tsx`:从 pipeline 表单(多 screener + trader)简化为单 strategy 选择 + 参数表单
-- `src/components/backtest/BacktestResult.tsx`:展示 strategy_class + params,移除 pipeline_info 嵌套展示
-- `src/api/backtest.ts`:入参收敛
+**调整**(均在 `frontend/src/components/backtest/BacktestConfig.tsx` + `frontend/src/api/backtestEngine.ts`):
+1. `runBacktest()` 入参从 `{pipeline: [{filepath, class_name}], param_overrides: {className: {...}}}` 简化为 `{strategy_class, params}`(对应后端 API 收敛)
+2. 策略下拉的副标签 `s.strategyType === 'screener' ? '选股' : '交易'` 去掉(单一 Strategy 后无此区分),改为按 `s.frequency` 显示「日/周/月」标签
+3. 「K线周期」字段(行 227-238)删除 — `frequency` 由 Strategy 类自己声明,UI 暴露会与 `MaTangleValueStrategy.frequency = "monthly"` 冲突
+4. `BacktestResult.tsx / BacktestHistory.tsx` 展示从 `pipeline_info` 嵌套结构改为直接显示 `strategy_class + params`(实施时核对当前实现)
+5. 历史列表加上 `is_deleted` 软删过滤(默认 `is_deleted=False`),并提供「显示已删除」开关
 
-**新增**(决策日志查询面板,可选范围):
-- `src/components/backtest/DecisionLogPanel.tsx`:在任务详情页,按 (symbol, date 范围, stage) 过滤查询 decisions.jsonl
+**已知遗留问题(不在本次范围,标注供后续修)**:
+- 手续费 UI 显示 `0.15`(百分比单位),后端用 `0.0003`(万三小数)— 当前传值未做单位换算,实际生效值不符预期。本次重构保留现状,以独立 issue 修复
+
+**新增**(决策日志查询面板,**留待后续迭代**,本次仅保证后端日志写入正确):
+- 未来:`src/components/backtest/DecisionLogPanel.tsx`(按 symbol + date 范围 + stage 过滤查询 decisions.jsonl)
 
 ### 测试
 
@@ -538,7 +541,7 @@ JSONL 格式(决策层文件):
 2. **Phase 2**:新增 `MaTangleValueStrategy` + 决策日志 → 集成测通过
 3. **Phase 3**:重写 Engine + Context,迁移旧策略测试
 4. **Phase 4**:数据库迁移 + 后端路由简化
-5. **Phase 5**:前端 BacktestConfig 简化 + StrategyGroup 删除
+5. **Phase 5**:前端 BacktestConfig API 入参收敛 + 策略类型副标签调整 + K线周期字段移除 + 历史列表软删过滤(StrategyGroup 前端无需删除,从未存在)
 6. **Phase 6**:删除 7 个旧策略 + 旧基类 + 旧引擎 + 旧路由
 7. **Phase 7**:决策日志查询面板(可选,后续迭代)
 
