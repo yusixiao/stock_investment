@@ -54,7 +54,13 @@ class TestScanStrategies:
             assert "strategy_type" in r
             assert "params" in r
             assert "filepath" in r
-            assert r["strategy_type"] in ("screener", "trader", "buy", "sell")
+            assert r["strategy_type"] in (
+                "screener",
+                "trader",
+                "buy",
+                "sell",
+                "strategy",
+            )
 
     def test_scan_empty_dir(self, tmp_path):
         results = scan_strategies(tmp_path)
