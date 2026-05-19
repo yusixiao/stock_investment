@@ -20,28 +20,6 @@ from services.api_utils import safe_json
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
 
 
-def _extract_symbols(screened_symbols: list) -> list[str]:
-    if not screened_symbols:
-        return []
-    if isinstance(screened_symbols[0], str):
-        return list(screened_symbols)
-    return [item["symbol"] for item in screened_symbols]
-
-
-def _extract_source_matches(screened_symbols: list) -> dict[str, list[str]] | None:
-    if not screened_symbols:
-        return None
-    if isinstance(screened_symbols[0], str):
-        return None
-    result = {}
-    for item in screened_symbols:
-        sym = item["symbol"]
-        dates = item.get("match_dates", [])
-        if dates:
-            result[sym] = dates
-    return result if result else None
-
-
 @router.get("/strategies")
 def api_list_strategies():
     if not STRATEGY_DIR.exists():
@@ -55,8 +33,6 @@ def api_run_backtest(body: dict = Body(...)):
     start_date = body.get("start_date")
     end_date = body.get("end_date")
     param_overrides = body.get("param_overrides", {})
-    source_task_id = body.get("source_task_id")
-    join_modes = body.get("join_modes")
     target_symbols = body.get("symbols")
     market = body.get("market", "A")
 
@@ -64,33 +40,6 @@ def api_run_backtest(body: dict = Body(...)):
         raise HTTPException(status_code=400, detail="Pipeline cannot be empty")
 
     symbols = target_symbols
-    source_matches = None
-    if source_task_id:
-        src_result = task_manager.get_result(source_task_id)
-        if src_result is None:
-            raise HTTPException(
-                status_code=400, detail=f"源任务 {source_task_id} 不存在"
-            )
-        if src_result["status"] != "success":
-            raise HTTPException(
-                status_code=400, detail=f"源任务 {source_task_id} 未成功完成"
-            )
-        result_data = src_result.get("result") or {}
-        screened = result_data.get("screened_symbols")
-        if screened is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"源任务 {source_task_id} 不是选股任务，无选股结果",
-            )
-        syms = _extract_symbols(screened)
-        if not syms:
-            raise HTTPException(
-                status_code=400, detail=f"源任务 {source_task_id} 未选出任何股票"
-            )
-        symbols = syms
-        source_matches = _extract_source_matches(screened)
-        start_date = src_result.get("start_date") or start_date
-        end_date = src_result.get("end_date") or end_date
 
     screeners = []
     trader = None
@@ -129,14 +78,11 @@ def api_run_backtest(body: dict = Body(...)):
             info["params"] = merged
         screener_infos.append(info)
     pipeline_info = {"strategies": screener_infos}
-    if join_modes:
-        pipeline_info["join_modes"] = join_modes
     task_id = task_manager.create_task(
         task_type=task_type,
         pipeline_info=pipeline_info,
         start_date=start_date,
         end_date=end_date,
-        source_task_id=source_task_id,
     )
 
     def on_progress(current, total, phase):
@@ -160,11 +106,9 @@ def api_run_backtest(body: dict = Body(...)):
                 screeners=screeners,
                 trader=trader,
                 on_progress=on_progress,
-                join_modes=join_modes,
                 valuation_data=valuation_data,
                 dividend_data=dividend_data,
                 financial_data=financial_data,
-                source_matches=source_matches,
             )
             result = engine.run()
             result = safe_json(result)
