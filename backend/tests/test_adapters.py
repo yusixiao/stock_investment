@@ -426,7 +426,7 @@ class TestDataSource:
     def test_create_default_data_source(self):
         with (
             patch("backend.adapters.baostock_adapter.BaoStockAdapter") as mock_bs_cls,
-            patch("backend.adapters.akshare_adapter.AKShareAdapter") as mock_ak_cls,
+            patch("backend.adapters.eastmoney_adapter.EastMoneyAdapter") as mock_em_cls,
         ):
             ds = create_default_data_source()
 
@@ -434,7 +434,7 @@ class TestDataSource:
         assert ds.market is mock_bs_cls.return_value
         assert ds.basic is mock_bs_cls.return_value
         assert ds.event is mock_bs_cls.return_value
-        assert ds.financial is mock_ak_cls.return_value
+        assert ds.financial is mock_em_cls.return_value
 
 
 class TestBaoStockLoginFailure:
