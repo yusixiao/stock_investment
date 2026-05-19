@@ -262,6 +262,45 @@ def test_engine_disabled_log_does_not_write(tmp_path, stock_data):
     assert result["log_dir"] is None
 
 
+# ============= 实际下单 + T+1 撮合 =============
+
+
+def test_engine_order_shares_fills_next_bar(stock_data, daily_dates):
+    """on_buy 中 ctx.order_shares 应在下一根 bar 通过 fill_orders 成交(T+1)。
+
+    回归 T3.1 遗留 bug:Context.order_shares 之前误传 date 给 broker.submit_order,
+    且未传 direction → 调用直接抛 TypeError。
+    """
+
+    class _BuyOnce(Strategy):
+        frequency = "daily"
+
+        def __init__(self):
+            super().__init__()
+            self.bought = False
+
+        def screen(self, ctx, symbols):
+            return list(symbols)
+
+        def on_buy(self, ctx):
+            if not self.bought and "000001" in ctx.target_symbols:
+                ctx.order_shares("000001", 100)
+                self.bought = True
+
+    strat = _BuyOnce()
+    result = BacktestEngine(
+        strategy=strat, stock_data=stock_data, enable_decision_log=False
+    ).run()
+    trades = result["trades"]
+    assert len(trades) == 1
+    trade = trades[0]
+    assert trade["symbol"] == "000001"
+    assert trade["direction"] == "buy"
+    assert trade["shares"] == 100
+    # T+1:bar 0 提交,bar 1 成交,所以成交日 == daily_dates[1]
+    assert trade["date"] == daily_dates[1]
+
+
 # ============= 进度回调 =============
 
 

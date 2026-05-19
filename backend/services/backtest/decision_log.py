@@ -31,6 +31,14 @@ class DecisionLogSink:
             self._dir.mkdir(parents=True, exist_ok=True)
             atexit.register(self.flush)
 
+    @property
+    def log_dir(self) -> Path | None:
+        return self._dir
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
     def log_pass(
         self,
         symbol: str,

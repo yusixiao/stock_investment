@@ -78,9 +78,17 @@ class Context:
         return self._broker.portfolio.positions
 
     def order_shares(self, symbol: str, shares: int):
-        return self._broker.submit_order(
-            symbol=symbol, shares=shares, date=self.current_date
-        )
+        # 约定:正数为买入,负数为卖出。Broker.submit_order 不接受 date——
+        # 成交日期由 Broker.fill_orders(date, ...) 在 T+1 撮合时记录
+        if shares > 0:
+            return self._broker.submit_order(
+                symbol=symbol, shares=shares, direction="buy"
+            )
+        if shares < 0:
+            return self._broker.submit_order(
+                symbol=symbol, shares=-shares, direction="sell"
+            )
+        return None
 
     def order_value(self, symbol: str, value: float):
         # 按当前 bar 收盘价折算股数,再向下取整到 100 股的整手

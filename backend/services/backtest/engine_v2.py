@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Callable
 
@@ -39,11 +40,13 @@ class BacktestEngine:
         enable_decision_log: bool = True,
     ):
         self._strategy = strategy
-        # 仅取 Broker 关注的三个 settings,避免传入未知关键字
+        # 通过 inspect.signature 自动取 Broker.__init__ 接受的关键字参数,
+        # 这样未来 Broker 新增 kwarg(如 price_func)无需改本类
+        broker_params = inspect.signature(Broker.__init__).parameters
         broker_kwargs = {
-            k: strategy.settings[k]
-            for k in ("initial_capital", "commission_rate", "slippage")
-            if k in strategy.settings
+            k: v
+            for k, v in strategy.settings.items()
+            if k in broker_params and k != "self"
         }
         self._broker = Broker(**broker_kwargs)
         self._initial_capital = broker_kwargs.get("initial_capital", 1_000_000)
@@ -150,5 +153,5 @@ class BacktestEngine:
             ),
             "equity_curve": equity_curve,
             "trades": self._broker.all_trades,
-            "log_dir": str(self._log_sink._dir) if self._log_sink._enabled else None,
+            "log_dir": str(self._log_sink.log_dir) if self._log_sink.enabled else None,
         }

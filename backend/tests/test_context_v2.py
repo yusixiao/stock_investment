@@ -163,7 +163,19 @@ def test_order_shares_delegates_to_broker(ctx):
     kwargs = ctx._broker.submit_order.call_args.kwargs
     assert kwargs["symbol"] == "000001"
     assert kwargs["shares"] == 100
-    assert kwargs["date"] == "2024-03-29"
+    assert kwargs["direction"] == "buy"
+
+
+def test_order_shares_negative_is_sell(ctx):
+    ctx.order_shares("000001", -200)
+    kwargs = ctx._broker.submit_order.call_args.kwargs
+    assert kwargs["shares"] == 200
+    assert kwargs["direction"] == "sell"
+
+
+def test_order_shares_zero_no_op(ctx):
+    assert ctx.order_shares("000001", 0) is None
+    ctx._broker.submit_order.assert_not_called()
 
 
 def test_order_value_rounds_to_lot(ctx):
