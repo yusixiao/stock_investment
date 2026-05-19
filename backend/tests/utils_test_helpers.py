@@ -52,8 +52,15 @@ class MockContext:
     def get_valuation(self, symbol: str):
         return self._valuation.get(symbol)
 
-    def get_history(self, symbol: str, n: int):
-        bars = self._history.get(symbol)
+    def get_history(self, symbol: str, n: int, period: str = "daily"):
+        # period 在 mock 中不切换数据源,留接口给真实 ctx 实现。
+        # 测试如需区分 period,可注入 history={"A__weekly": [...], "A__daily": [...]}
+        # 并按 f"{symbol}__{period}" 查找(本 mock 简化处理:优先 symbol__period,fallback symbol)
+        keyed = self._history.get(f"{symbol}__{period}")
+        if keyed is not None:
+            bars = keyed
+        else:
+            bars = self._history.get(symbol)
         if bars is None:
             return []
         return bars[-n:] if n > 0 else bars
