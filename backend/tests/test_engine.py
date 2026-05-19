@@ -1,519 +1,319 @@
-import pytest
-import pandas as pd
-import numpy as np
+"""BacktestEngine (engine_v2) 单测 — Phase 3.3。
+
+覆盖 plan 规定的最小测试集合:
+- 默认 Strategy(全 no-op)→ 资产 == 初始资本
+- monthly 频率仅在跨月时触发 screen
+- daily 频率每根 bar 都 screen
+- on_sell 先于 on_buy,且 on_sell 移除的 symbol 不会出现在 on_buy 的 new_symbols 中
+- target_symbols 跨 bar 累加
+- 返回结构(metrics / equity_curve / trades / log_dir)
+- log_dir 传入 + 策略写日志 → decisions.jsonl 存在
+- enable_decision_log=False → 不写盘
+- on_progress 每 bar 触发一次
+"""
+
+from __future__ import annotations
+
+import json
 from pathlib import Path
+
+import pandas as pd
+import pytest
+
 from services.backtest.engine import BacktestEngine
-from services.backtest.base import ScreenerStrategy, TraderStrategy
-from services.backtest.date_utils import detect_frequency
+from strategies.base import Strategy
 
 
-def _make_stock_df(n=100, seed=42, base_price=100.0):
-    np.random.seed(seed)
-    close = base_price + np.cumsum(np.random.randn(n) * 1.0)
-    close = np.maximum(close, 1.0)
-    dates = pd.date_range("2024-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist()
-    return pd.DataFrame({
-        "date": dates,
-        "open": close + np.random.randn(n) * 0.5,
-        "high": close + np.abs(np.random.randn(n) * 1.0),
-        "low": close - np.abs(np.random.randn(n) * 1.0),
-        "close": close,
-        "volume": np.random.randint(1e6, 1e7, n).astype(float),
-        "amount": np.random.randint(1e7, 1e8, n).astype(float),
-    })
+def _make_daily(dates: list[str], base: float = 10.0) -> pd.DataFrame:
+    n = len(dates)
+    return pd.DataFrame(
+        {
+            "date": dates,
+            "open": [base + i for i in range(n)],
+            "high": [base + i + 0.5 for i in range(n)],
+            "low": [base + i - 0.5 for i in range(n)],
+            "close": [base + i + 0.2 for i in range(n)],
+            "volume": [1000.0 + i for i in range(n)],
+            "amount": [10000.0 + i for i in range(n)],
+        }
+    )
 
 
-class AlwaysPassScreener(ScreenerStrategy):
-    name = "pass-all"
-    description = ""
-    params = {}
-
-    def screen(self, ctx, symbols):
-        return symbols
+@pytest.fixture
+def daily_dates() -> list[str]:
+    # 跨 3 个自然月,确保 monthly 周期切换至少触发 3 次
+    return [d.strftime("%Y-%m-%d") for d in pd.bdate_range("2024-01-02", "2024-03-29")]
 
 
-class TopOneScreener(ScreenerStrategy):
-    name = "top-one"
-    description = ""
-    params = {}
-
-    def screen(self, ctx, symbols):
-        return symbols[:1]
-
-
-class BuyAndHoldTrader(TraderStrategy):
-    name = "buy-hold"
-    description = ""
-    params = {}
-    settings = {"initial_capital": 100_000, "commission_rate": 0.0003, "slippage": 0.0}
-
-    def on_bar(self, ctx):
-        for sym in ctx.selected_symbols:
-            if not ctx.get_position(sym):
-                ctx.order_target_percent(sym, 0.9)
+@pytest.fixture
+def stock_data(daily_dates) -> dict[str, pd.DataFrame]:
+    return {
+        "000001": _make_daily(daily_dates, base=10.0),
+        "600000": _make_daily(daily_dates, base=20.0),
+    }
 
 
-class OddMonthScreener(ScreenerStrategy):
-    name = "odd-month"
-    description = ""
-    params = {}
-    frequency = "monthly"
-
-    def screen(self, ctx, symbols):
-        month = int(ctx.current_date[5:7])
-        if month % 2 == 1:
-            return symbols
-        return []
+# ============= 默认 Strategy =============
 
 
-class EvenMonthScreener(ScreenerStrategy):
-    name = "even-month"
-    description = ""
-    params = {}
-    frequency = "monthly"
+def test_engine_runs_one_bar_with_default_strategy(stock_data, daily_dates):
+    """默认 Strategy:screen 全通过、on_buy/on_sell no-op,资产 == 初始资本。"""
+    engine = BacktestEngine(
+        strategy=Strategy(),
+        stock_data=stock_data,
+        enable_decision_log=False,
+    )
+    result = engine.run()
+    initial = Strategy().settings["initial_capital"]
+    assert result["equity_curve"]
+    last_eq = result["equity_curve"][-1]["total_value"]
+    assert last_eq == pytest.approx(initial)
+    assert result["trades"] == []
+
+
+# ============= 频率切换 =============
+
+
+class _ScreenCounter(Strategy):
+    """记录 screen 触发的 bar idx。"""
+
+    frequency = "daily"
+
+    def __init__(self, *, frequency: str = "daily"):
+        super().__init__()
+        self.__class__.frequency = frequency
+        # 实例级别覆盖,避免污染其他用例
+        self.frequency = frequency
+        self.calls: list[str] = []
 
     def screen(self, ctx, symbols):
-        month = int(ctx.current_date[5:7])
-        if month % 2 == 0:
-            return symbols
-        return []
+        self.calls.append(ctx.current_date)
+        return list(symbols)
 
 
-class FirstHalfScreener(ScreenerStrategy):
-    name = "first-half"
-    description = ""
-    params = {}
+def test_engine_calls_screen_every_bar_daily(stock_data, daily_dates):
+    strat = _ScreenCounter(frequency="daily")
+    BacktestEngine(
+        strategy=strat, stock_data=stock_data, enable_decision_log=False
+    ).run()
+    assert len(strat.calls) == len(daily_dates)
+
+
+def test_engine_calls_screen_only_on_period_switch_monthly(stock_data, daily_dates):
+    strat = _ScreenCounter(frequency="monthly")
+    BacktestEngine(
+        strategy=strat, stock_data=stock_data, enable_decision_log=False
+    ).run()
+    # 跨月才触发,3 个自然月 → 3 次
+    months = sorted({d[:7] for d in daily_dates})
+    assert len(strat.calls) == len(months)
+    # 每个月只调一次,且都落在该月内首个 bar
+    called_months = [c[:7] for c in strat.calls]
+    assert called_months == months
+
+
+# ============= sell 先于 buy =============
+
+
+class _OrderRecorder(Strategy):
+    frequency = "daily"
+
+    def __init__(self):
+        super().__init__()
+        self.events: list[tuple[str, str, list[str]]] = []  # (kind, date, new_symbols)
+
+    def screen(self, ctx, symbols):
+        return list(symbols)
+
+    def on_sell(self, ctx):
+        self.events.append(("sell", ctx.current_date, list(ctx.new_symbols)))
+        # 模拟卖出:把第一个 target 移除,验证 buy 不会再看到它
+        if ctx.target_symbols:
+            sym = next(iter(sorted(ctx.target_symbols)))
+            ctx.remove_target(sym)
+
+    def on_buy(self, ctx):
+        self.events.append(("buy", ctx.current_date, list(ctx.new_symbols)))
+
+
+def test_engine_calls_on_sell_before_on_buy_each_bar(stock_data, daily_dates):
+    strat = _OrderRecorder()
+    BacktestEngine(
+        strategy=strat, stock_data=stock_data, enable_decision_log=False
+    ).run()
+    # 每根 bar 顺序应为 sell, buy, sell, buy, ...
+    kinds = [e[0] for e in strat.events]
+    assert kinds[::2] == ["sell"] * len(daily_dates)
+    assert kinds[1::2] == ["buy"] * len(daily_dates)
+
+
+def test_engine_on_sell_remove_excludes_from_on_buy_new_symbols(stock_data):
+    """on_sell 调 ctx.remove_target,on_buy 当 bar 不再看到该 symbol。"""
+
+    class _S(Strategy):
+        frequency = "daily"
+
+        def __init__(self):
+            super().__init__()
+            self.buy_seen: list[list[str]] = []
+
+        def on_sell(self, ctx):
+            # 第一根 bar:000001 与 600000 都新增,卖掉 000001
+            if "000001" in ctx.target_symbols:
+                ctx.remove_target("000001")
+
+        def on_buy(self, ctx):
+            self.buy_seen.append(sorted(ctx.target_symbols))
+
+    strat = _S()
+    BacktestEngine(
+        strategy=strat, stock_data=stock_data, enable_decision_log=False
+    ).run()
+    # 第一根 bar buyer 看到的 target 不含 000001(被 sell 移除)
+    assert "000001" not in strat.buy_seen[0]
+
+
+# ============= 累计池 =============
+
+
+def test_engine_target_symbols_accumulates_across_bars(stock_data, daily_dates):
+    """连续不同月命中不同股票,target_symbols 累加。"""
+
+    class _S(Strategy):
+        frequency = "monthly"
+
+        def __init__(self):
+            super().__init__()
+            self.snapshots: list[set[str]] = []
+
+        def screen(self, ctx, symbols):
+            # 第一个月仅 000001,后续月仅 600000;target_symbols 应累加为两者
+            month = ctx.current_date[:7]
+            if month == "2024-01":
+                return ["000001"]
+            return ["600000"]
+
+        def on_buy(self, ctx):
+            self.snapshots.append(set(ctx.target_symbols))
+
+    strat = _S()
+    BacktestEngine(
+        strategy=strat, stock_data=stock_data, enable_decision_log=False
+    ).run()
+    # 最后一根 bar 应当累加了两只
+    assert strat.snapshots[-1] == {"000001", "600000"}
+
+
+# ============= 返回结构 =============
+
+
+def test_engine_returns_metrics_equity_curve_trades(stock_data, daily_dates):
+    result = BacktestEngine(
+        strategy=Strategy(),
+        stock_data=stock_data,
+        enable_decision_log=False,
+    ).run()
+    assert set(result.keys()) >= {"metrics", "equity_curve", "trades", "log_dir"}
+    assert len(result["equity_curve"]) == len(daily_dates)
+    assert isinstance(result["metrics"], dict)
+    assert isinstance(result["trades"], list)
+
+
+# ============= 决策日志 =============
+
+
+class _LoggingStrategy(Strategy):
     frequency = "daily"
 
     def screen(self, ctx, symbols):
-        mid = max(1, len(symbols) // 2)
-        return symbols[:mid]
+        ctx.log_flow("screen.start", input=len(symbols))
+        for s in symbols:
+            ctx.log_pass(s, "screen", reason_ok=True)
+        return list(symbols)
 
 
-class SecondHalfScreener(ScreenerStrategy):
-    name = "second-half"
-    description = ""
-    params = {}
-    frequency = "daily"
-
-    def screen(self, ctx, symbols):
-        mid = max(1, len(symbols) // 2)
-        return symbols[mid:]
-
-
-class TestBacktestEngine:
-    def _make_data(self):
-        return {
-            "AAA.SH": _make_stock_df(100, seed=42, base_price=50.0),
-            "BBB.SZ": _make_stock_df(100, seed=43, base_price=100.0),
-        }
-
-    def test_screener_only_returns_symbols(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            trader=None,
-        )
-        result = engine.run()
-        assert "screened_symbols" in result
-        assert len(result["screened_symbols"]) > 0
-
-    def test_screener_chain(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener(), TopOneScreener()],
-            trader=None,
-        )
-        result = engine.run()
-        assert len(result["screened_symbols"]) == 2
-
-    def test_screener_backtest_returns_match_dates(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            trader=None,
-        )
-        result = engine.run()
-        assert "screened_symbols" in result
-        assert len(result["screened_symbols"]) > 0
-        item = result["screened_symbols"][0]
-        assert "symbol" in item
-        assert "match_dates" in item
-        assert len(item["match_dates"]) > 0
-
-    def test_screener_only_mode(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            trader=None,
-        )
-        result = engine.run(mode="screen")
-        assert "screened_symbols" in result
-        assert isinstance(result["screened_symbols"][0], str)
-
-    def test_full_backtest_returns_metrics(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            trader=BuyAndHoldTrader(),
-        )
-        result = engine.run()
-        assert "metrics" in result
-        assert "total_return" in result["metrics"]
-        assert "equity_curve" in result
-        assert "trades" in result
-
-    def test_equity_curve_has_entries(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            trader=BuyAndHoldTrader(),
-        )
-        result = engine.run()
-        assert len(result["equity_curve"]) > 0
-        assert "date" in result["equity_curve"][0]
-        assert "total_value" in result["equity_curve"][0]
-
-    def test_trades_have_correct_fields(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            trader=BuyAndHoldTrader(),
-        )
-        result = engine.run()
-        if result["trades"]:
-            t = result["trades"][0]
-            assert "date" in t
-            assert "symbol" in t
-            assert "direction" in t
-            assert "price" in t
-            assert "shares" in t
-
-    def test_empty_screener_result(self):
-        class EmptyScreener(ScreenerStrategy):
-            name = "empty"
-            description = ""
-            params = {}
-            def screen(self, ctx, symbols):
-                return []
-
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[EmptyScreener()],
-            trader=BuyAndHoldTrader(),
-        )
-        result = engine.run()
-        assert result["trades"] == []
-
-    def test_mixed_freq_daily_then_monthly_match_dates_are_daily(self):
-        class DailyScreener(ScreenerStrategy):
-            name = "daily-pass"
-            description = ""
-            params = {}
-            frequency = "daily"
-            def screen(self, ctx, symbols):
-                return symbols
-
-        class MonthlyScreener(ScreenerStrategy):
-            name = "monthly-pass"
-            description = ""
-            params = {}
-            frequency = "monthly"
-            def screen(self, ctx, symbols):
-                return symbols
-
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[DailyScreener(), MonthlyScreener()],
-            trader=None,
-        )
-        result = engine.run()
-        assert "screened_symbols" in result
-        items = result["screened_symbols"]
-        assert len(items) > 0
-        for item in items:
-            for d in item["match_dates"]:
-                assert detect_frequency(d) == "daily"
-
-    def test_mixed_freq_monthly_then_daily_match_dates_are_daily(self):
-        class DailyScreener(ScreenerStrategy):
-            name = "daily-pass"
-            description = ""
-            params = {}
-            frequency = "daily"
-            def screen(self, ctx, symbols):
-                return symbols
-
-        class MonthlyScreener(ScreenerStrategy):
-            name = "monthly-pass"
-            description = ""
-            params = {}
-            frequency = "monthly"
-            def screen(self, ctx, symbols):
-                return symbols
-
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[MonthlyScreener(), DailyScreener()],
-            trader=None,
-        )
-        result = engine.run()
-        assert "screened_symbols" in result
-        items = result["screened_symbols"]
-        assert len(items) > 0
-        all_dates = set(data[list(data.keys())[0]]["date"].tolist())
-        for item in items:
-            assert len(item["match_dates"]) > 0
-            for d in item["match_dates"]:
-                assert detect_frequency(d) == "daily"
-                assert d in all_dates, f"{d} is not a daily trading date"
+def test_engine_writes_decision_log_when_log_dir_given(tmp_path, stock_data):
+    log_dir = tmp_path / "run1"
+    result = BacktestEngine(
+        strategy=_LoggingStrategy(),
+        stock_data=stock_data,
+        log_dir=log_dir,
+        enable_decision_log=True,
+    ).run()
+    decisions = log_dir / "decisions.jsonl"
+    flow = log_dir / "flow.jsonl"
+    assert decisions.exists()
+    assert flow.exists()
+    # 每行可解析为 JSON
+    lines = [json.loads(line) for line in decisions.read_text().splitlines() if line]
+    assert any(rec.get("decision") == "pass" for rec in lines)
+    assert result["log_dir"] == str(log_dir)
 
 
-class TestJoinModesScreenerBacktest:
-    def _make_data(self):
-        return {
-            "AAA.SH": _make_stock_df(100, seed=42, base_price=50.0),
-            "BBB.SZ": _make_stock_df(100, seed=43, base_price=100.0),
-        }
-
-    def test_independent_union(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[OddMonthScreener(), EvenMonthScreener()],
-            join_modes=["independent"],
-        )
-        result = engine.run()
-        items = result["screened_symbols"]
-        assert len(items) == 2
-        all_months = set()
-        for item in items:
-            for d in item["match_dates"]:
-                all_months.add(d)
-        assert len(all_months) > 1
-
-    def test_correlated_no_overlap(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[OddMonthScreener(), EvenMonthScreener()],
-            join_modes=["correlated"],
-        )
-        result = engine.run()
-        items = result["screened_symbols"]
-        assert len(items) == 0
-
-    def test_default_is_independent(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[OddMonthScreener(), EvenMonthScreener()],
-        )
-        result = engine.run()
-        items = result["screened_symbols"]
-        assert len(items) == 2
-
-    def test_frequency_format(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[OddMonthScreener()],
-        )
-        result = engine.run()
-        items = result["screened_symbols"]
-        assert len(items) > 0
-        for item in items:
-            for d in item["match_dates"]:
-                assert detect_frequency(d) == "monthly"
-
-    def test_mixed_freq_finest_output(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener(), OddMonthScreener()],
-            join_modes=["independent"],
-        )
-        result = engine.run()
-        items = result["screened_symbols"]
-        assert len(items) > 0
-        for item in items:
-            for d in item["match_dates"]:
-                assert detect_frequency(d) == "daily"
+def test_engine_disabled_log_does_not_write(tmp_path, stock_data):
+    log_dir = tmp_path / "run2"
+    result = BacktestEngine(
+        strategy=_LoggingStrategy(),
+        stock_data=stock_data,
+        log_dir=log_dir,
+        enable_decision_log=False,
+    ).run()
+    assert not (log_dir / "decisions.jsonl").exists()
+    assert result["log_dir"] is None
 
 
-class TestJoinModesScreenerOnly:
-    def _make_data(self):
-        return {
-            "AAA.SH": _make_stock_df(100, seed=42, base_price=50.0),
-            "BBB.SZ": _make_stock_df(100, seed=43, base_price=100.0),
-        }
-
-    def test_independent_union(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[FirstHalfScreener(), SecondHalfScreener()],
-            join_modes=["independent"],
-        )
-        result = engine.run(mode="screen")
-        assert len(result["screened_symbols"]) == 2
-
-    def test_correlated_intersection(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[FirstHalfScreener(), SecondHalfScreener()],
-            join_modes=["correlated"],
-        )
-        result = engine.run(mode="screen")
-        assert len(result["screened_symbols"]) == 0
-
-    def test_correlated_overlap(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener(), TopOneScreener()],
-            join_modes=["correlated"],
-        )
-        result = engine.run(mode="screen")
-        assert len(result["screened_symbols"]) == 1
-
-    def test_default_is_independent(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[FirstHalfScreener(), SecondHalfScreener()],
-        )
-        result = engine.run(mode="screen")
-        assert len(result["screened_symbols"]) == 2
+# ============= 实际下单 + T+1 撮合 =============
 
 
-class TestJoinModesFullBacktest:
-    def _make_data(self):
-        return {
-            "AAA.SH": _make_stock_df(100, seed=42, base_price=50.0),
-            "BBB.SZ": _make_stock_df(100, seed=43, base_price=100.0),
-        }
+def test_engine_order_shares_fills_next_bar(stock_data, daily_dates):
+    """on_buy 中 ctx.order_shares 应在下一根 bar 通过 fill_orders 成交(T+1)。
 
-    def test_independent_has_trades(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[FirstHalfScreener(), SecondHalfScreener()],
-            trader=BuyAndHoldTrader(),
-            join_modes=["independent"],
-        )
-        result = engine.run()
-        assert len(result["trades"]) > 0
+    回归 T3.1 遗留 bug:Context.order_shares 之前误传 date 给 broker.submit_order,
+    且未传 direction → 调用直接抛 TypeError。
+    """
 
-    def test_correlated_no_overlap_no_trades(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[FirstHalfScreener(), SecondHalfScreener()],
-            trader=BuyAndHoldTrader(),
-            join_modes=["correlated"],
-        )
-        result = engine.run()
-        assert len(result["trades"]) == 0
+    class _BuyOnce(Strategy):
+        frequency = "daily"
 
-    def test_default_is_independent(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[FirstHalfScreener(), SecondHalfScreener()],
-            trader=BuyAndHoldTrader(),
-        )
-        result = engine.run()
-        assert len(result["trades"]) > 0
+        def __init__(self):
+            super().__init__()
+            self.bought = False
+
+        def screen(self, ctx, symbols):
+            return list(symbols)
+
+        def on_buy(self, ctx):
+            if not self.bought and "000001" in ctx.target_symbols:
+                ctx.order_shares("000001", 100)
+                self.bought = True
+
+    strat = _BuyOnce()
+    result = BacktestEngine(
+        strategy=strat, stock_data=stock_data, enable_decision_log=False
+    ).run()
+    trades = result["trades"]
+    assert len(trades) == 1
+    trade = trades[0]
+    assert trade["symbol"] == "000001"
+    assert trade["direction"] == "buy"
+    assert trade["shares"] == 100
+    # T+1:bar 0 提交,bar 1 成交,所以成交日 == daily_dates[1]
+    assert trade["date"] == daily_dates[1]
 
 
-class TestSourceMatches:
-    def _make_data(self):
-        return {
-            "A": _make_stock_df(100, seed=1),
-            "B": _make_stock_df(100, seed=2),
-        }
+# ============= 进度回调 =============
 
-    def test_source_matches_filters_screener_backtest(self):
-        data = self._make_data()
-        source_matches = {
-            "A": ["2024-01-01"],
-        }
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            source_matches=source_matches,
-        )
-        result = engine.run()
-        syms = [item["symbol"] for item in result["screened_symbols"]]
-        assert "A" in syms
-        assert "B" not in syms
-        a_item = next(i for i in result["screened_symbols"] if i["symbol"] == "A")
-        assert len(a_item["match_dates"]) > 0
 
-    def test_source_matches_filters_screen_mode(self):
-        data = self._make_data()
-        source_matches = {
-            "A": ["2024-01-01"],
-        }
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            source_matches=source_matches,
-        )
-        result = engine.run(mode="screen")
-        assert "A" in result["screened_symbols"]
-        assert "B" not in result["screened_symbols"]
+def test_on_progress_called_per_bar(stock_data, daily_dates):
+    progress: list[tuple[int, int]] = []
 
-    def test_source_matches_no_overlap(self):
-        data = self._make_data()
-        source_matches = {
-            "X": ["2024-01-01"],
-        }
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            source_matches=source_matches,
-        )
-        result = engine.run()
-        assert result["screened_symbols"] == []
-
-    def test_source_matches_none_no_filter(self):
-        data = self._make_data()
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            source_matches=None,
-        )
-        result = engine.run()
-        syms = [item["symbol"] for item in result["screened_symbols"]]
-        assert "A" in syms
-        assert "B" in syms
-
-    def test_source_matches_cross_frequency(self):
-        data = self._make_data()
-        source_matches = {
-            "A": ["2024-01"],
-        }
-        engine = BacktestEngine(
-            stock_data=data,
-            screeners=[AlwaysPassScreener()],
-            source_matches=source_matches,
-        )
-        result = engine.run()
-        syms = [item["symbol"] for item in result["screened_symbols"]]
-        assert "A" in syms
-        a_item = next(i for i in result["screened_symbols"] if i["symbol"] == "A")
-        for d in a_item["match_dates"]:
-            assert d.startswith("2024-01")
+    BacktestEngine(
+        strategy=Strategy(),
+        stock_data=stock_data,
+        on_progress=lambda done, total: progress.append((done, total)),
+        enable_decision_log=False,
+    ).run()
+    n = len(daily_dates)
+    assert len(progress) == n
+    assert progress[0] == (1, n)
+    assert progress[-1] == (n, n)

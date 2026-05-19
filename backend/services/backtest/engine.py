@@ -1,407 +1,157 @@
-import logging
+"""单一回测引擎(Phase 3.3 新增,Phase 6 替换旧 engine.py + buy_sell_engine.py)。
+
+设计目标(plan §3.3 / spec line 347-416):
+- 单一执行路径,统一驱动 ``Strategy``(screen + on_buy + on_sell 三钩子)
+- 频率感知:``screen()`` 仅在 strategy.frequency 周期切换时跑,缓存上一次结果
+- 累计目标池(target_symbols):跨 bar 单调累积,sell 通过 ctx.remove_target 移除
+- 执行顺序:fill_orders(T+1)→ screen(周期切换时)→ on_sell → on_buy → snapshot
+- 决策日志:DecisionLogSink 由本类构造,Engine 不直写,日志由 Strategy 通过 ctx 调用
+"""
+
+from __future__ import annotations
+
+import inspect
+from pathlib import Path
 from typing import Callable
 
 import pandas as pd
-from services.backtest.base import ScreenerStrategy, TraderStrategy
-from services.backtest.broker import Broker
-from services.backtest.context import ScreenerContext, TraderContext, MarketData
+
 from services.backtest.analyzer import compute_metrics
-from services.backtest.engine_base import BaseEngine, parse_screen_result
-from services.backtest.date_utils import (
-    format_match_date,
-    date_belongs_to,
-    detect_frequency,
-    FREQ_ORDER,
-)
-from services.stock_data import aggregate_kline
-
-logger = logging.getLogger(__name__)
+from services.backtest.broker import Broker
+from services.backtest.context import Context
+from services.backtest.date_utils import format_match_date
+from services.backtest.decision_log import DecisionLogSink
+from services.backtest.market_data import MarketData
+from strategies.base import Strategy
 
 
-class BacktestEngine(BaseEngine):
+class BacktestEngine:
+    """单路径回测引擎。"""
+
     def __init__(
         self,
+        strategy: Strategy,
         stock_data: dict[str, pd.DataFrame],
-        screeners: list[ScreenerStrategy],
-        trader: TraderStrategy | None = None,
-        on_progress: Callable[[int, int, str], None] | None = None,
-        join_modes: list[str] | None = None,
-        valuation_data: dict[str, pd.DataFrame] | None = None,
-        dividend_data: dict[str, pd.DataFrame] | None = None,
-        financial_data: dict[str, pd.DataFrame] | None = None,
-        source_matches: dict[str, list[str]] | None = None,
+        valuation_data: dict | None = None,
+        dividend_data: dict | None = None,
+        financial_data: dict | None = None,
+        on_progress: Callable[[int, int], None] | None = None,
+        log_dir: Path | None = None,
+        enable_decision_log: bool = True,
     ):
-        super().__init__(
-            stock_data=stock_data,
-            screeners=screeners,
-            on_progress=on_progress,
-            join_modes=join_modes,
-            valuation_data=valuation_data,
-            dividend_data=dividend_data,
-            financial_data=financial_data,
-        )
-        self._trader = trader
-        self._source_matches = source_matches
-        logger.info(
-            "Engine init: %d symbols, %d screeners, trader=%s, source_matches=%s",
-            len(self._stock_data),
-            len(self._screeners),
-            trader.__class__.__name__ if trader else "None",
-            f"{len(source_matches)} symbols" if source_matches else "None",
-        )
-
-    def _pipeline_finest_freq(self) -> str:
-        best = "monthly"
-        for s in self._screeners:
-            f = getattr(s, "frequency", "daily")
-            if FREQ_ORDER.get(f, 0) < FREQ_ORDER.get(best, 0):
-                best = f
-        return best
-
-    def _finest_freq_in_result(self, result: dict[str, list[str]]) -> str:
-        best = "yearly"
-        for dates in result.values():
-            for d in dates:
-                f = detect_frequency(d)
-                if FREQ_ORDER.get(f, 0) < FREQ_ORDER.get(best, 99):
-                    best = f
-        return best
-
-    def _count_matches(self, result: dict[str, list[str]]) -> int:
-        return sum(len(v) for v in result.values())
-
-    def _union_results(
-        self, a: dict[str, list[str]], b: dict[str, list[str]]
-    ) -> dict[str, list[str]]:
-        merged = {}
-        for sym in set(a) | set(b):
-            dates_a = a.get(sym, [])
-            dates_b = b.get(sym, [])
-            combined = list(dates_a)
-            for d in dates_b:
-                if d not in combined:
-                    combined.append(d)
-            merged[sym] = combined
-        return merged
-
-    def _intersect_results(
-        self,
-        prev: dict[str, list[str]],
-        curr: dict[str, list[str]],
-        coarse_freq: str,
-        pair_idx: int,
-    ) -> dict[str, list[str]]:
-        merged = {}
-        common_syms = set(prev) & set(curr)
-        for sym in common_syms:
-            kept = []
-            kept_set = set()
-            for d_prev in prev[sym]:
-                matched = any(
-                    date_belongs_to(d_prev, d_curr) or date_belongs_to(d_curr, d_prev)
-                    for d_curr in curr[sym]
-                )
-                if matched:
-                    logger.debug('[Pair %d] %s: "%s" matched', pair_idx, sym, d_prev)
-                    kept.append(d_prev)
-                    kept_set.add(d_prev)
-                else:
-                    logger.debug('[Pair %d] %s: "%s" discarded', pair_idx, sym, d_prev)
-            for d_curr in curr[sym]:
-                if d_curr in kept_set:
-                    continue
-                matched = any(
-                    date_belongs_to(d_curr, d_prev) or date_belongs_to(d_prev, d_curr)
-                    for d_prev in prev[sym]
-                )
-                if matched:
-                    logger.debug(
-                        '[Pair %d] %s: "%s" matched (from curr)',
-                        pair_idx,
-                        sym,
-                        d_curr,
-                    )
-                    kept.append(d_curr)
-                    kept_set.add(d_curr)
-                else:
-                    logger.debug(
-                        '[Pair %d] %s: "%s" discarded (from curr)',
-                        pair_idx,
-                        sym,
-                        d_curr,
-                    )
-            if kept:
-                merged[sym] = kept
-        return merged
-
-    def _filter_to_finest(
-        self, merged: dict[str, list[str]], finest: str
-    ) -> dict[str, list[str]]:
-        finest_order = FREQ_ORDER[finest]
-        filtered = {}
-        for sym, dates in merged.items():
-            kept = []
-            for d in dates:
-                f = detect_frequency(d)
-                if FREQ_ORDER.get(f, 0) <= finest_order:
-                    logger.debug('[Output] %s: "%s" (%s) kept', sym, d, f)
-                    kept.append(d)
-                else:
-                    logger.debug('[Output] %s: "%s" (%s) discarded', sym, d, f)
-            if kept:
-                filtered[sym] = kept
-        return filtered
-
-    def _apply_source_matches(self, result: dict) -> dict:
-        if self._source_matches is None:
-            return result
-        screened = result.get("screened_symbols")
-        if screened is None:
-            return result
-
-        if isinstance(screened, list) and screened and isinstance(screened[0], str):
-            filtered = [s for s in screened if s in self._source_matches]
-            result["screened_symbols"] = filtered
-            return result
-
-        new_result = result.get("screened_symbols", [])
-        merged = {}
-        for item in new_result:
-            sym = item["symbol"]
-            if sym not in self._source_matches:
-                continue
-            src_dates = self._source_matches[sym]
-            new_dates = item.get("match_dates", [])
-            kept = []
-            for nd in new_dates:
-                for sd in src_dates:
-                    if date_belongs_to(nd, sd) or date_belongs_to(sd, nd):
-                        kept.append(nd)
-                        break
-            if kept:
-                merged[sym] = kept
-
-        filtered = []
-        for sym, dates in merged.items():
-            filtered.append({"symbol": sym, "match_dates": dates})
-        filtered.sort(key=lambda x: x["match_dates"][-1], reverse=True)
-        result["screened_symbols"] = filtered
-        return result
-
-    def run(self, mode: str = "auto") -> dict:
-        if mode == "screen":
-            logger.info("执行路径: screen(仅最新bar选股)")
-            result = self._run_screener_only()
-            return self._apply_source_matches(result)
-        if self._trader is None:
-            logger.info("执行路径: screener_backtest(选股回测)")
-            result = self._run_screener_backtest()
-            return self._apply_source_matches(result)
-        logger.info("执行路径: backtest(完整回测)")
-        return self._run_backtest()
-
-    def _run_screener_only(self) -> dict:
-        logger.info(
-            "_run_screener_only: 开始, %d个策略, %d只股票",
-            len(self._screeners),
-            len(self._all_symbols),
-        )
-        ref_sym = self._all_symbols[0]
-        ref_df = self._stock_data[ref_sym]
-        last_idx = len(ref_df) - 1
-
-        screener_sets: list[set[str]] = []
-        total = len(self._screeners)
-        for i, screener in enumerate(self._screeners):
-            self._report(i + 1, total, f"选股中 ({screener.__class__.__name__})")
-            ctx = self._make_screener_ctx(screener, last_idx)
-            raw_result = screener.screen(ctx, list(self._all_symbols))
-            symbols, _ = parse_screen_result(raw_result)
-            screener_sets.append(set(symbols))
-
-        merged = screener_sets[0] if screener_sets else set()
-        for i, mode in enumerate(self._join_modes):
-            next_set = screener_sets[i + 1]
-            if mode == "correlated":
-                merged = merged & next_set
-            else:
-                merged = merged | next_set
-
-        logger.info("_run_screener_only: 完成, 选出%d只", len(merged))
-        return {"screened_symbols": sorted(merged)}
-
-    def _period_date(self, current_date: str, freq: str) -> str | None:
-        if freq == "daily":
-            return current_date
-        source = self._weekly_data if freq == "weekly" else self._monthly_data
-        ref_sym = self._all_symbols[0]
-        df = source.get(ref_sym)
-        if df is None or df.empty:
-            return None
-        mask = df["date"] <= current_date
-        if not mask.any():
-            return None
-        idx = mask.values.nonzero()[0][-1]
-        return df.iloc[idx]["date"]
-
-    def _run_screener_backtest(self) -> dict:
-        if not self._all_symbols:
-            logger.warning("_run_screener_backtest: 无股票数据，返回空结果")
-            return {"screened_symbols": []}
-        ref_sym = self._all_symbols[0]
-        ref_df = self._stock_data[ref_sym]
-        n_bars = len(ref_df)
-        logger.info(
-            "_run_screener_backtest: 开始, %d bars, %d只股票",
-            n_bars,
-            len(self._all_symbols),
-        )
-
-        raw_results: dict[int, dict[str, list[str]]] = {
-            si: {} for si in range(len(self._screeners))
+        self._strategy = strategy
+        # 通过 inspect.signature 自动取 Broker.__init__ 接受的关键字参数,
+        # 这样未来 Broker 新增 kwarg(如 price_func)无需改本类
+        broker_params = inspect.signature(Broker.__init__).parameters
+        broker_kwargs = {
+            k: v
+            for k, v in strategy.settings.items()
+            if k in broker_params and k != "self"
         }
-        screener_cache: dict[int, list[str]] = {}
-        prev_period_keys: dict[int, str] = {}
+        self._broker = Broker(**broker_kwargs)
+        self._initial_capital = broker_kwargs.get("initial_capital", 1_000_000)
 
-        for idx in range(n_bars):
-            if idx % 10 == 0 or idx == n_bars - 1:
-                self._report(idx + 1, n_bars, "选股回测中")
-            current_date = ref_df.iloc[idx]["date"]
-
-            for si, screener in enumerate(self._screeners):
-                freq = getattr(screener, "frequency", "daily")
-                pk = self._period_key(current_date, freq)
-                need_run = (si not in prev_period_keys) or (pk != prev_period_keys[si])
-
-                if need_run:
-                    ctx = self._make_screener_ctx(screener, idx)
-                    raw_result = screener.screen(ctx, list(self._all_symbols))
-                    symbols, custom_dates = parse_screen_result(raw_result)
-                    screener_cache[si] = list(symbols)
-                    prev_period_keys[si] = pk
-
-                    record_date = self._period_date(current_date, freq)
-                    if record_date is None:
-                        continue
-                    formatted = format_match_date(record_date, freq)
-                    for sym in symbols:
-                        custom = custom_dates.get(sym)
-                        if custom:
-                            date_to_record = format_match_date(custom, freq)
-                        else:
-                            date_to_record = formatted
-                        history = raw_results[si].setdefault(sym, [])
-                        if date_to_record not in history:
-                            history.append(date_to_record)
-
-        merged = raw_results[0] if raw_results else {}
-        for i, jm in enumerate(self._join_modes):
-            next_result = raw_results[i + 1]
-            freq_prev = (
-                getattr(self._screeners[i], "frequency", "daily")
-                if i < len(self._screeners)
-                else "daily"
-            )
-            freq_next = getattr(self._screeners[i + 1], "frequency", "daily")
-            coarse = (
-                freq_prev
-                if FREQ_ORDER.get(freq_prev, 0) > FREQ_ORDER.get(freq_next, 0)
-                else freq_next
-            )
-            if jm == "correlated":
-                merged = self._intersect_results(merged, next_result, coarse, i)
-            else:
-                merged = self._union_results(merged, next_result)
-
-        finest = self._pipeline_finest_freq()
-        merged = self._filter_to_finest(merged, finest)
-
-        result = []
-        for sym, dates in merged.items():
-            result.append({"symbol": sym, "match_dates": dates})
-        result.sort(key=lambda x: x["match_dates"][-1], reverse=True)
-        logger.info(
-            "_run_screener_backtest: 完成, 选出%d只, 共%d条匹配",
-            len(result),
-            sum(len(r["match_dates"]) for r in result),
+        self._market_data = MarketData(
+            stock_data=stock_data,
+            frequency=strategy.frequency,
+            valuation=valuation_data,
+            dividend=dividend_data,
+            financial=financial_data,
         )
-        return {"screened_symbols": result}
+        self._log_sink = DecisionLogSink(log_dir, enabled=enable_decision_log)
+        self._on_progress = on_progress
+        self._all_symbols = list(stock_data.keys())
 
-    def _run_backtest(self) -> dict:
-        settings = self._trader.settings
-        logger.info(
-            "_run_backtest: 开始, initial_capital=%.0f, commission=%.4f, slippage=%.4f",
-            settings["initial_capital"],
-            settings["commission_rate"],
-            settings["slippage"],
-        )
-        if not self._all_symbols:
-            logger.warning("_run_backtest: 无股票数据，返回空结果")
-            return {"metrics": {}, "equity_curve": [], "trades": []}
-        broker = Broker(
-            initial_capital=settings["initial_capital"],
-            commission_rate=settings["commission_rate"],
-            slippage=settings["slippage"],
-        )
+    # ---------- 内部:基于 MarketData 派生 bar 视图 ----------
 
-        ref_sym = self._all_symbols[0]
-        ref_df = self._stock_data[ref_sym]
-        n_bars = len(ref_df)
-        logger.info("_run_backtest: %d bars, %d只股票", n_bars, len(self._all_symbols))
+    def _build_bar(self, idx: int) -> tuple[dict[str, dict], dict[str, float]]:
+        """返回当前 bar 在所有 symbol 上的 OHLC bar 与 close 价格表。"""
+        bars: dict[str, dict] = {}
+        prices: dict[str, float] = {}
+        for sym in self._all_symbols:
+            row = self._market_data.get_price(sym, period="daily", idx=idx)
+            if row is None:
+                continue
+            # 仅当该 symbol 在 idx 这天有数据时才纳入(get_price 会返回最近可用,
+            # 用 date 字段对齐确认)
+            if row.get("date") != self._market_data.dates[idx]:
+                continue
+            bars[sym] = {
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+            }
+            prices[sym] = row["close"]
+        return bars, prices
 
-        equity_curve = []
-        days_since_rebalance = 0
+    # ---------- 主循环 ----------
+
+    def run(self) -> dict:
+        dates = self._market_data.dates
+        n_bars = len(dates)
+
+        target_symbols: set[str] = set()
+        screener_cache: list[str] = []
+        prev_period_key: str | None = None
         prev_closes: dict[str, float] = {}
-        screener_cache: dict[int, list[str]] = {}
-        prev_period_keys: dict[int, str] = {}
+        equity_curve: list[dict] = []
 
         for idx in range(n_bars):
-            if idx % 10 == 0 or idx == n_bars - 1:
-                self._report(idx + 1, n_bars, "回测中")
+            current_date = dates[idx]
+            current_bars, current_prices = self._build_bar(idx)
 
-            current_bars, current_prices = self._build_bar_data(idx)
+            # 1) T+1 撮合:用今日 bar 填昨日挂单,prev_closes 仅用于涨跌停判定
+            if idx > 0 and self._broker.pending_orders:
+                self._broker.fill_orders(current_date, current_bars, prev_closes)
 
-            if idx > 0:
-                broker.fill_orders(ref_df.iloc[idx]["date"], current_bars, prev_closes)
-
-            current_date = ref_df.iloc[idx]["date"]
-            available_symbols = [s for s in self._all_symbols if s in current_bars]
-
-            merged_set = self._run_screeners_at(
-                idx, current_date, available_symbols, screener_cache, prev_period_keys
-            )
-            symbols = [s for s in available_symbols if s in merged_set]
-
-            trader_ctx = TraderContext(
-                stock_data=self._stock_data,
-                current_idx=idx,
-                portfolio=broker.portfolio,
-                broker_submit=broker.submit_order,
-                selected_symbols=symbols,
-                days_since_rebalance=days_since_rebalance,
+            ctx = Context(
+                strategy=self._strategy,
+                idx=idx,
+                broker=self._broker,
                 market_data=self._market_data,
+                log_sink=self._log_sink,
             )
 
-            try:
-                self._trader.on_bar(trader_ctx)
-            except Exception as e:
-                logger.warning(
-                    "Trader on_bar exception at %s: %s", ref_df.iloc[idx]["date"], e
+            # 2) screen 仅在 frequency 周期切换时跑,跨周期沿用 cache
+            pk = format_match_date(current_date, self._strategy.frequency)
+            if pk != prev_period_key:
+                screener_cache = list(
+                    self._strategy.screen(ctx, list(self._all_symbols))
                 )
+                prev_period_key = pk
 
-            days_since_rebalance = trader_ctx.days_since_rebalance + 1
+            # 3) 累计目标池:仅当今日有 bar 的 symbol 才能成为新目标
+            today_signals = [s for s in screener_cache if s in current_bars]
+            new_symbols = [s for s in today_signals if s not in target_symbols]
+            target_symbols.update(new_symbols)
+            ctx.set_pool(
+                target_symbols,
+                new_symbols,
+                remove_callback=target_symbols.discard,
+            )
 
-            snap = broker.portfolio.snapshot(ref_df.iloc[idx]["date"], current_prices)
-            equity_curve.append(snap)
+            # 4) sell 先于 buy,Broker 自身禁止透支
+            self._strategy.on_sell(ctx)
+            self._strategy.on_buy(ctx)
 
+            # 5) 快照 + prev_closes 滚动
+            equity_curve.append(
+                self._broker.portfolio.snapshot(current_date, current_prices)
+            )
             prev_closes = dict(current_prices)
 
-        metrics = compute_metrics(
-            equity_curve, broker.all_trades, settings["initial_capital"]
-        )
+            if self._on_progress:
+                self._on_progress(idx + 1, n_bars)
+
+        # 落盘日志缓冲
+        self._log_sink.flush()
 
         return {
-            "metrics": metrics,
+            "metrics": compute_metrics(
+                equity_curve, self._broker.all_trades, self._initial_capital
+            ),
             "equity_curve": equity_curve,
-            "trades": broker.all_trades,
+            "trades": self._broker.all_trades,
+            "log_dir": str(self._log_sink.log_dir) if self._log_sink.enabled else None,
         }

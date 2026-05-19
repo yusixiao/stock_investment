@@ -4,9 +4,10 @@ import sqlite3
 
 
 def init_backtest_tables(conn: sqlite3.Connection):
-    """创建回测相关表: backtest_tasks, strategy_groups, group_runs, stock_exclusions。
+    """创建回测相关表: backtest_tasks, stock_exclusions。
 
-    建表后调用 run_merge_strategies_migration() 做幂等列添加 + 数据迁移。
+    建表后调用 run_merge_strategies_migration() 做幂等列添加 + 数据迁移
+    + DROP 已废弃的 strategy_groups / group_runs(Phase 6.3)。
     """
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS backtest_tasks (
@@ -24,33 +25,6 @@ def init_backtest_tables(conn: sqlite3.Connection):
             deleted INTEGER NOT NULL DEFAULT 0,
             is_deleted INTEGER NOT NULL DEFAULT 0,
             log_dir TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS strategy_groups (
-            group_id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            pipeline TEXT NOT NULL,
-            join_modes TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            archived INTEGER NOT NULL DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS group_runs (
-            run_id TEXT PRIMARY KEY,
-            group_id TEXT NOT NULL,
-            start_date TEXT,
-            end_date TEXT,
-            execution_mode TEXT NOT NULL,
-            status TEXT NOT NULL,
-            current_step INTEGER DEFAULT 0,
-            steps_result TEXT,
-            final_result TEXT,
-            summary TEXT,
-            error TEXT,
-            created_at TEXT NOT NULL,
-            initial_capital REAL NOT NULL DEFAULT 1000000,
-            FOREIGN KEY (group_id) REFERENCES strategy_groups(group_id)
         );
 
         CREATE TABLE IF NOT EXISTS stock_exclusions (
@@ -105,4 +79,9 @@ def run_merge_strategies_migration(conn: sqlite3.Connection):
           AND json_extract(pipeline_info, '$.pipeline') IS NOT NULL
         """
     )
+
+    # 4. DROP 已废弃的策略组表 (Phase 6.3, T6.3)
+    # IF EXISTS 保证幂等 — 旧库有表则 DROP, 新库无表则跳过
+    conn.execute("DROP TABLE IF EXISTS group_runs")
+    conn.execute("DROP TABLE IF EXISTS strategy_groups")
     conn.commit()

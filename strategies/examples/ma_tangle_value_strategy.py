@@ -8,7 +8,7 @@
 - MarketCapWeightedBuyer    → utils.composite.MarketCapWeightedBatchBuyer
 """
 
-from services.backtest.base import Strategy
+from strategies.base import Strategy
 from strategies.utils import dividend, valuation, financial, kline
 from strategies.utils.composite.market_cap_weighted_batch_buyer import (
     MarketCapWeightedBatchBuyer,

@@ -3,7 +3,7 @@
 本测试仅覆盖新增 Strategy 类。"""
 
 import pytest
-from services.backtest.base import Strategy
+from strategies.base import Strategy
 
 
 def test_default_screen_returns_input_symbols():
@@ -47,18 +47,3 @@ def test_subclass_can_override_screen():
 
     s = MyStrat()
     assert s.screen(None, ["000001", "600519"]) == ["000001"]
-
-
-def test_legacy_classes_still_importable():
-    """Phase 1 是 additive,旧基类必须仍可导入。"""
-    from services.backtest.base import (
-        ScreenerStrategy,
-        TraderStrategy,
-        BuyStrategy,
-        SellStrategy,
-    )
-
-    assert ScreenerStrategy is not None
-    assert TraderStrategy is not None
-    assert BuyStrategy is not None
-    assert SellStrategy is not None

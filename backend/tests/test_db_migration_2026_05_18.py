@@ -152,3 +152,56 @@ def test_init_backtest_tables_on_fresh_db_includes_new_columns(tmp_path):
     cols = {r[1] for r in conn.execute("PRAGMA table_info(backtest_tasks)").fetchall()}
     assert {"is_deleted", "log_dir"} <= cols
     conn.close()
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    return row is not None
+
+
+def test_migration_drops_strategy_groups_and_group_runs(tmp_path):
+    """Phase 6.3: 旧库含 strategy_groups / group_runs 表 → migration 应 DROP 之。"""
+    db = tmp_path / "legacy_with_groups.db"
+    conn = sqlite3.connect(db)
+    _create_legacy_schema(conn)
+    conn.executescript(
+        """
+        CREATE TABLE strategy_groups (
+            group_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            pipeline TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE group_runs (
+            run_id TEXT PRIMARY KEY,
+            group_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.commit()
+    assert _table_exists(conn, "strategy_groups")
+    assert _table_exists(conn, "group_runs")
+
+    run_merge_strategies_migration(conn)
+
+    assert not _table_exists(conn, "strategy_groups")
+    assert not _table_exists(conn, "group_runs")
+    conn.close()
+
+
+def test_migration_drop_groups_idempotent(tmp_path):
+    """新库无 strategy_groups / group_runs → DROP IF EXISTS 不报错, 多次执行幂等。"""
+    db = tmp_path / "fresh_no_groups.db"
+    conn = sqlite3.connect(db)
+    _create_legacy_schema(conn)
+    # 不创建 strategy_groups / group_runs
+    run_merge_strategies_migration(conn)
+    run_merge_strategies_migration(conn)
+    assert not _table_exists(conn, "strategy_groups")
+    assert not _table_exists(conn, "group_runs")
+    conn.close()

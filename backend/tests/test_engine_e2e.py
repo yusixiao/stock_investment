@@ -20,7 +20,7 @@ import pandas as pd
 import pytest
 
 from backend import config
-from services.backtest.engine_v2 import BacktestEngine
+from services.backtest.engine import BacktestEngine
 from strategies.examples.ma_tangle_value_strategy import MaTangleValueStrategy
 
 

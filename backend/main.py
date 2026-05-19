@@ -47,7 +47,6 @@ from routers.portfolio import router as portfolio_router
 from routers.valuation import router as valuation_router
 from routers.dividend import router as dividend_router
 from routers.financial import router as financial_router
-from routers.strategy_group import router as strategy_group_router
 from routers.meta import router as meta_router
 from routers.market_update import router as market_update_router
 from routers.stock_search import router as stock_search_router
@@ -88,7 +87,6 @@ app.include_router(portfolio_router)
 app.include_router(valuation_router)
 app.include_router(dividend_router)
 app.include_router(financial_router)
-app.include_router(strategy_group_router)
 app.include_router(meta_router)
 app.include_router(market_update_router)
 app.include_router(stock_search_router)

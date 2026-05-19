@@ -4,28 +4,21 @@ from services.backtest.strategy_loader import (
     load_strategy_from_file,
     scan_strategies,
 )
-from services.backtest.base import ScreenerStrategy, Strategy
+from strategies.base import Strategy
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
 
 
 class TestLoadStrategyFromFile:
-    def test_load_screener(self):
-        filepath = EXAMPLES_DIR / "ma_tangle_breakout_screener.py"
+    def test_load_strategy(self):
+        filepath = EXAMPLES_DIR / "ma_tangle_value_strategy.py"
         strategies = load_strategy_from_file(filepath)
         assert len(strategies) >= 1
         s = strategies[0]
         assert isinstance(s, type)
-        assert issubclass(s, ScreenerStrategy)
-        assert s.name == "月线均线缠绕"
-
-    def test_load_another_screener(self):
-        filepath = EXAMPLES_DIR / "roe_screener.py"
-        strategies = load_strategy_from_file(filepath)
-        assert len(strategies) >= 1
-        s = strategies[0]
-        assert issubclass(s, ScreenerStrategy)
+        assert issubclass(s, Strategy)
+        assert s.name == "月线均线缠绕价值策略"
 
     def test_load_nonexistent_file(self):
         filepath = Path("/nonexistent/file.py")
@@ -42,9 +35,9 @@ class TestLoadStrategyFromFile:
 class TestScanStrategies:
     def test_scan_examples_dir(self):
         results = scan_strategies(EXAMPLES_DIR)
-        assert len(results) >= 2
+        assert len(results) >= 1
         names = [r["name"] for r in results]
-        assert "月线均线缠绕" in names
+        assert "月线均线缠绕价值策略" in names
 
     def test_scan_returns_correct_structure(self):
         results = scan_strategies(EXAMPLES_DIR)
@@ -95,7 +88,7 @@ class TestStrategyBaseExclusion:
         # 直接定义一个仅含 Strategy 基类(无子类)的文件,扫描结果应为空
         f = tmp_path / "only_base.py"
         f.write_text(
-            "from services.backtest.base import Strategy\n"
+            "from strategies.base import Strategy\n"
             "X = Strategy  # 仅引用,不创建子类\n"
         )
         results = scan_strategies(tmp_path)
@@ -105,7 +98,7 @@ class TestStrategyBaseExclusion:
         # 在临时目录中定义一个 Strategy 子类,应该被加载
         f = tmp_path / "mine.py"
         f.write_text(
-            "from services.backtest.base import Strategy\n"
+            "from strategies.base import Strategy\n"
             "class MyStrat(Strategy):\n"
             "    name = 'mine'\n"
             "    description = 'd'\n"
