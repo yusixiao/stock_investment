@@ -35,9 +35,16 @@ class MockContext:
         self.current_idx = current_idx
 
         # 日志记录(测试可断言)
+        # Phase 1.2 的 tuple 形态(向后兼容):
         self.pass_logs: list[tuple[str, str, dict]] = []
         self.reject_logs: list[tuple[str, str, str, dict]] = []
         self.flow_logs: list[tuple[str, dict]] = []
+        # Phase 2.2 新增结构化记录,供策略集成测使用:
+        self.log_records: dict[str, list[dict]] = {
+            "pass": [],
+            "reject": [],
+            "flow": [],
+        }
 
         # 下单记录(测试可断言)
         self.orders: list[tuple[str, int]] = []
@@ -74,13 +81,84 @@ class MockContext:
     # ===== 日志 =====
     def log_pass(self, symbol: str, stage: str, **values: Any) -> None:
         self.pass_logs.append((symbol, stage, dict(values)))
+        self.log_records["pass"].append({"symbol": symbol, "stage": stage, **values})
 
-    def log_reject(self, symbol: str, stage: str, reason: str, **values: Any) -> None:
+    def log_reject(
+        self, symbol: str, stage: str, reason: str = "", **values: Any
+    ) -> None:
+        # reason 可作为位置参数(Phase 1 调用风格)或关键字参数(Phase 2.2 风格)
         self.reject_logs.append((symbol, stage, reason, dict(values)))
+        self.log_records["reject"].append(
+            {"symbol": symbol, "stage": stage, "reason": reason, **values}
+        )
 
     def log_flow(self, stage: str, **counts: Any) -> None:
         self.flow_logs.append((stage, dict(counts)))
+        self.log_records["flow"].append({"stage": stage, **counts})
+
+    # ===== 结构化日志查询辅助 =====
+    def passed_symbols(self, stage: str) -> list[str]:
+        return [r["symbol"] for r in self.log_records["pass"] if r["stage"] == stage]
+
+    def rejected_symbols(self, stage: str) -> list[str]:
+        return [r["symbol"] for r in self.log_records["reject"] if r["stage"] == stage]
 
     # ===== 下单 =====
     def order_shares(self, symbol: str, shares: int) -> None:
         self.orders.append((symbol, shares))
+
+    # ===== 集成测便捷 setter(Phase 2.4) =====
+    # 将简单的 mapping 转成各 utils 函数所需的真实数据结构,便于策略集成测一次性铺数据。
+    def set_dividend_years(self, mapping: dict[str, int]) -> None:
+        """将 {symbol: years} 转成 dividend.filter_by_dividend_years 期望的 DataFrame。
+
+        每个 year 生成一行 cash > 0 的记录(报告期 = "{year}-12-31")。
+        """
+        import pandas as pd
+
+        for sym, years in mapping.items():
+            rows = [
+                {"报告期": f"{2000 + i}-12-31", "现金分红-现金分红比例": 1.0}
+                for i in range(int(years))
+            ]
+            self._dividend[sym] = pd.DataFrame(rows)
+
+    def set_pe_pb(self, mapping: dict[str, tuple[float, float]]) -> None:
+        """{symbol: (pe, pb)} → valuation 字典。"""
+        for sym, (pe, pb) in mapping.items():
+            entry = self._valuation.setdefault(sym, {})
+            entry["pe_ttm"] = pe
+            entry["pb"] = pb
+
+    def set_roe(self, mapping: dict[str, float]) -> None:
+        """{symbol: roe%} → financial 字典。"""
+        for sym, roe in mapping.items():
+            entry = self._financial.setdefault(sym, {})
+            entry["净资产收益率"] = roe
+
+    def set_ma_tangle_breakout_hits(self, hits: set[str]) -> None:
+        """记录 detect_ma_tangle_breakout 应命中的 symbols。
+
+        本身并不替换 utils 函数,需要测试用 monkeypatch 注入。
+        见 `make_tangle_breakout_stub`。
+        """
+        self._tangle_hits = set(hits)
+
+
+def make_tangle_breakout_stub(ctx: "MockContext"):
+    """生成可替换 strategies.utils.kline.detect_ma_tangle_breakout 的 stub。
+
+    短路逻辑:symbol ∈ ctx._tangle_hits → 返回 True,否则 False;同步打 log。
+    """
+
+    hits = getattr(ctx, "_tangle_hits", set())
+
+    def _stub(_ctx, symbol, **_kwargs):
+        stage = "kline.ma_tangle"
+        if symbol in hits:
+            _ctx.log_pass(symbol, stage)
+            return True
+        _ctx.log_reject(symbol, stage, "no_hit")
+        return False
+
+    return _stub
