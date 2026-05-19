@@ -8,7 +8,7 @@ from typing import Optional
 from config import RAW_KLINE_DIR
 from services.stock_data import list_stocks, get_kline, aggregate_kline
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
-from services.qfq_cache import get_qfq_kline
+from services.duckdb_store import get_store
 from services.api_utils import safe_json
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
@@ -41,7 +41,7 @@ def api_get_kline(
     adjust: str = Query("raw", description="raw/qfq"),
 ):
     if adjust == "qfq":
-        df = get_qfq_kline(symbol, start_date=start_date, end_date=end_date)
+        df = get_store().query_qfq_kline("A", symbol, start_date, end_date)
         if df.empty:
             raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
     else:
@@ -64,7 +64,7 @@ def api_get_indicators(
     adjust: str = Query("raw", description="raw/qfq"),
 ):
     if adjust == "qfq":
-        df = get_qfq_kline(symbol, start_date=start_date, end_date=end_date)
+        df = get_store().query_qfq_kline("A", symbol, start_date, end_date)
         if df.empty:
             raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
     else:

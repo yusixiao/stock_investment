@@ -4,6 +4,7 @@
 核心逻辑：基于 tracker 文件记录每只股票最后更新日期，
 仅拉取 last_updated+1 ~ today 的增量数据，合并到 parquet 文件。
 """
+
 import time
 import json
 import logging
@@ -26,7 +27,6 @@ from config import (
 )
 from services.stock_data import symbol_to_exchange
 from services.indicator_store import compute_and_save
-from services.qfq_cache import invalidate_cache
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,9 @@ def _save_tracker(tracker: dict, tracker_path: Path = None):
     path.write_text(json.dumps(tracker, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _fetch_hist_with_retry(symbol: str, start_date: str, end_date: str, max_attempts: int = RETRY_MAX_ATTEMPTS) -> pd.DataFrame:
+def _fetch_hist_with_retry(
+    symbol: str, start_date: str, end_date: str, max_attempts: int = RETRY_MAX_ATTEMPTS
+) -> pd.DataFrame:
     """
     带指数退避重试的 AKShare API 调用。
     重试机制：每次失败后等待 min(2^attempt, RETRY_BACKOFF_CAP) 秒，
@@ -82,26 +84,32 @@ def _fetch_hist_with_retry(symbol: str, start_date: str, end_date: str, max_atte
             return df
         except Exception as e:
             last_error = e
-            wait = min(2 ** attempt, RETRY_BACKOFF_CAP)
-            logger.warning(f"API 调用失败 symbol={symbol} attempt={attempt+1}/{max_attempts}, "
-                           f"等待 {wait}s 后重试: {e}")
+            wait = min(2**attempt, RETRY_BACKOFF_CAP)
+            logger.warning(
+                f"API 调用失败 symbol={symbol} attempt={attempt + 1}/{max_attempts}, "
+                f"等待 {wait}s 后重试: {e}"
+            )
             time.sleep(wait)
-    logger.error(f"API 调用彻底失败 symbol={symbol}, 已重试 {max_attempts} 次: {last_error}")
+    logger.error(
+        f"API 调用彻底失败 symbol={symbol}, 已重试 {max_attempts} 次: {last_error}"
+    )
     raise RuntimeError(f"{symbol} {max_attempts}次重试失败: {last_error}")
 
 
 def _hist_df_to_records(df: pd.DataFrame) -> list[dict]:
     records = []
     for _, row in df.iterrows():
-        records.append({
-            "date": str(row["日期"])[:10],
-            "open": float(row["开盘"]),
-            "high": float(row["最高"]),
-            "low": float(row["最低"]),
-            "close": float(row["收盘"]),
-            "volume": float(row["成交量"]),
-            "amount": float(row["成交额"]),
-        })
+        records.append(
+            {
+                "date": str(row["日期"])[:10],
+                "open": float(row["开盘"]),
+                "high": float(row["最高"]),
+                "low": float(row["最低"]),
+                "close": float(row["收盘"]),
+                "volume": float(row["成交量"]),
+                "amount": float(row["成交额"]),
+            }
+        )
     return records
 
 
@@ -151,7 +159,9 @@ def run_incremental_update(
         symbols.append((code, stem))
 
     if not symbols:
-        _log_progress("未找到任何已有 parquet 文件，使用 stock_zh_a_spot_em 获取股票列表...")
+        _log_progress(
+            "未找到任何已有 parquet 文件，使用 stock_zh_a_spot_em 获取股票列表..."
+        )
         logger.info("无已有数据文件，从 API 获取全量股票列表")
         try:
             spot_df = ak.stock_zh_a_spot_em()
@@ -177,12 +187,16 @@ def run_incremental_update(
             if last_updated and last_updated >= end_date:
                 result.skipped += 1
                 if idx % 500 == 0 or idx == total:
-                    _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}")
+                    _log_progress(
+                        f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}"
+                    )
                 continue
 
             # 计算增量起始日期：从上次更新的下一天开始拉取
             if last_updated:
-                next_day = (datetime.strptime(last_updated, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+                next_day = (
+                    datetime.strptime(last_updated, "%Y-%m-%d") + timedelta(days=1)
+                ).strftime("%Y-%m-%d")
                 sym_start = next_day
             else:
                 # 无记录的股票从 2010 年开始全量拉取
@@ -191,19 +205,25 @@ def run_incremental_update(
             if sym_start > end_date:
                 result.skipped += 1
                 if idx % 500 == 0 or idx == total:
-                    _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}")
+                    _log_progress(
+                        f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}"
+                    )
                 continue
 
             sym_start_fmt = sym_start.replace("-", "")
             filepath = data_dir / f"{full_symbol}.parquet"
 
-            hist_df = _fetch_hist_with_retry(code, sym_start_fmt, end_date_fmt, max_attempts=3)
+            hist_df = _fetch_hist_with_retry(
+                code, sym_start_fmt, end_date_fmt, max_attempts=3
+            )
 
             if hist_df.empty:
                 tracker[full_symbol] = end_date
                 result.skipped += 1
                 if idx % 500 == 0 or idx == total:
-                    _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}")
+                    _log_progress(
+                        f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}"
+                    )
                 continue
 
             new_records = _hist_df_to_records(hist_df)
@@ -219,7 +239,9 @@ def run_incremental_update(
                 else:
                     fresh_df = pd.DataFrame(fresh)
                     merged = pd.concat([fresh_df, existing], ignore_index=True)
-                    merged = merged.sort_values("date", ascending=False).reset_index(drop=True)
+                    merged = merged.sort_values("date", ascending=False).reset_index(
+                        drop=True
+                    )
                     merged.to_parquet(filepath, index=False)
                     result.updated += 1
                     updated_symbols.append(full_symbol)
@@ -227,7 +249,9 @@ def run_incremental_update(
             else:
                 # 新股票：直接写入
                 new_df = pd.DataFrame(new_records)
-                new_df = new_df.sort_values("date", ascending=False).reset_index(drop=True)
+                new_df = new_df.sort_values("date", ascending=False).reset_index(
+                    drop=True
+                )
                 new_df.to_parquet(filepath, index=False)
                 result.new_stocks += 1
                 updated_symbols.append(full_symbol)
@@ -241,10 +265,14 @@ def run_incremental_update(
 
         # 每 100 只股票输出一次 INFO 日志便于监控
         if idx % 100 == 0:
-            logger.info(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}")
+            logger.info(
+                f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 失败:{result.failed}"
+            )
 
         if idx % 500 == 0 or idx == total:
-            _log_progress(f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed}")
+            _log_progress(
+                f"进度 {idx}/{total} — 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed}"
+            )
 
         # 每 100 只持久化 tracker，防止进程中断导致全部进度丢失
         if idx % 100 == 0:
@@ -252,16 +280,16 @@ def run_incremental_update(
 
     _save_tracker(tracker, tracker_path)
 
-    if updated_symbols:
-        invalidate_cache(updated_symbols)
-        _log_progress(f"已清除 {len(updated_symbols)} 只股票的 qfq 缓存")
-
     result.api_elapsed_sec = round(time.time() - t0, 2)
     result.finished_at = datetime.now().isoformat()
     elapsed = round(time.time() - t0, 2)
-    _log_progress(f"完成! 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed} 总耗时:{elapsed}s")
-    logger.info(f"增量更新完成 — 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} "
-                f"失败:{result.failed} 耗时:{elapsed}s")
+    _log_progress(
+        f"完成! 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} 失败:{result.failed} 总耗时:{elapsed}s"
+    )
+    logger.info(
+        f"增量更新完成 — 更新:{result.updated} 跳过:{result.skipped} 新增:{result.new_stocks} "
+        f"失败:{result.failed} 耗时:{elapsed}s"
+    )
     _save_log(result)
     return result
 
@@ -280,7 +308,9 @@ def _save_log(result: UpdateResult) -> None:
     cutoff = (datetime.now() - timedelta(days=LOG_RETENTION_DAYS)).isoformat()
     logs = [l for l in logs if l.get("started_at", "") >= cutoff]
 
-    UPDATE_LOG_FILE.write_text(json.dumps(logs, ensure_ascii=False, indent=2), encoding="utf-8")
+    UPDATE_LOG_FILE.write_text(
+        json.dumps(logs, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 _current_status: Optional[str] = None

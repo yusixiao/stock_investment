@@ -4,13 +4,12 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Body
 
 from config import (
-    RAW_KLINE_DIR,
     STRATEGY_DIR,
     VALUATION_DIR,
     DIVIDEND_DIR,
     FINANCIAL_DIR,
 )
-from services.qfq_cache import get_qfq_kline
+from services.duckdb_store import get_store
 from services.backtest.strategy_loader import scan_strategies, load_strategy_from_file
 from services.backtest.engine import BacktestEngine
 from services.backtest.base import ScreenerStrategy, TraderStrategy
@@ -59,6 +58,7 @@ def api_run_backtest(body: dict = Body(...)):
     source_task_id = body.get("source_task_id")
     join_modes = body.get("join_modes")
     target_symbols = body.get("symbols")
+    market = body.get("market", "A")
 
     if not pipeline:
         raise HTTPException(status_code=400, detail="Pipeline cannot be empty")
@@ -145,7 +145,7 @@ def api_run_backtest(body: dict = Body(...)):
     def run_task():
         try:
             task_manager.update_progress(task_id, 0, 0, "加载数据中...")
-            stock_data = _load_stock_data(start_date, end_date, symbols)
+            stock_data = _load_stock_data(start_date, end_date, symbols, market=market)
             valuation_data = _load_valuation_data(list(stock_data.keys()))
             dividend_data = _load_dividend_data(list(stock_data.keys()))
             financial_data = _load_financial_data(list(stock_data.keys()))
@@ -237,15 +237,25 @@ def _load_valuation_data(symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 
 def _load_stock_data(
-    start_date: str = None, end_date: str = None, symbols: list[str] = None
+    start_date: str | None = None,
+    end_date: str | None = None,
+    symbols: list[str] | None = None,
+    market: str = "A",
 ) -> dict[str, pd.DataFrame]:
-    stock_data = {}
-    if symbols is not None:
+    """通过 DuckDBStore 加载前复权 K 线，禁止 glob parquet 旧路径。
+
+    - symbols 为空/None → 走全市场模式，用 store.list_symbols(market) 枚举
+    - start_date/end_date 为 None → 不限制日期范围
+    - 命中空数据的 symbol 自动跳过
+    """
+    store = get_store()
+    if symbols:
         target_symbols = symbols
     else:
-        target_symbols = [f.stem for f in RAW_KLINE_DIR.glob("*.parquet")]
+        target_symbols = store.list_symbols(market)
+    stock_data: dict[str, pd.DataFrame] = {}
     for symbol in target_symbols:
-        df = get_qfq_kline(symbol, start_date=start_date, end_date=end_date)
-        if not df.empty:
+        df = store.query_qfq_kline(market, symbol, start_date, end_date)
+        if df is not None and not df.empty:
             stock_data[symbol] = df
     return stock_data

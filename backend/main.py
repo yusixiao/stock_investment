@@ -58,11 +58,11 @@ from scheduler import start_scheduler, shutdown_scheduler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from services.portfolio.db import init_db
-    from services.duckdb_store import init_duckdb, shutdown_duckdb
+    from services.duckdb_store import init_duckdb_with_health_check, shutdown_duckdb
     from services.stock_index import init_stock_index
 
     init_db()
-    init_duckdb()
+    init_duckdb_with_health_check()
     init_stock_index()
     start_scheduler()
     yield

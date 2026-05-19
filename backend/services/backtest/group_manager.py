@@ -445,7 +445,7 @@ from services.backtest.base import (
     BuyStrategy,
     SellStrategy,
 )
-from services.qfq_cache import get_qfq_kline
+from services.duckdb_store import get_store
 from config import RAW_KLINE_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
 
 
@@ -498,7 +498,7 @@ def _execute_step(
 ) -> tuple[str, dict]:
     """执行单个策略步骤：加载策略类、加载数据、运行引擎"""
     from services.backtest.engine import BacktestEngine
-    from services.qfq_cache import get_qfq_kline
+    from services.duckdb_store import get_store
     from config import RAW_KLINE_DIR, VALUATION_DIR, DIVIDEND_DIR, FINANCIAL_DIR
     import pandas as pd
 
@@ -534,8 +534,9 @@ def _execute_step(
         target_symbols = [f.stem for f in RAW_KLINE_DIR.glob("*.parquet")]
 
     stock_data = {}
+    store = get_store()
     for sym in target_symbols:
-        df = get_qfq_kline(sym, start_date=start_date, end_date=end_date)
+        df = store.query_qfq_kline("A", sym, start_date, end_date)
         if not df.empty:
             stock_data[sym] = df
 
@@ -643,8 +644,9 @@ def _execute_buy_sell_steps(
         target_symbols = [f.stem for f in RAW_KLINE_DIR.glob("*.parquet")]
 
     stock_data = {}
+    store = get_store()
     for sym in target_symbols:
-        df = get_qfq_kline(sym, start_date=start_date, end_date=end_date)
+        df = store.query_qfq_kline("A", sym, start_date, end_date)
         if not df.empty:
             stock_data[sym] = df
 

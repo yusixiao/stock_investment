@@ -6,7 +6,7 @@ from config import RAW_KLINE_DIR, STRATEGY_DIR
 from services.backtest.strategy_loader import load_strategy_from_file
 from services.backtest.engine import BacktestEngine
 from services.backtest.base import ScreenerStrategy
-from services.qfq_cache import get_qfq_kline
+from services.duckdb_store import get_store
 
 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
@@ -31,16 +31,21 @@ def api_run_screener(body: dict = Body(...)):
         classes = load_strategy_from_file(filepath)
         cls = next((c for c in classes if c.__name__ == class_name), None)
         if cls is None:
-            raise HTTPException(status_code=400, detail=f"Strategy class {class_name} not found")
+            raise HTTPException(
+                status_code=400, detail=f"Strategy class {class_name} not found"
+            )
         instance = cls(param_overrides=overrides)
         if not isinstance(instance, ScreenerStrategy):
-            raise HTTPException(status_code=400, detail=f"{class_name} is not a ScreenerStrategy")
+            raise HTTPException(
+                status_code=400, detail=f"{class_name} is not a ScreenerStrategy"
+            )
         screeners.append(instance)
 
     stock_data = {}
+    store = get_store()
     for filepath in RAW_KLINE_DIR.glob("*.parquet"):
         symbol = filepath.stem
-        df = get_qfq_kline(symbol)
+        df = store.query_qfq_kline("A", symbol)
         if not df.empty:
             stock_data[symbol] = df
 
