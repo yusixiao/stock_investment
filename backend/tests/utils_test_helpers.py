@@ -35,9 +35,16 @@ class MockContext:
         self.current_idx = current_idx
 
         # 日志记录(测试可断言)
+        # Phase 1.2 的 tuple 形态(向后兼容):
         self.pass_logs: list[tuple[str, str, dict]] = []
         self.reject_logs: list[tuple[str, str, str, dict]] = []
         self.flow_logs: list[tuple[str, dict]] = []
+        # Phase 2.2 新增结构化记录,供策略集成测使用:
+        self.log_records: dict[str, list[dict]] = {
+            "pass": [],
+            "reject": [],
+            "flow": [],
+        }
 
         # 下单记录(测试可断言)
         self.orders: list[tuple[str, int]] = []
@@ -74,12 +81,27 @@ class MockContext:
     # ===== 日志 =====
     def log_pass(self, symbol: str, stage: str, **values: Any) -> None:
         self.pass_logs.append((symbol, stage, dict(values)))
+        self.log_records["pass"].append({"symbol": symbol, "stage": stage, **values})
 
-    def log_reject(self, symbol: str, stage: str, reason: str, **values: Any) -> None:
+    def log_reject(
+        self, symbol: str, stage: str, reason: str = "", **values: Any
+    ) -> None:
+        # reason 可作为位置参数(Phase 1 调用风格)或关键字参数(Phase 2.2 风格)
         self.reject_logs.append((symbol, stage, reason, dict(values)))
+        self.log_records["reject"].append(
+            {"symbol": symbol, "stage": stage, "reason": reason, **values}
+        )
 
     def log_flow(self, stage: str, **counts: Any) -> None:
         self.flow_logs.append((stage, dict(counts)))
+        self.log_records["flow"].append({"stage": stage, **counts})
+
+    # ===== 结构化日志查询辅助 =====
+    def passed_symbols(self, stage: str) -> list[str]:
+        return [r["symbol"] for r in self.log_records["pass"] if r["stage"] == stage]
+
+    def rejected_symbols(self, stage: str) -> list[str]:
+        return [r["symbol"] for r in self.log_records["reject"] if r["stage"] == stage]
 
     # ===== 下单 =====
     def order_shares(self, symbol: str, shares: int) -> None:
