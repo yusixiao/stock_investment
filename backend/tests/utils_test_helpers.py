@@ -106,3 +106,59 @@ class MockContext:
     # ===== 下单 =====
     def order_shares(self, symbol: str, shares: int) -> None:
         self.orders.append((symbol, shares))
+
+    # ===== 集成测便捷 setter(Phase 2.4) =====
+    # 将简单的 mapping 转成各 utils 函数所需的真实数据结构,便于策略集成测一次性铺数据。
+    def set_dividend_years(self, mapping: dict[str, int]) -> None:
+        """将 {symbol: years} 转成 dividend.filter_by_dividend_years 期望的 DataFrame。
+
+        每个 year 生成一行 cash > 0 的记录(报告期 = "{year}-12-31")。
+        """
+        import pandas as pd
+
+        for sym, years in mapping.items():
+            rows = [
+                {"报告期": f"{2000 + i}-12-31", "现金分红-现金分红比例": 1.0}
+                for i in range(int(years))
+            ]
+            self._dividend[sym] = pd.DataFrame(rows)
+
+    def set_pe_pb(self, mapping: dict[str, tuple[float, float]]) -> None:
+        """{symbol: (pe, pb)} → valuation 字典。"""
+        for sym, (pe, pb) in mapping.items():
+            entry = self._valuation.setdefault(sym, {})
+            entry["pe_ttm"] = pe
+            entry["pb"] = pb
+
+    def set_roe(self, mapping: dict[str, float]) -> None:
+        """{symbol: roe%} → financial 字典。"""
+        for sym, roe in mapping.items():
+            entry = self._financial.setdefault(sym, {})
+            entry["净资产收益率"] = roe
+
+    def set_ma_tangle_breakout_hits(self, hits: set[str]) -> None:
+        """记录 detect_ma_tangle_breakout 应命中的 symbols。
+
+        本身并不替换 utils 函数,需要测试用 monkeypatch 注入。
+        见 `make_tangle_breakout_stub`。
+        """
+        self._tangle_hits = set(hits)
+
+
+def make_tangle_breakout_stub(ctx: "MockContext"):
+    """生成可替换 strategies.utils.kline.detect_ma_tangle_breakout 的 stub。
+
+    短路逻辑:symbol ∈ ctx._tangle_hits → 返回 True,否则 False;同步打 log。
+    """
+
+    hits = getattr(ctx, "_tangle_hits", set())
+
+    def _stub(_ctx, symbol, **_kwargs):
+        stage = "kline.ma_tangle"
+        if symbol in hits:
+            _ctx.log_pass(symbol, stage)
+            return True
+        _ctx.log_reject(symbol, stage, "no_hit")
+        return False
+
+    return _stub
