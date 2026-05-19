@@ -9,7 +9,6 @@ import akshare as ak
 import pandas as pd
 
 from config import DIVIDEND_DIR, RAW_KLINE_DIR, LOG_DIR
-from services.qfq_cache import invalidate_cache
 
 logger = logging.getLogger(__name__)
 
@@ -213,10 +212,6 @@ def run_dividend_update(
             )
 
         time.sleep(SLEEP_BETWEEN_CALLS)
-
-    if updated_symbols:
-        invalidate_cache(updated_symbols)
-        _log_progress(f"已清除 {len(updated_symbols)} 只股票的 qfq 缓存")
 
     _log_progress(f"完成! 成功:{success} 跳过:{skipped} 失败:{failed}")
     return {
