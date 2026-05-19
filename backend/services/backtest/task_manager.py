@@ -40,15 +40,24 @@ class TaskManager:
         start_date: str | None = None,
         end_date: str | None = None,
         source_task_id: str | None = None,
+        strategy_class: str | None = None,
+        params: dict | None = None,
+        log_dir: str | None = None,
     ) -> str:
         task_id = str(uuid.uuid4())[:8]
+        # merge-strategies 单策略模型: 显式传 strategy_class/params 时
+        # 覆盖/构造 pipeline_info = {strategy_class, params}
+        if strategy_class is not None:
+            pipeline_info = {"strategy_class": strategy_class, "params": params or {}}
         pi_json = (
             json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
         )
+        # log_dir 默认按 task_id 派生(可外部覆盖)
+        effective_log_dir = log_dir or f"data/logs/backtest/{task_id}/"
         conn = self._get_conn()
         try:
             conn.execute(
-                "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, start_date, end_date, source_task_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, start_date, end_date, source_task_id, created_at, log_dir) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     task_id,
                     "running",
@@ -58,6 +67,7 @@ class TaskManager:
                     end_date,
                     source_task_id,
                     datetime.now().isoformat(),
+                    effective_log_dir,
                 ),
             )
             conn.commit()
@@ -108,10 +118,11 @@ class TaskManager:
             self._progress.pop(task_id, None)
 
     def delete_task(self, task_id: str):
+        # 软删: 同步写 is_deleted 与遗留 deleted 列, 兼容旧查询
         conn = self._get_conn()
         try:
             conn.execute(
-                "UPDATE backtest_tasks SET deleted = 1 WHERE task_id = ?",
+                "UPDATE backtest_tasks SET is_deleted = 1, deleted = 1 WHERE task_id = ?",
                 (task_id,),
             )
             conn.commit()
@@ -152,7 +163,7 @@ class TaskManager:
         conn = self._get_conn()
         try:
             row = conn.execute(
-                "SELECT status, result, error, pipeline_info, start_date, end_date, source_task_id FROM backtest_tasks WHERE task_id = ?",
+                "SELECT status, result, error, pipeline_info, start_date, end_date, source_task_id, log_dir FROM backtest_tasks WHERE task_id = ?",
                 (task_id,),
             ).fetchone()
         finally:
@@ -177,18 +188,26 @@ class TaskManager:
             resp["end_date"] = row["end_date"]
         if row["source_task_id"]:
             resp["source_task_id"] = row["source_task_id"]
+        if row["log_dir"]:
+            resp["log_dir"] = row["log_dir"]
         return resp
 
-    def list_tasks(self, show_deleted: bool = False) -> list[dict]:
+    def list_tasks(
+        self,
+        show_deleted: bool = False,
+        include_deleted: bool | None = None,
+    ) -> list[dict]:
+        # include_deleted 为 plan 命名;show_deleted 是历史兼容别名,二者任一为真即返回全部
+        effective_include = bool(show_deleted) or bool(include_deleted)
         conn = self._get_conn()
         try:
-            if show_deleted:
+            if effective_include:
                 rows = conn.execute(
-                    "SELECT task_id, status, task_type, summary, created_at, source_task_id, deleted FROM backtest_tasks ORDER BY created_at DESC"
+                    "SELECT task_id, status, task_type, summary, created_at, source_task_id, is_deleted FROM backtest_tasks ORDER BY created_at DESC"
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT task_id, status, task_type, summary, created_at, source_task_id, deleted FROM backtest_tasks WHERE deleted = 0 ORDER BY created_at DESC"
+                    "SELECT task_id, status, task_type, summary, created_at, source_task_id, is_deleted FROM backtest_tasks WHERE is_deleted = 0 ORDER BY created_at DESC"
                 ).fetchall()
         finally:
             conn.close()
@@ -199,7 +218,7 @@ class TaskManager:
                 "status": r["status"],
                 "task_type": r["task_type"],
                 "created_at": r["created_at"],
-                "deleted": bool(r["deleted"]),
+                "deleted": bool(r["is_deleted"]),
             }
             if r["source_task_id"]:
                 item["source_task_id"] = r["source_task_id"]
