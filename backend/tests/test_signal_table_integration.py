@@ -18,7 +18,17 @@ def _make_stock_data():
         rows = []
         for i, d in enumerate(dates):
             p = base + i * 0.1
-            rows.append({"date": d, "open": p, "high": p + 0.5, "low": p - 0.5, "close": p, "volume": 1000000, "amount": p * 1000000})
+            rows.append(
+                {
+                    "date": d,
+                    "open": p,
+                    "high": p + 0.5,
+                    "low": p - 0.5,
+                    "close": p,
+                    "volume": 1000000,
+                    "amount": p * 1000000,
+                }
+            )
         data[sym] = pd.DataFrame(rows)
     return data
 
@@ -56,26 +66,50 @@ def test_signal_table_from_source_run():
         tm = TaskManager(db_path=db_path)
         runner = GroupRunner(group_manager=gm, task_manager=tm)
 
-        screener_group_id = gm.create_group("screener_group", [
-            {"filepath": "x.py", "class_name": "S", "params": {}}
-        ])
-        screener_run_id = gm.create_run(screener_group_id, "2024-01-02", "2024-01-22", "auto")
+        screener_group_id = gm.create_group(
+            "screener_group", [{"filepath": "x.py", "class_name": "S", "params": {}}]
+        )
+        screener_run_id = gm.create_run(
+            screener_group_id, "2024-01-02", "2024-01-22", "auto"
+        )
         screener_result = {
             "screened_symbols": [
                 {"symbol": "000001", "match_dates": ["2024-01-05", "2024-01-10"]},
                 {"symbol": "000002", "match_dates": ["2024-01-08"]},
             ]
         }
-        gm.update_run_step(screener_run_id, 1, [{"step": 1, "symbols": ["000001", "000002"], "output_count": 2, "input_count": 0}])
+        gm.update_run_step(
+            screener_run_id,
+            1,
+            [
+                {
+                    "step": 1,
+                    "symbols": ["000001", "000002"],
+                    "output_count": 2,
+                    "input_count": 0,
+                }
+            ],
+        )
         gm.update_run_status(screener_run_id, "success", final_result=screener_result)
 
         (Path(tmp_dir) / "buyer.py").write_text(BUYER_CODE)
         (Path(tmp_dir) / "seller.py").write_text(SELLER_CODE)
 
-        buy_sell_group_id = gm.create_group("buy_sell_group", [
-            {"filepath": str(Path(tmp_dir) / "buyer.py"), "class_name": "TestBuyer", "params": {}},
-            {"filepath": str(Path(tmp_dir) / "seller.py"), "class_name": "TestSeller", "params": {}},
-        ])
+        buy_sell_group_id = gm.create_group(
+            "buy_sell_group",
+            [
+                {
+                    "filepath": str(Path(tmp_dir) / "buyer.py"),
+                    "class_name": "TestBuyer",
+                    "params": {},
+                },
+                {
+                    "filepath": str(Path(tmp_dir) / "seller.py"),
+                    "class_name": "TestSeller",
+                    "params": {},
+                },
+            ],
+        )
 
         stock_data = _make_stock_data()
         mock_raw_dir = Path(tmp_dir) / "raw"
@@ -83,12 +117,24 @@ def test_signal_table_from_source_run():
         for sym in stock_data.keys():
             (mock_raw_dir / f"{sym}.parquet").touch()
 
-        def mock_get_qfq(sym, start_date=None, end_date=None):
+        def mock_query_qfq(market, sym, start=None, end=None):
             return stock_data.get(sym, pd.DataFrame()).copy()
 
-        with patch("services.backtest.group_manager.get_qfq_kline", side_effect=mock_get_qfq), \
-             patch("services.backtest.group_manager.RAW_KLINE_DIR", mock_raw_dir):
-            run_id = runner.run_auto(buy_sell_group_id, "2024-01-02", "2024-01-22", source_run_id=screener_run_id)
+        from unittest.mock import MagicMock
+
+        mock_store = MagicMock()
+        mock_store.query_qfq_kline.side_effect = mock_query_qfq
+
+        with (
+            patch("services.backtest.group_manager.get_store", return_value=mock_store),
+            patch("services.backtest.group_manager.RAW_KLINE_DIR", mock_raw_dir),
+        ):
+            run_id = runner.run_auto(
+                buy_sell_group_id,
+                "2024-01-02",
+                "2024-01-22",
+                source_run_id=screener_run_id,
+            )
 
         run = gm.get_run(run_id)
         assert run["status"] == "success"

@@ -45,16 +45,20 @@ class TestSeller(SellStrategy):
 
 
 def _make_df(n=20):
-    dates = pd.date_range("2024-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist()
-    return pd.DataFrame({
-        "date": dates,
-        "open": [10.0 + i * 0.1 for i in range(n)],
-        "high": [10.5 + i * 0.1 for i in range(n)],
-        "low": [9.5 + i * 0.1 for i in range(n)],
-        "close": [10.0 + i * 0.1 for i in range(n)],
-        "volume": [1000000.0] * n,
-        "amount": [10000000.0] * n,
-    })
+    dates = (
+        pd.date_range("2024-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist()
+    )
+    return pd.DataFrame(
+        {
+            "date": dates,
+            "open": [10.0 + i * 0.1 for i in range(n)],
+            "high": [10.5 + i * 0.1 for i in range(n)],
+            "low": [9.5 + i * 0.1 for i in range(n)],
+            "close": [10.0 + i * 0.1 for i in range(n)],
+            "volume": [1000000.0] * n,
+            "amount": [10000000.0] * n,
+        }
+    )
 
 
 @pytest.fixture
@@ -86,9 +90,21 @@ def test_group_runner_buy_sell_pipeline(strategy_dir, test_db):
     runner = GroupRunner(group_manager=gm, task_manager=tm)
 
     pipeline = [
-        {"filepath": os.path.join(strategy_dir, "screener.py"), "class_name": "TestScreener", "params": {}},
-        {"filepath": os.path.join(strategy_dir, "buyer.py"), "class_name": "TestBuyer", "params": {}},
-        {"filepath": os.path.join(strategy_dir, "seller.py"), "class_name": "TestSeller", "params": {}},
+        {
+            "filepath": os.path.join(strategy_dir, "screener.py"),
+            "class_name": "TestScreener",
+            "params": {},
+        },
+        {
+            "filepath": os.path.join(strategy_dir, "buyer.py"),
+            "class_name": "TestBuyer",
+            "params": {},
+        },
+        {
+            "filepath": os.path.join(strategy_dir, "seller.py"),
+            "class_name": "TestSeller",
+            "params": {},
+        },
     ]
 
     group_id = gm.create_group("TestBuySell", pipeline, join_modes=[])
@@ -99,11 +115,16 @@ def test_group_runner_buy_sell_pipeline(strategy_dir, test_db):
 
     df = _make_df()
 
-    def mock_get_qfq(sym, start_date=None, end_date=None):
+    def mock_query_qfq(market, sym, start=None, end=None):
         return df.copy()
 
-    with patch("services.backtest.group_manager.get_qfq_kline", side_effect=mock_get_qfq), \
-         patch("services.backtest.group_manager.RAW_KLINE_DIR", mock_raw_dir):
+    mock_store = MagicMock()
+    mock_store.query_qfq_kline.side_effect = mock_query_qfq
+
+    with (
+        patch("services.backtest.group_manager.get_store", return_value=mock_store),
+        patch("services.backtest.group_manager.RAW_KLINE_DIR", mock_raw_dir),
+    ):
         run_id = runner.run_auto(group_id, "2024-01-01", "2024-01-31")
 
     run = gm.get_run(run_id)
@@ -122,13 +143,25 @@ def test_has_buy_sell_detection(strategy_dir, test_db):
     runner = GroupRunner(group_manager=gm, task_manager=tm)
 
     pipeline_with = [
-        {"filepath": os.path.join(strategy_dir, "screener.py"), "class_name": "TestScreener", "params": {}},
-        {"filepath": os.path.join(strategy_dir, "buyer.py"), "class_name": "TestBuyer", "params": {}},
+        {
+            "filepath": os.path.join(strategy_dir, "screener.py"),
+            "class_name": "TestScreener",
+            "params": {},
+        },
+        {
+            "filepath": os.path.join(strategy_dir, "buyer.py"),
+            "class_name": "TestBuyer",
+            "params": {},
+        },
     ]
     assert runner._has_buy_sell(pipeline_with) is True
 
     pipeline_without = [
-        {"filepath": os.path.join(strategy_dir, "screener.py"), "class_name": "TestScreener", "params": {}},
+        {
+            "filepath": os.path.join(strategy_dir, "screener.py"),
+            "class_name": "TestScreener",
+            "params": {},
+        },
     ]
     assert runner._has_buy_sell(pipeline_without) is False
 
@@ -141,7 +174,9 @@ def test_build_signal_table(strategy_dir, test_db):
     tm = TaskManager(db_path=test_db)
     runner = GroupRunner(group_manager=gm, task_manager=tm)
 
-    group_id = gm.create_group("Test", [{"filepath": "x.py", "class_name": "X", "params": {}}])
+    group_id = gm.create_group(
+        "Test", [{"filepath": "x.py", "class_name": "X", "params": {}}]
+    )
     run_id = gm.create_run(group_id, "2024-01-01", "2024-01-31", "auto")
 
     gm.add_exclusion(run_id, "000002")

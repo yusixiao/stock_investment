@@ -10,7 +10,7 @@ from config import (
     DIVIDEND_DIR,
     FINANCIAL_DIR,
 )
-from services.qfq_cache import get_qfq_kline
+from services.duckdb_store import get_store
 from services.backtest.strategy_loader import scan_strategies, load_strategy_from_file
 from services.backtest.engine import BacktestEngine
 from services.backtest.base import ScreenerStrategy, TraderStrategy
@@ -244,8 +244,9 @@ def _load_stock_data(
         target_symbols = symbols
     else:
         target_symbols = [f.stem for f in RAW_KLINE_DIR.glob("*.parquet")]
+    store = get_store()
     for symbol in target_symbols:
-        df = get_qfq_kline(symbol, start_date=start_date, end_date=end_date)
+        df = store.query_qfq_kline("A", symbol, start_date, end_date)
         if not df.empty:
             stock_data[symbol] = df
     return stock_data

@@ -4,7 +4,7 @@ from pathlib import Path
 from config import INDICATOR_DIR, RAW_KLINE_DIR
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
 from services.stock_data import aggregate_kline
-from services.qfq_cache import get_qfq_kline
+from services.duckdb_store import get_store
 
 _FREQS = ["daily", "weekly", "monthly"]
 _MA_WINDOWS = [5, 10, 20, 60]
@@ -41,7 +41,11 @@ def compute_and_save(symbol: str, df: pd.DataFrame):
     weekly_df = aggregate_kline(daily_df, period="weekly")
     monthly_df = aggregate_kline(daily_df, period="monthly")
 
-    for freq, src in [("daily", daily_df), ("weekly", weekly_df), ("monthly", monthly_df)]:
+    for freq, src in [
+        ("daily", daily_df),
+        ("weekly", weekly_df),
+        ("monthly", monthly_df),
+    ]:
         if src.empty:
             continue
         ind_df = _compute_indicators(src)
@@ -60,10 +64,11 @@ def load_indicators(symbol: str, freq: str) -> pd.DataFrame | None:
 def run_full_precompute(progress_callback=None):
     files = list(RAW_KLINE_DIR.glob("*.parquet"))
     total = len(files)
+    store = get_store()
     for i, filepath in enumerate(files, 1):
         symbol = filepath.stem
         try:
-            df = get_qfq_kline(symbol)
+            df = store.query_qfq_kline("A", symbol)
             if not df.empty:
                 compute_and_save(symbol, df)
         except Exception as e:
