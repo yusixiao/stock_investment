@@ -55,7 +55,7 @@ def test_default_settings_inherits_strategy_defaults():
 
 
 def test_inherits_from_new_strategy_base():
-    from services.backtest.base import Strategy
+    from strategies.base import Strategy
 
     assert issubclass(MaTangleValueStrategy, Strategy)
 
@@ -73,7 +73,9 @@ def _build_full_mock_context() -> MockContext:
     F-H: 同 A,通过到 final
     """
     ctx = MockContext()
-    ctx.set_dividend_years({"A": 8, "B": 3, "C": 8, "D": 8, "E": 8, "F": 8, "G": 8, "H": 8})
+    ctx.set_dividend_years(
+        {"A": 8, "B": 3, "C": 8, "D": 8, "E": 8, "F": 8, "G": 8, "H": 8}
+    )
     ctx.set_pe_pb(
         {
             "A": (10, 1.5),

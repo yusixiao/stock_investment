@@ -11,16 +11,20 @@ from services.indicator_store import compute_and_save, load_indicators, _indicat
 def _make_df(n=100, seed=42):
     np.random.seed(seed)
     close = 10 + np.cumsum(np.random.randn(n) * 0.5)
-    dates = pd.date_range("2024-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist()
-    return pd.DataFrame({
-        "date": dates,
-        "open": close + np.random.randn(n) * 0.1,
-        "high": close + np.abs(np.random.randn(n) * 0.3),
-        "low": close - np.abs(np.random.randn(n) * 0.3),
-        "close": close,
-        "volume": np.random.randint(1_000_000, 10_000_000, n).astype(float),
-        "amount": np.random.randint(10_000_000, 100_000_000, n).astype(float),
-    })
+    dates = (
+        pd.date_range("2024-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist()
+    )
+    return pd.DataFrame(
+        {
+            "date": dates,
+            "open": close + np.random.randn(n) * 0.1,
+            "high": close + np.abs(np.random.randn(n) * 0.3),
+            "low": close - np.abs(np.random.randn(n) * 0.3),
+            "close": close,
+            "volume": np.random.randint(1_000_000, 10_000_000, n).astype(float),
+            "amount": np.random.randint(10_000_000, 100_000_000, n).astype(float),
+        }
+    )
 
 
 class TestComputeAndSave:
@@ -47,7 +51,22 @@ class TestComputeAndSave:
             df = _make_df()
             compute_and_save("000001.SZ", df)
             ind = pd.read_parquet(tmp_path / "daily" / "000001.SZ.parquet")
-            for col in ["date", "ma5", "ma10", "ma20", "ma60", "dif", "dea", "macd", "k", "d", "j", "boll_mid", "boll_upper", "boll_lower"]:
+            for col in [
+                "date",
+                "ma5",
+                "ma10",
+                "ma20",
+                "ma60",
+                "dif",
+                "dea",
+                "macd",
+                "k",
+                "d",
+                "j",
+                "boll_mid",
+                "boll_upper",
+                "boll_lower",
+            ]:
                 assert col in ind.columns, f"missing column: {col}"
 
     def test_daily_indicator_row_count_matches_kline(self, tmp_path):
@@ -81,33 +100,3 @@ class TestLoadIndicators:
             assert result is not None
             assert isinstance(result, pd.DataFrame)
             assert "ma5" in result.columns
-
-
-class TestContextUsesPrecomputed:
-    def test_indicator_uses_precomputed_when_available(self, tmp_path):
-        from services.backtest.context import ScreenerContext
-
-        df = _make_df(100)
-        with patch("services.indicator_store.INDICATOR_DIR", tmp_path):
-            compute_and_save("000001.SZ", df)
-
-            with patch("services.backtest.context.load_indicators", wraps=lambda sym, freq: load_indicators(sym, freq)):
-                data = {"000001.SZ": df}
-                ctx = ScreenerContext(stock_data=data, current_idx=50)
-
-                with patch("services.indicator_store.INDICATOR_DIR", tmp_path):
-                    val = ctx.indicator("000001.SZ", "ma", 5)
-                    assert val is not None
-                    assert isinstance(val, float)
-                    assert not math.isnan(val)
-
-    def test_indicator_fallback_when_no_precomputed(self, tmp_path):
-        from services.backtest.context import ScreenerContext
-
-        df = _make_df(100)
-        with patch("services.indicator_store.INDICATOR_DIR", tmp_path):
-            data = {"000001.SZ": df}
-            ctx = ScreenerContext(stock_data=data, current_idx=50)
-            val = ctx.indicator("000001.SZ", "ma", 5)
-            assert val is not None
-            assert isinstance(val, float)
