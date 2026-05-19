@@ -93,6 +93,71 @@ class DuckDBStore:
 
         return self._conn.execute(sql, params).fetchdf()
 
+    def query_qfq_kline(
+        self,
+        market: str,
+        symbol: str,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """
+        查询前复权 K 线（DuckDB ASOF JOIN 派生）。
+
+        实现：用 ASOF LEFT JOIN 把每根日线绑定到 dividOperateDate <= date 的最新
+        foreAdjustFactor，前复权价 = raw * COALESCE(factor, 1.0)。
+        - BaoStock 语义下 foreAdjustFactor 已归一化到最新日期=1.0，因此 close * factor
+          直接得到前复权价，无需额外归一化除法。
+        - 早于首次除权 / 无除权数据时 ASOF 命中 NULL，COALESCE 退化为 1.0 即等价 raw。
+
+        返回 7 列：date / open / high / low / close / volume / amount，date 升序。
+        """
+        daily_view = f"v_{market.lower()}_daily"
+        adj_view = f"v_{market.lower()}_adjust_factor"
+
+        # 仅当复权视图存在时才 ASOF JOIN，否则直接读 daily（防御视图未注册）
+        adj_exists = (
+            self._conn.execute(
+                "SELECT count(*) FROM duckdb_views() WHERE view_name = ?",
+                [adj_view],
+            ).fetchone()[0]
+            > 0
+        )
+
+        conditions = ["d._symbol = ?"]
+        params: list = [symbol]
+        if start:
+            conditions.append("d.date >= ?")
+            params.append(start)
+        if end:
+            conditions.append("d.date <= ?")
+            params.append(end)
+        where = " AND ".join(conditions)
+
+        if adj_exists:
+            sql = f"""
+                SELECT d.date,
+                       d.open   * COALESCE(af.foreAdjustFactor, 1.0) AS open,
+                       d.high   * COALESCE(af.foreAdjustFactor, 1.0) AS high,
+                       d.low    * COALESCE(af.foreAdjustFactor, 1.0) AS low,
+                       d.close  * COALESCE(af.foreAdjustFactor, 1.0) AS close,
+                       d.volume,
+                       d.amount
+                FROM {daily_view} d
+                ASOF LEFT JOIN {adj_view} af
+                  ON af._symbol = d._symbol
+                 AND af.dividOperateDate <= d.date
+                WHERE {where}
+                ORDER BY d.date ASC
+            """
+        else:
+            sql = f"""
+                SELECT d.date, d.open, d.high, d.low, d.close, d.volume, d.amount
+                FROM {daily_view} d
+                WHERE {where}
+                ORDER BY d.date ASC
+            """
+        return self._conn.execute(sql, params).fetchdf()
+
     def query_financial(
         self,
         market: str,
