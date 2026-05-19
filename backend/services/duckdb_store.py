@@ -210,6 +210,52 @@ def init_duckdb():
     logger.info("DuckDB store initialized")
 
 
+def init_duckdb_with_health_check():
+    """启动时初始化 DuckDB 并对 A 股核心视图做健康检查。
+
+    检查 v_a_daily / v_a_adjust_factor 是否非空，任一失败抛 RuntimeError，
+    阻止应用在缺数据情况下启动（D8 风险缓解）。
+    """
+    init_duckdb()
+    store = get_store()
+
+    # 检查 A 股日线视图：缺 parquet 会导致视图未注册或行数为 0
+    try:
+        a_symbols = store.list_symbols("A")
+    except Exception as e:
+        raise RuntimeError(
+            "DuckDB health check failed: v_a_daily not available "
+            f"(data/market/A/daily/ has no parquet): {e}"
+        )
+    if len(a_symbols) == 0:
+        raise RuntimeError(
+            "DuckDB health check failed: v_a_daily empty, "
+            "data/market/A/daily/ has no parquet"
+        )
+
+    # 检查 A 股复权因子视图
+    try:
+        af_count = store._conn.execute(
+            "SELECT count(*) AS c FROM v_a_adjust_factor"
+        ).fetchone()[0]
+    except Exception as e:
+        raise RuntimeError(
+            "DuckDB health check failed: v_a_adjust_factor not available "
+            f"(data/market/A/adjust_factor/ has no parquet): {e}"
+        )
+    if af_count == 0:
+        raise RuntimeError(
+            "DuckDB health check failed: v_a_adjust_factor empty, "
+            "data/market/A/adjust_factor/ has no parquet"
+        )
+
+    logger.info(
+        "DuckDB health check passed: %d A symbols, %d adjust_factor rows",
+        len(a_symbols),
+        af_count,
+    )
+
+
 def shutdown_duckdb():
     global _store
     if _store is not None:
