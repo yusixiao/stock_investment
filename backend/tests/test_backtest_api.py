@@ -59,7 +59,7 @@ class TestBacktestRun:
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
         )
-        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
 
         resp = client.post(
             "/api/backtest/run",
@@ -67,7 +67,7 @@ class TestBacktestRun:
                 "pipeline": [
                     {
                         "filepath": screener_path,
-                        "class_name": "MaTangleBreakoutScreener",
+                        "class_name": "MaTangleValueStrategy",
                     }
                 ],
             },
@@ -127,14 +127,14 @@ class TestChainBacktest:
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
         )
-        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
         resp = client.post(
             "/api/backtest/run",
             json={
                 "pipeline": [
                     {
                         "filepath": screener_path,
-                        "class_name": "MaTangleBreakoutScreener",
+                        "class_name": "MaTangleValueStrategy",
                     }
                 ],
                 "source_task_id": "nonexistent",
@@ -151,14 +151,14 @@ class TestChainBacktest:
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
         )
-        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
         resp = client.post(
             "/api/backtest/run",
             json={
                 "pipeline": [
                     {
                         "filepath": screener_path,
-                        "class_name": "MaTangleBreakoutScreener",
+                        "class_name": "MaTangleValueStrategy",
                     }
                 ],
                 "source_task_id": tid,
@@ -175,14 +175,14 @@ class TestChainBacktest:
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
         )
-        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
         resp = client.post(
             "/api/backtest/run",
             json={
                 "pipeline": [
                     {
                         "filepath": screener_path,
-                        "class_name": "MaTangleBreakoutScreener",
+                        "class_name": "MaTangleValueStrategy",
                     }
                 ],
                 "source_task_id": tid,
@@ -199,14 +199,14 @@ class TestChainBacktest:
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
         )
-        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
         resp = client.post(
             "/api/backtest/run",
             json={
                 "pipeline": [
                     {
                         "filepath": screener_path,
-                        "class_name": "MaTangleBreakoutScreener",
+                        "class_name": "MaTangleValueStrategy",
                     }
                 ],
                 "source_task_id": tid,
@@ -258,14 +258,14 @@ class TestChainBacktest:
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
         )
-        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
         resp = client.post(
             "/api/backtest/run",
             json={
                 "pipeline": [
                     {
                         "filepath": screener_path,
-                        "class_name": "MaTangleBreakoutScreener",
+                        "class_name": "MaTangleValueStrategy",
                     }
                 ],
                 "source_task_id": src_tid,
@@ -309,14 +309,14 @@ class TestChainBacktest:
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
         )
-        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
         resp = client.post(
             "/api/backtest/run",
             json={
                 "pipeline": [
                     {
                         "filepath": screener_path,
-                        "class_name": "MaTangleBreakoutScreener",
+                        "class_name": "MaTangleValueStrategy",
                     }
                 ],
                 "source_task_id": src_tid,
@@ -386,7 +386,7 @@ class TestJoinModesAPI:
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
         )
-        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
 
         with patch("routers.backtest.BacktestEngine") as mock_engine_cls:
             mock_engine = MagicMock()
@@ -399,7 +399,7 @@ class TestJoinModesAPI:
                     "pipeline": [
                         {
                             "filepath": screener_path,
-                            "class_name": "MaTangleBreakoutScreener",
+                            "class_name": "MaTangleValueStrategy",
                         }
                     ],
                     "join_modes": ["AND", "OR"],
@@ -443,7 +443,7 @@ class TestJoinModesAPI:
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
         )
-        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
 
         resp = client.post(
             "/api/backtest/run",
@@ -451,7 +451,7 @@ class TestJoinModesAPI:
                 "pipeline": [
                     {
                         "filepath": screener_path,
-                        "class_name": "MaTangleBreakoutScreener",
+                        "class_name": "MaTangleValueStrategy",
                     }
                 ],
                 "join_modes": ["AND"],
@@ -494,7 +494,7 @@ class TestJoinModesAPI:
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
         )
-        screener_path = str(strategies_dir / "ma_tangle_breakout_screener.py")
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
 
         resp = client.post(
             "/api/backtest/run",
@@ -502,7 +502,7 @@ class TestJoinModesAPI:
                 "pipeline": [
                     {
                         "filepath": screener_path,
-                        "class_name": "MaTangleBreakoutScreener",
+                        "class_name": "MaTangleValueStrategy",
                     }
                 ],
             },

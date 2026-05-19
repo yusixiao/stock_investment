@@ -11,21 +11,14 @@ EXAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "strategies" / "e
 
 
 class TestLoadStrategyFromFile:
-    def test_load_screener(self):
-        filepath = EXAMPLES_DIR / "ma_tangle_breakout_screener.py"
+    def test_load_strategy(self):
+        filepath = EXAMPLES_DIR / "ma_tangle_value_strategy.py"
         strategies = load_strategy_from_file(filepath)
         assert len(strategies) >= 1
         s = strategies[0]
         assert isinstance(s, type)
-        assert issubclass(s, ScreenerStrategy)
-        assert s.name == "月线均线缠绕"
-
-    def test_load_another_screener(self):
-        filepath = EXAMPLES_DIR / "roe_screener.py"
-        strategies = load_strategy_from_file(filepath)
-        assert len(strategies) >= 1
-        s = strategies[0]
-        assert issubclass(s, ScreenerStrategy)
+        assert issubclass(s, Strategy)
+        assert s.name == "月线均线缠绕价值策略"
 
     def test_load_nonexistent_file(self):
         filepath = Path("/nonexistent/file.py")
@@ -42,9 +35,9 @@ class TestLoadStrategyFromFile:
 class TestScanStrategies:
     def test_scan_examples_dir(self):
         results = scan_strategies(EXAMPLES_DIR)
-        assert len(results) >= 2
+        assert len(results) >= 1
         names = [r["name"] for r in results]
-        assert "月线均线缠绕" in names
+        assert "月线均线缠绕价值策略" in names
 
     def test_scan_returns_correct_structure(self):
         results = scan_strategies(EXAMPLES_DIR)
