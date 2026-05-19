@@ -3548,12 +3548,16 @@ git commit -m "refactor: delete 7 legacy strategies + tests — logic migrated t
 ## Task 6.2:删除旧基类 + 旧 Engine + 旧 Context,改名 v2 → 正式
 
 **Files:**
-- Modify: `backend/services/backtest/base.py`(删除 4 个旧基类,只保留 `Strategy + ParamAccessor`)
+- Modify: `backend/services/backtest/base.py`(删除 4 个旧基类 + `Strategy`,只保留 `ParamAccessor`)
+- **Create: `strategies/base.py`**(把新 `Strategy` 从 backtest/base.py 移过来)
 - Delete: `backend/services/backtest/engine.py`(旧)→ Rename `engine_v2.py` → `engine.py`
 - Delete: `backend/services/backtest/buy_sell_engine.py`
 - Delete: `backend/services/backtest/engine_base.py`(若存在)
 - Delete: `backend/services/backtest/context.py`(旧)→ Rename `context_v2.py` → `context.py`
 - Modify: 全局 import:`from services.backtest.engine_v2 import BacktestEngine` → `from services.backtest.engine import BacktestEngine`(同 context_v2)
+- Modify: 全局 import:`from services.backtest.base import Strategy` → `from strategies.base import Strategy`(engine / 测试 / `MaTangleValueStrategy` 等所有引用方)
+
+**架构理由**:`Strategy` 是策略作者的公共契约,放 `strategies/` 下符合「就近原则」+ 反转依赖方向(engine 依赖 strategies,而非 strategies 反向依赖 backend 内部)。
 
 - [ ] **Step 1:删除 + 改名**
 
@@ -3575,20 +3579,62 @@ grep -rln "engine_v2\|context_v2" backend/ | xargs sed -i.bak \
 find backend -name "*.bak" -delete
 ```
 
-- [ ] **Step 3:`base.py` 仅保留新 Strategy**
+- [ ] **Step 3:把 `Strategy` 移到 `strategies/base.py`**
 
-手工编辑,删除 `ScreenerStrategy / TraderStrategy / BuyStrategy / SellStrategy` 4 个类(及旧 `_load_settings` 逻辑)。
+```bash
+# 创建新文件,把 backend/services/backtest/base.py 中的 Strategy 类整段搬过去
+# strategies/base.py 应仅 import 必要依赖(typing 等),不依赖 backend.services.backtest
+```
 
-- [ ] **Step 4:全量回归**
+新 `strategies/base.py` 内容大致:
+```python
+"""策略基类 — 策略作者的公共契约。
+
+所有 strategies/examples/*.py 应继承本文件的 Strategy。
+backend/services/backtest/engine.py 反向 import 这里。
+"""
+from __future__ import annotations
+from typing import Any
+
+class Strategy:
+    frequency: str = "daily"
+    frequency_overridable: bool = False
+    strategy_type: str = "strategy"
+    settings: dict = {}
+    # ... 其余原样从 backend/services/backtest/base.py 搬来
+```
+
+- [ ] **Step 4:全局替换 Strategy import**
+
+```bash
+grep -rln "from services\.backtest\.base import.*Strategy\|from backend\.services\.backtest\.base import.*Strategy" backend/ strategies/ | \
+  xargs sed -i.bak \
+    -e 's|from services\.backtest\.base import Strategy|from strategies.base import Strategy|g' \
+    -e 's|from backend\.services\.backtest\.base import Strategy|from strategies.base import Strategy|g'
+find backend strategies -name "*.bak" -delete
+```
+
+注意:`backend/services/backtest/base.py` 中其他 import(`ParamAccessor` 等)保持不动。
+
+- [ ] **Step 5:`backend/services/backtest/base.py` 清理**
+
+手工编辑,删除:
+- `ScreenerStrategy / TraderStrategy / BuyStrategy / SellStrategy` 4 个旧基类
+- 新 `Strategy` 类(已搬到 strategies/base.py)
+- 旧 `_load_settings` 逻辑
+
+仅保留 `ParamAccessor` 等仍被 engine 使用的工具类。若 `base.py` 清理后为空,可整文件删除。
+
+- [ ] **Step 6:全量回归**
 
 ```bash
 python -m pytest backend/tests/ -x -q
 ```
 
-- [ ] **Step 5:Commit**
+- [ ] **Step 7:Commit**
 
 ```bash
-git commit -m "refactor(backtest): delete legacy base/engine/context — promote v2 to canonical (Phase 6.2)"
+git commit -m "refactor(backtest): delete legacy base/engine/context, move Strategy to strategies/base.py (Phase 6.2)"
 ```
 
 ---
