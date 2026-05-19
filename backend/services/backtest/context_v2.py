@@ -113,9 +113,7 @@ class Context:
     def log_pass(self, symbol: str, stage: str, **values: Any) -> None:
         self.log_sink.log_pass(symbol, stage, **self._common_log_kwargs(), **values)
 
-    def log_reject(
-        self, symbol: str, stage: str, *, reason: str, **values: Any
-    ) -> None:
+    def log_reject(self, symbol: str, stage: str, reason: str, **values: Any) -> None:
         self.log_sink.log_reject(
             symbol, stage, reason=reason, **self._common_log_kwargs(), **values
         )
