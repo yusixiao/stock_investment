@@ -85,3 +85,65 @@ def get_macd(
 
     # hist = 2 × (DIF - DEA),项目硬性约定
     return 2.0 * (dif_series[-1] - dea_series[-1])
+
+
+def is_at_history_low(
+    ctx, symbol: str, *,
+    years: int = 3, range_pct: float = 20.0,
+    freq: str = "monthly",
+) -> bool:
+    """当月 low 是否处于过去 N 年同周期最低 low 的 (1 + range_pct%) 范围内。
+
+    迁移自 MonthlyLowScreener。
+    stage = "kline.history_low"
+    lookback bar 数:monthly→12*years, weekly→52*years, daily→250*years
+    """
+    stage = "kline.history_low"
+    bars_per_year = {"monthly": 12, "weekly": 52, "daily": 250}.get(freq, 12)
+    lookback = years * bars_per_year
+
+    bars = ctx.get_history(symbol, lookback + 1, period=freq)
+    if not bars or len(bars) < lookback + 1:
+        ctx.log_reject(symbol, stage, "no_data",
+                       have=len(bars) if bars else 0, need=lookback + 1)
+        return False
+
+    range_ratio = 1.0 + range_pct / 100.0
+    current_low = bars[-1]["low"]
+    past_lows = [b["low"] for b in bars[-(lookback + 1):-1]]
+    hist_min = min(past_lows)
+    threshold = hist_min * range_ratio
+
+    if current_low <= threshold:
+        ctx.log_pass(symbol, stage,
+                     current_low=current_low, hist_min=hist_min,
+                     threshold=threshold, range_pct=range_pct)
+        return True
+    ctx.log_reject(symbol, stage, "above_threshold",
+                   current_low=current_low, hist_min=hist_min,
+                   threshold=threshold, range_pct=range_pct)
+    return False
+
+
+def has_consecutive_red_bars(
+    ctx, symbol: str, *,
+    n: int = 4, freq: str = "monthly",
+) -> bool:
+    """最近 n 根 K 线全部满足 close >= open(阳线/平收)。
+
+    迁移自 MonthlyVolumeRedScreener。
+    stage = "kline.consecutive_red"
+    """
+    stage = "kline.consecutive_red"
+    bars = ctx.get_history(symbol, n, period=freq)
+    if not bars or len(bars) < n:
+        ctx.log_reject(symbol, stage, "no_data",
+                       have=len(bars) if bars else 0, need=n)
+        return False
+
+    recent = bars[-n:]
+    if all(b["close"] >= b["open"] for b in recent):
+        ctx.log_pass(symbol, stage, n=n)
+        return True
+    ctx.log_reject(symbol, stage, "not_all_red", n=n)
+    return False
