@@ -73,6 +73,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
       const frequency =
         (params.frequency as string | undefined) ||
         (pi?.frequency_override as string | undefined) ||
+        (pi?.frequency as string | undefined) ||
         '--';
       const symbols = pi?.symbols as string[] | undefined;
       const market = (pi?.market as string | undefined) || 'A';

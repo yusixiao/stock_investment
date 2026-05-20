@@ -199,10 +199,10 @@ class TestBacktestStatus:
 
 
 class TestTaskManagerSourceTask:
-    def setup_method(self):
-        from services.backtest.task_manager import TaskManager
-
-        self.tm = TaskManager()
+    @pytest.fixture(autouse=True)
+    def _setup(self, isolated_task_manager):
+        # 使用 conftest 提供的临时 DB,避免污染真实 data/portfolio.db
+        self.tm = isolated_task_manager
 
     def test_create_task_with_source_task_id(self):
         tid = self.tm.create_task(
@@ -220,6 +220,8 @@ class TestTaskManagerSourceTask:
     def test_list_tasks_includes_source_task_id(self):
         tid = self.tm.create_task(
             task_type="screener",
+            strategy_class="DummyStrategy",
+            params={},
             source_task_id="src456",
         )
         tasks = self.tm.list_tasks()

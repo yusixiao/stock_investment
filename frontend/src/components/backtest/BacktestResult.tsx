@@ -105,7 +105,7 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
         <div>
           <h3 className="text-lg font-semibold text-foreground">{task.strategyName}</h3>
           <p className="mt-0.5 text-xs text-secondary-text">
-            {task.symbol && `${task.symbol} · `}{task.market} · {task.period} · {task.startDate} ~ {task.endDate}
+            {task.symbol || task.market} · {task.period} · {task.startDate} ~ {task.endDate}
           </p>
         </div>
         <Badge variant={returnTone === 'success' ? 'success' : 'danger'} size="md">

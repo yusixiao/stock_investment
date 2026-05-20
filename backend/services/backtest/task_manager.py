@@ -42,13 +42,22 @@ class TaskManager:
         source_task_id: str | None = None,
         strategy_class: str | None = None,
         params: dict | None = None,
+        frequency: str | None = None,
+        symbols: list[str] | None = None,
+        market: str | None = None,
         log_dir: str | None = None,
     ) -> str:
         task_id = str(uuid.uuid4())[:8]
         # merge-strategies 单策略模型: 显式传 strategy_class/params 时
-        # 覆盖/构造 pipeline_info = {strategy_class, params}
+        # 覆盖/构造 pipeline_info = {strategy_class, params, frequency?, symbols?, market?}
         if strategy_class is not None:
             pipeline_info = {"strategy_class": strategy_class, "params": params or {}}
+            if frequency is not None:
+                pipeline_info["frequency"] = frequency
+            if symbols is not None:
+                pipeline_info["symbols"] = symbols
+            if market is not None:
+                pipeline_info["market"] = market
         pi_json = (
             json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
         )
@@ -202,13 +211,17 @@ class TaskManager:
         conn = self._get_conn()
         try:
             base_cols = "task_id, status, task_type, summary, created_at, source_task_id, is_deleted, pipeline_info, start_date, end_date"
+            # 旧版/测试任务: pipeline_info 为空(NULL 或 '') → 不在历史页展示
+            # show_deleted=True 时仍返回全部以便 debug
             if effective_include:
                 rows = conn.execute(
                     f"SELECT {base_cols} FROM backtest_tasks ORDER BY created_at DESC"
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    f"SELECT {base_cols} FROM backtest_tasks WHERE is_deleted = 0 ORDER BY created_at DESC"
+                    f"SELECT {base_cols} FROM backtest_tasks "
+                    f"WHERE is_deleted = 0 AND pipeline_info IS NOT NULL AND pipeline_info != '' "
+                    f"ORDER BY created_at DESC"
                 ).fetchall()
         finally:
             conn.close()

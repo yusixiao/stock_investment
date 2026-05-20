@@ -83,10 +83,15 @@ def api_run_backtest(body: dict = Body(...)):
     # 扁平 pipeline_info: {strategy_class, params}(由 task_manager 内部构造)
     defaults = {k: v["default"] for k, v in getattr(cls, "params", {}).items()}
     merged_params = {**defaults, **overrides}
+    # 持久化策略 intrinsic frequency,供前端结果头部显示("daily"/"weekly"/"monthly")
+    intrinsic_frequency = getattr(cls, "frequency", None)
     task_id = task_manager.create_task(
         task_type="backtest",
         strategy_class=class_name,
         params=merged_params,
+        frequency=intrinsic_frequency,
+        symbols=target_symbols,
+        market=market,
         start_date=start_date,
         end_date=end_date,
     )
