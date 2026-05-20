@@ -44,6 +44,10 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
     } else {
       setParamValues({});
     }
+    // 频率锁定的策略,同步 period 到策略自身频率
+    if (selectedStrategy && !selectedStrategy.frequencyOverridable && selectedStrategy.frequency) {
+      setPeriod(selectedStrategy.frequency);
+    }
   }, [selectedStrategy?.className]);
 
   const handleRun = async () => {
@@ -76,11 +80,14 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
 
       const hasOverrides = Object.keys(paramValues).length > 0;
       const resp = await backtestEngineApi.runBacktest({
-        pipeline: [{ filepath: selectedStrategy.filepath, class_name: selectedStrategy.className }],
+        strategy_class: selectedStrategy.className,
+        filepath: selectedStrategy.filepath,
+        params: hasOverrides ? (paramValues as Record<string, unknown>) : undefined,
+        frequency_override: selectedStrategy.frequencyOverridable ? period : undefined,
         start_date: startDate,
         end_date: endDate,
         symbols,
-        param_overrides: hasOverrides ? { [selectedStrategy.className]: paramValues as Record<string, unknown> } : undefined,
+        market: 'A',
       });
 
       const realTaskId = resp.task_id;
@@ -177,11 +184,17 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
           className="input-surface input-focus-glow h-9 w-full appearance-none rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none"
         >
           <option value="">{loadingStrategies ? '加载中...' : '请选择策略'}</option>
-          {strategies.map((s) => (
-            <option key={s.className} value={s.className}>
-              {s.name} ({s.strategyType === 'screener' ? '选股' : '交易'}{s.frequency ? ` · ${s.frequency}` : ''})
-            </option>
-          ))}
+          {strategies.map((s) => {
+            const freqLabel = s.frequency === 'daily' ? '日线'
+              : s.frequency === 'weekly' ? '周线'
+              : s.frequency === 'monthly' ? '月线'
+              : s.frequency || '';
+            return (
+              <option key={s.className} value={s.className}>
+                {s.name}{freqLabel ? ` · ${freqLabel}` : ''}
+              </option>
+            );
+          })}
         </select>
       </div>
 
@@ -226,15 +239,28 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
 
       <div className="flex flex-col gap-1.5">
         <label className="text-xs text-secondary-text">K线周期</label>
-        <select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
-          className="input-surface input-focus-glow h-9 w-full appearance-none rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none"
-        >
-          <option value="daily">日线</option>
-          <option value="weekly">周线</option>
-          <option value="monthly">月线</option>
-        </select>
+        {selectedStrategy && !selectedStrategy.frequencyOverridable ? (
+          <div
+            className="input-surface flex h-9 w-full items-center rounded-lg border bg-transparent px-3 text-sm text-secondary-text"
+            title="该策略的频率不可修改"
+          >
+            {selectedStrategy.frequency === 'daily' ? '日线'
+              : selectedStrategy.frequency === 'weekly' ? '周线'
+              : selectedStrategy.frequency === 'monthly' ? '月线'
+              : (selectedStrategy.frequency || '日线')}
+            <span className="ml-2 text-xs text-muted-text">(策略锁定)</span>
+          </div>
+        ) : (
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            className="input-surface input-focus-glow h-9 w-full appearance-none rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none"
+          >
+            <option value="daily">日线</option>
+            <option value="weekly">周线</option>
+            <option value="monthly">月线</option>
+          </select>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2">

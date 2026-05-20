@@ -201,13 +201,14 @@ class TaskManager:
         effective_include = bool(show_deleted) or bool(include_deleted)
         conn = self._get_conn()
         try:
+            base_cols = "task_id, status, task_type, summary, created_at, source_task_id, is_deleted, pipeline_info, start_date, end_date"
             if effective_include:
                 rows = conn.execute(
-                    "SELECT task_id, status, task_type, summary, created_at, source_task_id, is_deleted FROM backtest_tasks ORDER BY created_at DESC"
+                    f"SELECT {base_cols} FROM backtest_tasks ORDER BY created_at DESC"
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT task_id, status, task_type, summary, created_at, source_task_id, is_deleted FROM backtest_tasks WHERE is_deleted = 0 ORDER BY created_at DESC"
+                    f"SELECT {base_cols} FROM backtest_tasks WHERE is_deleted = 0 ORDER BY created_at DESC"
                 ).fetchall()
         finally:
             conn.close()
@@ -219,12 +220,19 @@ class TaskManager:
                 "task_type": r["task_type"],
                 "created_at": r["created_at"],
                 "deleted": bool(r["is_deleted"]),
+                "start_date": r["start_date"],
+                "end_date": r["end_date"],
             }
             if r["source_task_id"]:
                 item["source_task_id"] = r["source_task_id"]
             if r["summary"]:
                 try:
                     item["summary"] = json.loads(r["summary"])
+                except Exception:
+                    pass
+            if r["pipeline_info"]:
+                try:
+                    item["pipeline_info"] = json.loads(r["pipeline_info"])
                 except Exception:
                     pass
             result.append(item)

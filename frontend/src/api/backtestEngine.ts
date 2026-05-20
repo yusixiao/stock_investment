@@ -6,15 +6,20 @@ export interface StrategyInfo {
   name: string;
   strategyType: string;
   frequency?: string;
+  frequencyOverridable: boolean;
   params?: Record<string, { default: unknown; description?: string }>;
 }
 
+// Phase 5: 单策略扁平 payload
 export interface RunBacktestRequest {
-  pipeline: { filepath: string; class_name: string }[];
+  strategy_class: string;
+  filepath: string;
+  params?: Record<string, unknown>;
+  frequency_override?: string;
   start_date: string;
   end_date: string;
   symbols?: string[];
-  param_overrides?: Record<string, Record<string, unknown>>;
+  market?: string;
   source_task_id?: string;
 }
 
@@ -64,28 +69,45 @@ export interface BacktestResultPayload {
   screened_symbols?: unknown[];
 }
 
+export interface TaskPipelineInfo {
+  strategy_class?: string;
+  params?: Record<string, unknown>;
+  // 旧任务可能存 {strategies: [...]} 嵌套结构
+  strategies?: Array<Record<string, unknown>>;
+}
+
 export interface TaskListItem {
   task_id: string;
   status: string;
   task_type: string;
-  pipeline_info: string | null;
+  pipeline_info?: TaskPipelineInfo;
   start_date: string | null;
   end_date: string | null;
-  summary: string | null;
+  summary?: Record<string, unknown>;
   created_at: string;
+  deleted: boolean;
+  source_task_id?: string;
 }
 
 export const backtestEngineApi = {
   async listStrategies(): Promise<StrategyInfo[]> {
     const resp = await apiClient.get('/api/backtest/strategies');
     return resp.data.map((s: Record<string, unknown>) => ({
-      filepath: s.filepath,
-      className: s.class_name,
-      name: s.name,
-      strategyType: s.strategy_type,
-      frequency: s.frequency,
-      params: s.params,
+      filepath: s.filepath as string,
+      className: s.class_name as string,
+      name: s.name as string,
+      strategyType: s.strategy_type as string,
+      frequency: s.frequency as string | undefined,
+      frequencyOverridable: Boolean(s.frequency_overridable),
+      params: s.params as StrategyInfo['params'],
     }));
+  },
+
+  async listTasks(showDeleted = false): Promise<TaskListItem[]> {
+    const resp = await apiClient.get('/api/backtest/tasks', {
+      params: { show_deleted: showDeleted },
+    });
+    return resp.data;
   },
 
   async runBacktest(req: RunBacktestRequest): Promise<{ task_id: string; status: string }> {
@@ -100,11 +122,6 @@ export const backtestEngineApi = {
 
   async getResult(taskId: string): Promise<TaskResult> {
     const resp = await apiClient.get(`/api/backtest/result/${taskId}`);
-    return resp.data;
-  },
-
-  async listTasks(): Promise<TaskListItem[]> {
-    const resp = await apiClient.get('/api/backtest/tasks');
     return resp.data;
   },
 

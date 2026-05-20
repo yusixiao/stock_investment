@@ -75,6 +75,58 @@ class TestBacktestRun:
         assert resp.status_code == 200
         assert "task_id" in resp.json()
 
+    @patch("routers.backtest._load_stock_data")
+    def test_run_accepts_flat_payload(self, mock_load):
+        """Phase 5: 新扁平 payload {strategy_class, filepath, params}。"""
+        import pandas as pd
+        import numpy as np
+
+        n = 30
+        np.random.seed(42)
+        close = 100 + np.cumsum(np.random.randn(n))
+        df = pd.DataFrame(
+            {
+                "date": pd.date_range("2024-01-01", periods=n, freq="B")
+                .strftime("%Y-%m-%d")
+                .tolist(),
+                "open": close,
+                "high": close + 1,
+                "low": close - 1,
+                "close": close,
+                "volume": [1e6] * n,
+                "amount": [1e7] * n,
+            }
+        )
+        mock_load.return_value = {"TEST.SH": df}
+
+        from pathlib import Path
+
+        strategies_dir = (
+            Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
+        )
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
+
+        resp = client.post(
+            "/api/backtest/run",
+            json={
+                "strategy_class": "MaTangleValueStrategy",
+                "filepath": screener_path,
+                "params": {},
+            },
+        )
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+
+        # 验证 pipeline_info 存为扁平结构
+        from services.backtest.task_manager import task_manager
+
+        result = task_manager.get_result(task_id)
+        pi = result["pipeline_info"]
+        assert pi["strategy_class"] == "MaTangleValueStrategy"
+        assert "params" in pi
+        # 不应再嵌套
+        assert "strategies" not in pi
+
 
 class TestBacktestStatus:
     def test_nonexistent_task(self):
@@ -113,9 +165,6 @@ class TestTaskManagerSourceTask:
         tasks = self.tm.list_tasks()
         task = next(t for t in tasks if t["task_id"] == tid)
         assert task["source_task_id"] == "src456"
-
-
-
 
 
 class TestSoftDeleteApi:

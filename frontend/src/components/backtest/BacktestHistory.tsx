@@ -1,46 +1,101 @@
 import type React from 'react';
-import { useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { RiDeleteBin6Line, RiRefreshLine } from '@remixicon/react';
 import { cn } from '../../utils/cn';
 import { Badge } from '../common';
+import { backtestEngineApi, type TaskListItem } from '../../api/backtestEngine';
 import type { BacktestTask } from './BacktestAnalysis';
 
 interface Props {
-  onSelect: (task: BacktestTask) => void;
+  // 预留:点击行展示详情(暂未实现,与 BacktestResult 共用 BacktestTask 结构)
+  onSelect?: (task: BacktestTask) => void;
 }
 
-type HistoryTab = 'stock' | 'market';
+function formatDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
 
-const MOCK_HISTORY: BacktestTask[] = [];
+// 解析 pipeline_info(扁平 / 旧嵌套两种结构皆兼容)
+function extractStrategyName(item: TaskListItem): string {
+  const pi = item.pipeline_info;
+  if (!pi) return '旧版任务';
+  if (pi.strategy_class) return pi.strategy_class;
+  if (pi.strategies && pi.strategies.length > 0) {
+    const first = pi.strategies[0];
+    return (first.name as string) || (first.class_name as string) || '未知策略';
+  }
+  return '旧版任务';
+}
 
-const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
-  const [tab, setTab] = useState<HistoryTab>('stock');
-  const tasks = MOCK_HISTORY.filter(t =>
-    tab === 'stock' ? t.mode === 'single' : t.mode === 'market'
-  );
+const BacktestHistory: React.FC<Props> = () => {
+  const [tasks, setTasks] = useState<TaskListItem[]>([]);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await backtestEngineApi.listTasks(showDeleted);
+      setTasks(list);
+    } catch {
+      setTasks([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [showDeleted]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refresh();
+  }, [refresh]);
+
+  const handleDelete = async (taskId: string) => {
+    if (!window.confirm(`确认删除任务 ${taskId}?(软删,可恢复)`)) return;
+    setDeletingId(taskId);
+    try {
+      await backtestEngineApi.deleteTask(taskId);
+      await refresh();
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="flex-shrink-0 border-b border-border/30 px-4 py-2">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-border/30 px-4 py-2">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-foreground">回测历史</span>
+          <span className="text-xs text-muted-text">共 {tasks.length} 条</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="inline-flex items-center gap-1.5 text-xs text-secondary-text">
+            <input
+              type="checkbox"
+              checked={showDeleted}
+              onChange={(e) => setShowDeleted(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-border accent-cyan"
+            />
+            显示已删除
+          </label>
           <button
             type="button"
-            onClick={() => setTab('stock')}
-            className={cn(
-              'text-sm font-medium transition-colors',
-              tab === 'stock' ? 'text-foreground' : 'text-secondary-text hover:text-foreground',
-            )}
+            onClick={refresh}
+            disabled={loading}
+            className="inline-flex items-center gap-1 text-xs text-secondary-text hover:text-foreground disabled:opacity-50"
+            title="刷新"
           >
-            个股回测记录
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('market')}
-            className={cn(
-              'text-sm font-medium transition-colors',
-              tab === 'market' ? 'text-foreground' : 'text-secondary-text hover:text-foreground',
-            )}
-          >
-            全市场回测记录
+            <RiRefreshLine className={cn('h-4 w-4', loading && 'animate-spin')} />
+            刷新
           </button>
         </div>
       </div>
@@ -49,8 +104,12 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
         {tasks.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
-              <p className="text-sm text-secondary-text">暂无回测记录</p>
-              <p className="mt-1 text-xs text-muted-text">运行回测后，结果会自动保存在这里</p>
+              <p className="text-sm text-secondary-text">
+                {loading ? '加载中...' : '暂无回测记录'}
+              </p>
+              {!loading && (
+                <p className="mt-1 text-xs text-muted-text">运行回测后，结果会自动保存在这里</p>
+              )}
             </div>
           </div>
         ) : (
@@ -58,55 +117,78 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/30 text-left text-xs text-secondary-text">
+                  <th className="px-3 py-2">任务 ID</th>
                   <th className="px-3 py-2">策略</th>
-                  {tab === 'stock' && <th className="px-3 py-2">股票</th>}
-                  <th className="px-3 py-2">市场</th>
-                  <th className="px-3 py-2">周期</th>
-                  <th className="px-3 py-2 text-right">收益率</th>
-                  <th className="px-3 py-2 text-right">最大回撤</th>
-                  <th className="px-3 py-2 text-right">夏普比</th>
-                  <th className="px-3 py-2 text-right">胜率</th>
-                  <th className="px-3 py-2 text-right">交易次数</th>
+                  <th className="px-3 py-2">日期范围</th>
                   <th className="px-3 py-2">状态</th>
-                  <th className="px-3 py-2">时间</th>
+                  <th className="px-3 py-2">创建时间</th>
+                  <th className="px-3 py-2 text-right">操作</th>
                 </tr>
               </thead>
               <tbody>
-                {tasks.map((task) => (
-                  <tr
-                    key={task.taskId}
-                    onClick={() => onSelect(task)}
-                    className="cursor-pointer border-b border-border/20 hover:bg-hover/30"
-                  >
-                    <td className="px-3 py-2 font-medium">{task.strategyName}</td>
-                    {tab === 'stock' && <td className="px-3 py-2 font-mono">{task.symbol}</td>}
-                    <td className="px-3 py-2">{task.market}</td>
-                    <td className="px-3 py-2">{task.period === 'daily' ? '日线' : task.period === 'weekly' ? '周线' : '月线'}</td>
-                    <td className={cn('px-3 py-2 text-right tabular-nums', task.result?.totalReturn != null && task.result.totalReturn >= 0 ? 'text-success' : 'text-danger')}>
-                      {task.result?.totalReturn != null ? `${(task.result.totalReturn * 100).toFixed(2)}%` : '--'}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-danger">
-                      {task.result?.maxDrawdown != null ? `${(task.result.maxDrawdown * 100).toFixed(2)}%` : '--'}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {task.result?.sharpeRatio?.toFixed(2) ?? '--'}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {task.result?.winRate != null ? `${(task.result.winRate * 100).toFixed(1)}%` : '--'}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {task.result?.totalTrades ?? '--'}
-                    </td>
-                    <td className="px-3 py-2">
-                      <Badge variant={task.status === 'completed' ? 'success' : task.status === 'failed' ? 'danger' : 'default'}>
-                        {task.status === 'completed' ? '完成' : task.status === 'failed' ? '失败' : '运行中'}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-text tabular-nums">
-                      {new Date(task.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                  </tr>
-                ))}
+                {tasks.map((task) => {
+                  const isDeleted = task.deleted;
+                  return (
+                    <tr
+                      key={task.task_id}
+                      className={cn(
+                        'border-b border-border/20',
+                        isDeleted
+                          ? 'bg-muted/20 text-muted-text'
+                          : 'hover:bg-hover/30',
+                      )}
+                    >
+                      <td className="px-3 py-2 font-mono text-xs">{task.task_id}</td>
+                      <td className="px-3 py-2">
+                        {extractStrategyName(task)}
+                        {isDeleted && (
+                          <Badge variant="default" className="ml-2">
+                            已删除
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-xs tabular-nums">
+                        {task.start_date && task.end_date
+                          ? `${task.start_date} ~ ${task.end_date}`
+                          : '--'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge
+                          variant={
+                            task.status === 'success'
+                              ? 'success'
+                              : task.status === 'failed'
+                                ? 'danger'
+                                : 'default'
+                          }
+                        >
+                          {task.status === 'success'
+                            ? '完成'
+                            : task.status === 'failed'
+                              ? '失败'
+                              : '运行中'}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2 text-xs tabular-nums">
+                        {formatDateTime(task.created_at)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {!isDeleted && (
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(task.task_id)}
+                            disabled={deletingId === task.task_id}
+                            className="inline-flex items-center gap-1 text-xs text-danger hover:text-danger/80 disabled:opacity-50"
+                            title="软删除"
+                          >
+                            <RiDeleteBin6Line className="h-3.5 w-3.5" />
+                            删除
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

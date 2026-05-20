@@ -36,20 +36,40 @@ def api_list_strategies():
 
 @router.post("/run")
 def api_run_backtest(body: dict = Body(...)):
-    pipeline = body.get("pipeline", [])
+    """运行回测。
+
+    Phase 5 新格式(扁平,推荐):
+        {strategy_class, filepath, params?, frequency_override?,
+         start_date, end_date, symbols?, market?}
+
+    遗留格式(向后兼容):
+        {pipeline: [{filepath, class_name}], param_overrides: {ClassName: {...}}, ...}
+    """
     start_date = body.get("start_date")
     end_date = body.get("end_date")
-    param_overrides = body.get("param_overrides", {})
     target_symbols = body.get("symbols")
     market = body.get("market", "A")
 
-    if not pipeline:
-        raise HTTPException(status_code=400, detail="Pipeline cannot be empty")
+    # 解析 strategy_class / filepath / overrides:支持新旧两种 payload
+    if "strategy_class" in body:
+        # 新格式(扁平)
+        class_name = body["strategy_class"]
+        filepath_str = body.get("filepath")
+        if not filepath_str:
+            raise HTTPException(status_code=400, detail="filepath is required")
+        filepath = Path(filepath_str)
+        overrides = body.get("params") or {}
+    else:
+        # 旧格式(pipeline 数组)
+        pipeline = body.get("pipeline", [])
+        if not pipeline:
+            raise HTTPException(status_code=400, detail="Pipeline cannot be empty")
+        item = pipeline[0]
+        filepath = Path(item["filepath"])
+        class_name = item["class_name"]
+        param_overrides = body.get("param_overrides", {})
+        overrides = param_overrides.get(class_name, {})
 
-    item = pipeline[0]
-    filepath = Path(item["filepath"])
-    class_name = item["class_name"]
-    overrides = param_overrides.get(class_name, {})
     classes = load_strategy_from_file(filepath)
     cls = next((c for c in classes if c.__name__ == class_name), None)
     if cls is None:
@@ -59,19 +79,13 @@ def api_run_backtest(body: dict = Body(...)):
         )
     strategy: Strategy = cls(param_overrides=overrides)
 
-    # 任务元数据(保留旧字段名以兼容前端 BacktestHistory)
-    info = {"class_name": class_name}
-    info["name"] = getattr(cls, "name", class_name)
-    info["strategy_type"] = getattr(cls, "strategy_type", "strategy")
-    if hasattr(cls, "frequency"):
-        info["frequency"] = cls.frequency
+    # 扁平 pipeline_info: {strategy_class, params}(由 task_manager 内部构造)
     defaults = {k: v["default"] for k, v in getattr(cls, "params", {}).items()}
-    info["params"] = {**defaults, **overrides}
-    pipeline_info = {"strategies": [info]}
-
+    merged_params = {**defaults, **overrides}
     task_id = task_manager.create_task(
         task_type="backtest",
-        pipeline_info=pipeline_info,
+        strategy_class=class_name,
+        params=merged_params,
         start_date=start_date,
         end_date=end_date,
     )
