@@ -16,7 +16,7 @@ from typing import Callable
 
 import pandas as pd
 
-from services.backtest.analyzer import compute_metrics
+from services.backtest.analyzer import compute_metrics, pair_round_trips
 from services.backtest.broker import Broker
 from services.backtest.context import Context
 from services.backtest.date_utils import format_match_date
@@ -188,11 +188,15 @@ class BacktestEngine:
         # 落盘日志缓冲
         self._log_sink.flush()
 
+        # trades 输出为 round-trip(buy/sell 配对),前端按此 schema 渲染。
+        # 单边事件保留在 raw_trades,便于审计与回放。
+        round_trips = pair_round_trips(self._broker.all_trades)
         return {
             "metrics": compute_metrics(
                 equity_curve, self._broker.all_trades, self._initial_capital
             ),
             "equity_curve": equity_curve,
-            "trades": self._broker.all_trades,
+            "trades": round_trips,
+            "raw_trades": self._broker.all_trades,
             "log_dir": str(self._log_sink.log_dir) if self._log_sink.enabled else None,
         }

@@ -97,7 +97,7 @@ class TaskManager:
                     "total_return": m.get("total_return"),
                     "annual_return": m.get("annual_return"),
                     "max_drawdown": m.get("max_drawdown"),
-                    "trade_count": m.get("trade_count"),
+                    "total_trades": m.get("total_trades"),
                 },
                 ensure_ascii=False,
             )

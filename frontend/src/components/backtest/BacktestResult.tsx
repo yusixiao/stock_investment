@@ -119,7 +119,7 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
         <StatItem label="最大回撤" value={formatPct(result.maxDrawdown)} tone="danger" />
         <StatItem label="夏普比率" value={formatNumber(result.sharpeRatio)} />
         <StatItem label="胜率" value={formatPct(result.winRate)} />
-        <StatItem label="交易次数" value={String(result.totalTrades)} />
+        <StatItem label="交易次数" value={result.totalTrades != null ? String(result.totalTrades) : '--'} />
         <StatItem label="盈亏比" value={formatNumber(result.profitFactor)} />
         <StatItem label="平均盈利" value={formatPct(result.avgWin)} tone="success" />
         <StatItem label="平均亏损" value={formatPct(result.avgLoss)} tone="danger" />
@@ -131,6 +131,37 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
           <h4 className="mb-3 text-sm font-medium text-secondary-text">资产走势</h4>
           <div className="h-64 w-full">
             <EquityCurveChart data={result.equityCurve} />
+          </div>
+        </div>
+      )}
+
+      {/* Buy Detail Table */}
+      {result.rawBuys && result.rawBuys.length > 0 && (
+        <div className="rounded-2xl border border-border/40 bg-card/50 p-4">
+          <h4 className="mb-3 text-sm font-medium text-secondary-text">
+            买入明细 <span className="text-muted-text">({result.rawBuys.length}笔)</span>
+          </h4>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border/30 text-left text-secondary-text">
+                  <th className="px-2 py-2">买入时间</th>
+                  <th className="px-2 py-2">股票</th>
+                  <th className="px-2 py-2 text-right">买入价格</th>
+                  <th className="px-2 py-2 text-right">股数</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.rawBuys.map((b, idx) => (
+                  <tr key={idx} className="border-b border-border/20 hover:bg-hover/30">
+                    <td className="px-2 py-2 tabular-nums">{b.date}</td>
+                    <td className="px-2 py-2 font-mono">{b.symbol}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{b.price.toFixed(3)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{b.shares.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -191,8 +222,16 @@ const EquityCurveChart: React.FC<{ data: { date: string; value: number }[] }> = 
   if (data.length === 0) return null;
 
   const values = data.map(d => d.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  // 当曲线完全平坦(无交易/资金未变动)时,人工撑开 ±5% 让线显示在中间
+  let min = rawMin;
+  let max = rawMax;
+  if (max - min < Math.abs(max) * 1e-6) {
+    const center = max || 1;
+    min = center * 0.95;
+    max = center * 1.05;
+  }
   const range = max - min || 1;
   const width = 800;
   const height = 240;
@@ -200,17 +239,22 @@ const EquityCurveChart: React.FC<{ data: { date: string; value: number }[] }> = 
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
 
+  const denom = data.length > 1 ? data.length - 1 : 1;
   const points = data.map((d, i) => {
-    const x = padding.left + (i / (data.length - 1)) * chartW;
+    const x = padding.left + (i / denom) * chartW;
     const y = padding.top + chartH - ((d.value - min) / range) * chartH;
     return `${x},${y}`;
   });
+  // 单点情况:横向延伸成一段水平线,避免 SVG path 失败
+  if (data.length === 1) {
+    points.push(`${padding.left + chartW},${points[0].split(',')[1]}`);
+  }
 
   const pathD = `M ${points.join(' L ')}`;
   const areaD = `${pathD} L ${padding.left + chartW},${padding.top + chartH} L ${padding.left},${padding.top + chartH} Z`;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="none">
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full">
       <defs>
         <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.3" />
@@ -220,10 +264,10 @@ const EquityCurveChart: React.FC<{ data: { date: string; value: number }[] }> = 
       <path d={areaD} fill="url(#equityGrad)" />
       <path d={pathD} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" />
       {/* X-axis labels */}
-      {[0, Math.floor(data.length / 2), data.length - 1].map(i => (
+      {Array.from(new Set([0, Math.floor(data.length / 2), data.length - 1])).map(i => (
         <text
           key={i}
-          x={padding.left + (i / (data.length - 1)) * chartW}
+          x={padding.left + (i / denom) * chartW}
           y={height - 5}
           textAnchor="middle"
           className="fill-secondary-text text-[10px]"

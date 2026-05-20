@@ -53,7 +53,7 @@ export interface BacktestResultPayload {
     avg_win: number;
     avg_loss: number;
   };
-  equity_curve?: { date: string; value: number }[];
+  equity_curve?: { date: string; value?: number; total_value?: number }[];
   trades?: {
     symbol: string;
     entry_date: string;
@@ -65,6 +65,16 @@ export interface BacktestResultPayload {
     pnl: number;
     pnl_pct: number;
     hold_days: number;
+  }[];
+  raw_trades?: {
+    date: string;
+    symbol: string;
+    direction: 'buy' | 'sell';
+    price: number;
+    shares: number;
+    commission?: number;
+    tax?: number;
+    amount?: number;
   }[];
   screened_symbols?: unknown[];
 }

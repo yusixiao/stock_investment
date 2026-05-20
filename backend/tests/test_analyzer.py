@@ -5,8 +5,16 @@ from services.backtest.analyzer import compute_metrics
 class TestComputeMetrics:
     def _make_equity_curve(self, values):
         import pandas as pd
-        dates = pd.date_range("2024-01-01", periods=len(values), freq="B").strftime("%Y-%m-%d").tolist()
-        return [{"date": d, "total_value": v, "cash": v * 0.5, "market_value": v * 0.5} for d, v in zip(dates, values)]
+
+        dates = (
+            pd.date_range("2024-01-01", periods=len(values), freq="B")
+            .strftime("%Y-%m-%d")
+            .tolist()
+        )
+        return [
+            {"date": d, "total_value": v, "cash": v * 0.5, "market_value": v * 0.5}
+            for d, v in zip(dates, values)
+        ]
 
     def test_basic_positive_return(self):
         curve = self._make_equity_curve([100_000, 105_000, 110_000, 115_000, 120_000])
@@ -16,7 +24,8 @@ class TestComputeMetrics:
         ]
         m = compute_metrics(curve, trades, initial_capital=100_000)
         assert m["total_return"] == pytest.approx(0.2, abs=0.01)
-        assert m["trade_count"] == 2
+        assert m["total_trades"] == 2
+        assert m["round_trip_count"] == 1
 
     def test_max_drawdown(self):
         curve = self._make_equity_curve([100_000, 110_000, 90_000, 95_000])
@@ -39,8 +48,11 @@ class TestComputeMetrics:
         curve = self._make_equity_curve([100_000, 100_000, 100_000])
         m = compute_metrics(curve, [], initial_capital=100_000)
         assert m["total_return"] == 0.0
-        assert m["trade_count"] == 0
+        assert m["total_trades"] == 0
         assert m["win_rate"] == 0.0
+        assert m["avg_win"] == 0.0
+        assert m["avg_loss"] == 0.0
+        assert m["profit_factor"] == 0.0
 
     def test_annualized_return(self):
         values = [100_000 + i * 100 for i in range(253)]

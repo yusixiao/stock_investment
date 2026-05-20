@@ -350,9 +350,11 @@ def test_engine_order_shares_fills_next_bar(stock_data, daily_dates):
     result = BacktestEngine(
         strategy=strat, stock_data=stock_data, enable_decision_log=False
     ).run()
-    trades = result["trades"]
-    assert len(trades) == 1
-    trade = trades[0]
+    # 只买不卖 → round-trip 为空,但原始单边事件保留在 raw_trades
+    assert result["trades"] == []
+    raw = result["raw_trades"]
+    assert len(raw) == 1
+    trade = raw[0]
     assert trade["symbol"] == "000001"
     assert trade["direction"] == "buy"
     assert trade["shares"] == 100

@@ -121,7 +121,10 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
                     profitFactor: payload.metrics.profit_factor,
                     avgWin: payload.metrics.avg_win,
                     avgLoss: payload.metrics.avg_loss,
-                    equityCurve: payload.equity_curve || [],
+                    equityCurve: (payload.equity_curve || []).map(e => ({
+                      date: e.date,
+                      value: e.value ?? e.total_value ?? 0,
+                    })),
                     trades: (payload.trades || []).map(t => ({
                       entryDate: t.entry_date,
                       exitDate: t.exit_date,
@@ -134,6 +137,14 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
                       pnlPct: t.pnl_pct,
                       holdDays: t.hold_days,
                     })),
+                    rawBuys: (payload.raw_trades || [])
+                      .filter(t => t.direction === 'buy')
+                      .map(t => ({
+                        date: t.date,
+                        symbol: t.symbol,
+                        price: t.price,
+                        shares: t.shares,
+                      })),
                   },
                 });
               } else {

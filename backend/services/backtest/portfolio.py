@@ -14,6 +14,11 @@ class Portfolio:
         self.cash = initial_capital
         self._positions: dict[str, PositionInfo] = {}
 
+    @property
+    def available_cash(self) -> float:
+        # 当前等价于 cash;预留 T+1 冻结资金语义(未来可减去待结算金额)
+        return self.cash
+
     def buy(self, symbol: str, shares: int, price: float, commission: float, date: str):
         total_cost = shares * price + commission
         self.cash -= total_cost
@@ -29,7 +34,9 @@ class Portfolio:
                 shares=shares, cost=price, buy_date=date
             )
 
-    def sell(self, symbol: str, shares: int, price: float, commission: float, tax: float):
+    def sell(
+        self, symbol: str, shares: int, price: float, commission: float, tax: float
+    ):
         total_income = shares * price - commission - tax
         self.cash += total_income
         if symbol in self._positions:
@@ -72,6 +79,8 @@ class Portfolio:
         return {
             "date": date,
             "total_value": total_value,
+            # value 是前端 equity_curve 期望的字段名,内部仍保留 total_value
+            "value": total_value,
             "cash": self.cash,
             "market_value": market_value,
             "positions": positions,

@@ -60,7 +60,6 @@ const BacktestHistory: React.FC<Props> = () => {
   }, [refresh]);
 
   const handleDelete = async (taskId: string) => {
-    if (!window.confirm(`确认删除任务 ${taskId}?(软删,可恢复)`)) return;
     setDeletingId(taskId);
     try {
       await backtestEngineApi.deleteTask(taskId);

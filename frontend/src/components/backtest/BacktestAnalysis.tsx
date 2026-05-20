@@ -38,6 +38,14 @@ export interface BacktestResultData {
   avgLoss: number;
   equityCurve: { date: string; value: number }[];
   trades: TradeRecord[];
+  rawBuys: BuyRecord[];
+}
+
+export interface BuyRecord {
+  date: string;
+  symbol: string;
+  price: number;
+  shares: number;
 }
 
 export interface TradeRecord {
