@@ -1,4 +1,5 @@
 import type React from 'react';
+import { useRef, useState } from 'react';
 import { cn } from '../../utils/cn';
 import { Badge } from '../common';
 import type { BacktestTask } from './BacktestAnalysis';
@@ -218,7 +219,16 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
   );
 };
 
+function formatValue(v: number): string {
+  if (Math.abs(v) >= 1e8) return `${(v / 1e8).toFixed(2)}亿`;
+  if (Math.abs(v) >= 1e4) return `${(v / 1e4).toFixed(2)}万`;
+  return v.toFixed(2);
+}
+
 const EquityCurveChart: React.FC<{ data: { date: string; value: number }[] }> = ({ data }) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
   if (data.length === 0) return null;
 
   const values = data.map(d => d.value);
@@ -240,11 +250,9 @@ const EquityCurveChart: React.FC<{ data: { date: string; value: number }[] }> = 
   const chartH = height - padding.top - padding.bottom;
 
   const denom = data.length > 1 ? data.length - 1 : 1;
-  const points = data.map((d, i) => {
-    const x = padding.left + (i / denom) * chartW;
-    const y = padding.top + chartH - ((d.value - min) / range) * chartH;
-    return `${x},${y}`;
-  });
+  const xOf = (i: number) => padding.left + (i / denom) * chartW;
+  const yOf = (v: number) => padding.top + chartH - ((v - min) / range) * chartH;
+  const points = data.map((d, i) => `${xOf(i)},${yOf(d.value)}`);
   // 单点情况:横向延伸成一段水平线,避免 SVG path 失败
   if (data.length === 1) {
     points.push(`${padding.left + chartW},${points[0].split(',')[1]}`);
@@ -253,8 +261,40 @@ const EquityCurveChart: React.FC<{ data: { date: string; value: number }[] }> = 
   const pathD = `M ${points.join(' L ')}`;
   const areaD = `${pathD} L ${padding.left + chartW},${padding.top + chartH} L ${padding.left},${padding.top + chartH} Z`;
 
+  // 鼠标 client 坐标 → SVG viewBox 坐标 → 最近数据点索引
+  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    // viewBox 横向无 letterbox 时:rect.width 映射 width;有时让 SVG 自适应,这里近似按比例
+    const vbX = ((e.clientX - rect.left) / rect.width) * width;
+    if (vbX < padding.left || vbX > padding.left + chartW) {
+      setHoverIdx(null);
+      return;
+    }
+    const ratio = (vbX - padding.left) / chartW;
+    const idx = Math.round(ratio * denom);
+    setHoverIdx(Math.max(0, Math.min(data.length - 1, idx)));
+  };
+  const handleLeave = () => setHoverIdx(null);
+
+  const hover = hoverIdx != null ? data[hoverIdx] : null;
+  const hoverX = hoverIdx != null ? xOf(hoverIdx) : 0;
+  const hoverY = hover ? yOf(hover.value) : 0;
+  // tooltip 锚点贴近指针,过右时左翻防溢出
+  const tipW = 150;
+  const tipH = 44;
+  const tipX = hoverX + tipW + 10 > width ? hoverX - tipW - 10 : hoverX + 10;
+  const tipY = Math.max(padding.top, Math.min(hoverY - tipH / 2, height - tipH - padding.bottom));
+
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full">
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${width} ${height}`}
+      className="h-full w-full"
+      onMouseMove={handleMove}
+      onMouseLeave={handleLeave}
+    >
       <defs>
         <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.3" />
@@ -287,6 +327,38 @@ const EquityCurveChart: React.FC<{ data: { date: string; value: number }[] }> = 
           </text>
         ))}
       </g>
+      {/* Hover guide + dot + tooltip */}
+      {hover && (
+        <g pointerEvents="none">
+          <line
+            x1={hoverX}
+            x2={hoverX}
+            y1={padding.top}
+            y2={padding.top + chartH}
+            stroke="currentColor"
+            strokeOpacity="0.3"
+            strokeDasharray="4 3"
+            className="text-secondary-text"
+          />
+          <circle cx={hoverX} cy={hoverY} r="4" fill="hsl(var(--primary))" stroke="white" strokeWidth="1.5" />
+          <rect
+            x={tipX}
+            y={tipY}
+            width={tipW}
+            height={tipH}
+            rx="6"
+            fill="hsl(var(--card))"
+            stroke="hsl(var(--border))"
+            strokeOpacity="0.6"
+          />
+          <text x={tipX + 8} y={tipY + 17} fontSize="11" fill="currentColor" className="text-secondary-text">
+            {hover.date}
+          </text>
+          <text x={tipX + 8} y={tipY + 35} fontSize="13" fontWeight="600" fill="hsl(var(--primary))">
+            {formatValue(hover.value)}
+          </text>
+        </g>
+      )}
     </svg>
   );
 };
