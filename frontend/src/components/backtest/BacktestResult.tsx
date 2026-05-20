@@ -263,31 +263,30 @@ const EquityCurveChart: React.FC<{ data: { date: string; value: number }[] }> = 
       </defs>
       <path d={areaD} fill="url(#equityGrad)" />
       <path d={pathD} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" />
-      {/* X-axis labels */}
-      {Array.from(new Set([0, Math.floor(data.length / 2), data.length - 1])).map(i => (
-        <text
-          key={i}
-          x={padding.left + (i / denom) * chartW}
-          y={height - 5}
-          textAnchor="middle"
-          className="fill-secondary-text text-[10px]"
-        >
-          {data[i].date}
-        </text>
-      ))}
-      {/* Y-axis labels */}
-      {[min, (min + max) / 2, max].map((v, i) => (
-        <text
-          key={i}
-          x={padding.left - 5}
-          y={padding.top + chartH - (i / 2) * chartH}
-          textAnchor="end"
-          dominantBaseline="middle"
-          className="fill-secondary-text text-[10px]"
-        >
-          {v >= 10000 ? `${(v / 10000).toFixed(1)}万` : v.toFixed(0)}
-        </text>
-      ))}
+      {/* X-axis labels —— 用 currentColor + 显式 fontSize,Tailwind 的 fill-* 在 v4 不绑定 --text-* 变量,容易渲染成黑色 */}
+      <g fill="currentColor" fontSize="11" className="text-secondary-text">
+        {Array.from(new Set([0, Math.floor(data.length / 2), data.length - 1])).map(i => (
+          <text
+            key={`x-${i}`}
+            x={padding.left + (i / denom) * chartW}
+            y={height - 5}
+            textAnchor="middle"
+          >
+            {data[i].date}
+          </text>
+        ))}
+        {[min, (min + max) / 2, max].map((v, i) => (
+          <text
+            key={`y-${i}`}
+            x={padding.left - 5}
+            y={padding.top + chartH - (i / 2) * chartH}
+            textAnchor="end"
+            dominantBaseline="middle"
+          >
+            {v >= 10000 ? `${(v / 10000).toFixed(1)}万` : v.toFixed(0)}
+          </text>
+        ))}
+      </g>
     </svg>
   );
 };
