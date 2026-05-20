@@ -97,6 +97,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
         result,
         error: detail.error,
         createdAt: detail.created_at || item.created_at,
+        params,
       };
       onSelect(task);
     } catch (err) {

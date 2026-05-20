@@ -4,6 +4,7 @@ import { cn } from '../../utils/cn';
 import BacktestConfig from './BacktestConfig';
 import BacktestResult from './BacktestResult';
 import BacktestHistory from './BacktestHistory';
+import BacktestDetail from './BacktestDetail';
 
 export type BacktestMode = 'single' | 'market';
 
@@ -24,6 +25,8 @@ export interface BacktestTask {
   result?: BacktestResultData | null;
   error?: string;
   createdAt: string;
+  // 详情视图用:策略原始参数(pipeline_info.params),仅展示用
+  params?: Record<string, unknown>;
 }
 
 export interface BacktestResultData {
@@ -65,10 +68,13 @@ const BacktestAnalysis: React.FC = () => {
   const [mode, setMode] = useState<BacktestMode>('single');
   const [currentTask, setCurrentTask] = useState<BacktestTask | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  // 历史详情态:不为 null 时进入只读详情视图(左侧参数+ID,右侧复用 BacktestResult)
+  const [detailTask, setDetailTask] = useState<BacktestTask | null>(null);
 
   const handleRunBacktest = (task: BacktestTask) => {
     setCurrentTask(task);
     setShowHistory(false);
+    setDetailTask(null);
   };
 
   const handleTaskUpdate = useCallback((taskId: string, updates: Partial<BacktestTask>) => {
@@ -82,8 +88,13 @@ const BacktestAnalysis: React.FC = () => {
   }, []);
 
   const handleViewHistory = (task: BacktestTask) => {
-    setCurrentTask(task);
+    setDetailTask(task);
     setShowHistory(false);
+  };
+
+  const handleBackFromDetail = () => {
+    setDetailTask(null);
+    setShowHistory(true);
   };
 
   return (
@@ -132,7 +143,9 @@ const BacktestAnalysis: React.FC = () => {
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {showHistory ? (
+        {detailTask ? (
+          <BacktestDetail task={detailTask} onBack={handleBackFromDetail} />
+        ) : showHistory ? (
           <BacktestHistory onSelect={handleViewHistory} />
         ) : (
           <>
