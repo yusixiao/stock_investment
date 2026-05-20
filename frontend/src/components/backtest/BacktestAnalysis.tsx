@@ -64,16 +64,22 @@ export interface TradeRecord {
   holdDays: number;
 }
 
+type ViewTab = 'single' | 'market' | 'history';
+
+const TABS: { key: ViewTab; label: string }[] = [
+  { key: 'single', label: '个股回测' },
+  { key: 'market', label: '全市场回测' },
+  { key: 'history', label: '历史记录' },
+];
+
 const BacktestAnalysis: React.FC = () => {
-  const [mode, setMode] = useState<BacktestMode>('single');
+  const [view, setView] = useState<ViewTab>('single');
   const [currentTask, setCurrentTask] = useState<BacktestTask | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
   // 历史详情态:不为 null 时进入只读详情视图(左侧参数+ID,右侧复用 BacktestResult)
   const [detailTask, setDetailTask] = useState<BacktestTask | null>(null);
 
   const handleRunBacktest = (task: BacktestTask) => {
     setCurrentTask(task);
-    setShowHistory(false);
     setDetailTask(null);
   };
 
@@ -88,65 +94,51 @@ const BacktestAnalysis: React.FC = () => {
   }, []);
 
   const handleViewHistory = (task: BacktestTask) => {
+    // 在历史记录页内点击行 → 进入详情(详情视图叠在历史 tab 上)
     setDetailTask(task);
-    setShowHistory(false);
   };
 
   const handleBackFromDetail = () => {
     setDetailTask(null);
-    setShowHistory(true);
   };
+
+  // 切 tab 时清掉详情态,保证 tab 行为一致(点哪个 tab 就立刻显示对应内容)
+  const handleSelectTab = (next: ViewTab) => {
+    setDetailTask(null);
+    setView(next);
+  };
+
+  const mode: BacktestMode = view === 'market' ? 'market' : 'single';
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex-shrink-0 border-b border-border/30 bg-card/30 px-4 py-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="inline-flex rounded-lg border border-border/50 bg-elevated/50 p-0.5">
-              <button
-                type="button"
-                onClick={() => setMode('single')}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-xs font-medium transition-all',
-                  mode === 'single'
-                    ? 'bg-cyan text-slate-950 shadow-sm'
-                    : 'text-secondary-text hover:text-foreground',
-                )}
-              >
-                个股回测
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('market')}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-xs font-medium transition-all',
-                  mode === 'market'
-                    ? 'bg-cyan text-slate-950 shadow-sm'
-                    : 'text-secondary-text hover:text-foreground',
-                )}
-              >
-                全市场回测
-              </button>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowHistory(!showHistory)}
-            className={cn(
-              'text-xs font-medium transition-colors',
-              showHistory ? 'text-cyan' : 'text-secondary-text hover:text-foreground',
-            )}
-          >
-            历史记录
-          </button>
+        <div className="inline-flex rounded-lg border border-border/50 bg-elevated/50 p-0.5">
+          {TABS.map(tab => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => handleSelectTab(tab.key)}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-medium transition-all',
+                view === tab.key
+                  ? 'bg-cyan text-slate-950 shadow-sm'
+                  : 'text-secondary-text hover:text-foreground',
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {detailTask ? (
-          <BacktestDetail task={detailTask} onBack={handleBackFromDetail} />
-        ) : showHistory ? (
-          <BacktestHistory onSelect={handleViewHistory} />
+        {view === 'history' ? (
+          detailTask ? (
+            <BacktestDetail task={detailTask} onBack={handleBackFromDetail} />
+          ) : (
+            <BacktestHistory onSelect={handleViewHistory} />
+          )
         ) : (
           <>
             <aside className="w-80 flex-shrink-0 overflow-y-auto border-r border-border/30 bg-card/20">
