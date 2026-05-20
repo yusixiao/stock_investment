@@ -5,9 +5,10 @@ import { cn } from '../../utils/cn';
 import { Badge } from '../common';
 import { backtestEngineApi, type TaskListItem } from '../../api/backtestEngine';
 import type { BacktestTask } from './BacktestAnalysis';
+import { mapPayloadToResultData } from '../../utils/backtestPayload';
 
 interface Props {
-  // 预留:点击行展示详情(暂未实现,与 BacktestResult 共用 BacktestTask 结构)
+  // 点击行加载详情后回调,父级用 BacktestTask 切换到 BacktestResult 视图
   onSelect?: (task: BacktestTask) => void;
 }
 
@@ -36,11 +37,12 @@ function extractStrategyName(item: TaskListItem): string {
   return '旧版任务';
 }
 
-const BacktestHistory: React.FC<Props> = () => {
+const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
   const [tasks, setTasks] = useState<TaskListItem[]>([]);
   const [showDeleted, setShowDeleted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -58,6 +60,51 @@ const BacktestHistory: React.FC<Props> = () => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
   }, [refresh]);
+
+  const handleOpen = async (item: TaskListItem) => {
+    if (!onSelect || item.deleted) return;
+    setOpeningId(item.task_id);
+    try {
+      const detail = await backtestEngineApi.getResult(item.task_id);
+      const result = detail.result ? mapPayloadToResultData(detail.result) : null;
+      // pipeline_info 兼容扁平 / 旧嵌套两种结构,提取 frequency 作 period 显示
+      const pi = detail.pipeline_info as Record<string, unknown> | null | undefined;
+      const params = (pi?.params as Record<string, unknown> | undefined) || {};
+      const frequency =
+        (params.frequency as string | undefined) ||
+        (pi?.frequency_override as string | undefined) ||
+        '--';
+      const symbols = pi?.symbols as string[] | undefined;
+      const market = (pi?.market as string | undefined) || 'A';
+      const status: BacktestTask['status'] =
+        item.status === 'success'
+          ? 'completed'
+          : item.status === 'failed'
+            ? 'failed'
+            : 'running';
+      const task: BacktestTask = {
+        taskId: item.task_id,
+        status,
+        mode: symbols && symbols.length === 1 ? 'single' : 'market',
+        strategyName: extractStrategyName(item),
+        symbol: symbols && symbols.length === 1 ? symbols[0] : undefined,
+        market,
+        period: frequency,
+        startDate: detail.start_date || item.start_date || '',
+        endDate: detail.end_date || item.end_date || '',
+        capital: 0,
+        commission: 0,
+        result,
+        error: detail.error,
+        createdAt: detail.created_at || item.created_at,
+      };
+      onSelect(task);
+    } catch (err) {
+      console.error('加载回测详情失败', err);
+    } finally {
+      setOpeningId(null);
+    }
+  };
 
   const handleDelete = async (taskId: string) => {
     setDeletingId(taskId);
@@ -130,12 +177,15 @@ const BacktestHistory: React.FC<Props> = () => {
                   return (
                     <tr
                       key={task.task_id}
+                      onClick={() => !isDeleted && handleOpen(task)}
                       className={cn(
                         'border-b border-border/20',
                         isDeleted
                           ? 'bg-muted/20 text-muted-text'
-                          : 'hover:bg-hover/30',
+                          : 'cursor-pointer hover:bg-hover/30',
+                        openingId === task.task_id && 'opacity-60',
                       )}
+                      title={!isDeleted ? '点击查看详情' : undefined}
                     >
                       <td className="px-3 py-2 font-mono text-xs">{task.task_id}</td>
                       <td className="px-3 py-2">
@@ -175,7 +225,10 @@ const BacktestHistory: React.FC<Props> = () => {
                         {!isDeleted && (
                           <button
                             type="button"
-                            onClick={() => handleDelete(task.task_id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(task.task_id);
+                            }}
                             disabled={deletingId === task.task_id}
                             className="inline-flex items-center gap-1 text-xs text-danger hover:text-danger/80 disabled:opacity-50"
                             title="软删除"

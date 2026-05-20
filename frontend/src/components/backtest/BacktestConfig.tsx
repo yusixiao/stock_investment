@@ -4,6 +4,7 @@ import { RiPlayFill } from '@remixicon/react';
 import { backtestEngineApi } from '../../api/backtestEngine';
 import type { StrategyInfo } from '../../api/backtestEngine';
 import type { BacktestMode, BacktestTask } from './BacktestAnalysis';
+import { mapPayloadToResultData } from '../../utils/backtestPayload';
 
 interface Props {
   mode: BacktestMode;
@@ -107,45 +108,12 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
             if (status.status === 'success') {
               const result = await backtestEngineApi.getResult(realTaskId);
               const payload = result.result;
-              if (payload?.metrics) {
+              const mapped = payload ? mapPayloadToResultData(payload) : null;
+              if (mapped) {
                 onTaskUpdate(realTaskId, {
                   status: 'completed',
                   progress: 100,
-                  result: {
-                    totalReturn: payload.metrics.total_return,
-                    annualizedReturn: payload.metrics.annualized_return,
-                    maxDrawdown: payload.metrics.max_drawdown,
-                    sharpeRatio: payload.metrics.sharpe_ratio,
-                    winRate: payload.metrics.win_rate,
-                    totalTrades: payload.metrics.total_trades,
-                    profitFactor: payload.metrics.profit_factor,
-                    avgWin: payload.metrics.avg_win,
-                    avgLoss: payload.metrics.avg_loss,
-                    equityCurve: (payload.equity_curve || []).map(e => ({
-                      date: e.date,
-                      value: e.value ?? e.total_value ?? 0,
-                    })),
-                    trades: (payload.trades || []).map(t => ({
-                      entryDate: t.entry_date,
-                      exitDate: t.exit_date,
-                      symbol: t.symbol,
-                      direction: t.direction as 'long' | 'short',
-                      entryPrice: t.entry_price,
-                      exitPrice: t.exit_price,
-                      quantity: t.shares,
-                      pnl: t.pnl,
-                      pnlPct: t.pnl_pct,
-                      holdDays: t.hold_days,
-                    })),
-                    rawBuys: (payload.raw_trades || [])
-                      .filter(t => t.direction === 'buy')
-                      .map(t => ({
-                        date: t.date,
-                        symbol: t.symbol,
-                        price: t.price,
-                        shares: t.shares,
-                      })),
-                  },
+                  result: mapped,
                 });
               } else {
                 onTaskUpdate(realTaskId, { status: 'completed', progress: 100 });
