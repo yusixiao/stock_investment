@@ -1,7 +1,4 @@
-import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
-import pandas as pd
 
 from main import app
 
@@ -29,7 +26,9 @@ class TestStockRoutes:
         assert resp.status_code in [200, 404]
 
     def test_get_kline_with_date_range(self):
-        resp = client.get("/api/stocks/600028.SH/kline?start_date=2026-04-01&end_date=2026-04-10")
+        resp = client.get(
+            "/api/stocks/600028.SH/kline?start_date=2026-04-01&end_date=2026-04-10"
+        )
         assert resp.status_code in [200, 404]
 
     def test_get_indicators(self):
@@ -45,19 +44,4 @@ class TestStockRoutes:
         assert resp.status_code in [200, 404]
 
 
-class TestDataUpdateRoutes:
-    @patch("routers.data_update.run_update_task")
-    def test_trigger_update(self, mock_task):
-        resp = client.post("/api/data/update")
-        assert resp.status_code == 200
-        assert "incremental update started" in resp.json()["message"]
-
-    def test_get_update_status(self):
-        resp = client.get("/api/data/update/status")
-        assert resp.status_code == 200
-        assert "status" in resp.json()
-
-    def test_get_update_logs(self):
-        resp = client.get("/api/data/update/logs")
-        assert resp.status_code == 200
-        assert isinstance(resp.json(), list)
+# /api/data/* 路由已下线(manual update 废弃),对应测试已移除

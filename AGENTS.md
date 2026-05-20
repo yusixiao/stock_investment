@@ -14,7 +14,7 @@
 - **数据存储**:
   - **唯一业务数据源 = DuckDB**(2026-05-18 决策):所有业务代码(回测、选股、K 线展示、财务/估值/分红查询)**必须**经 `services/duckdb_store.py` 访问数据,**禁止**直接 `glob` parquet 或读旧路径文件。新增数据访问 API 必须先在 `DuckDBStore` 上加方法/视图
   - **DuckDB 唯一来源 = `data/market/`**:`data/market/{A,HK,US}/{daily,adjust_factor,financial/*}/*.parquet`(DuckDB 视图 `v_a_daily / v_a_adjust_factor / v_a_income / ...` 等)
-  - **旧路径仅作校验用**:`data/kline/A/raw/`、`data/kline/A/qfq/` 中的数据**不再被业务代码读取**,只保留作为新管线输出的对照基准。`qfq_cache.py` 需要迁移为基于 `data/market/A/daily/`(raw 不复权)+ `data/dividend/A/` 派生 qfq,见 D8 章节
+  - **旧路径完全废弃**:`data/kline/A/raw/`、`data/kline/A/qfq/` 不再被任何业务代码读取(2026-05-20 housekeeping 完成)。manual update 流程下线,`services/data_updater.py` + `routers/data_update.py` + `services/qfq_cache.py` 全部删除。物理目录可手动清理
   - 复权因子:`data/market/{market}/adjust_factor/*.parquet`
   - 分红:`data/dividend/A/`,财务:`data/financial/A/`,估值:`data/valuation/A/`,指标:`data/indicators/A/`(逐步纳入 DuckDB 视图)
   - 业务库:`data/portfolio.db`(SQLite)— portfolios / trades / snapshots / backtest_tasks / strategy_groups / group_runs
@@ -43,7 +43,7 @@
 
 ## Discoveries
 
-- `data/kline/A/raw/`:不复权;`data/kline/A/qfq/`:前复权(现为 raw+dividend 派生缓存)
+- ~~`data/kline/A/raw/`:不复权;`data/kline/A/qfq/`:前复权~~ 已废弃,现统一走 `data/market/A/daily/` + DuckDB `query_qfq_kline` ASOF JOIN 派生
 - Parquet 7 列(date 字符串、open/high/low/close/volume/amount float64),日期降序
 - 引擎三种执行路径:
   - `run(mode="screen")` — **选股模式**:仅对最后一根 bar 评估,返回 `{"screened_symbols": [...]}`。供 `/api/screener/run`
@@ -158,7 +158,7 @@ stock_investment/
 │   │   ├── stock_index.py              # 全市场代码索引
 │   │   ├── qfq_cache.py                # 前复权缓存(派生)
 │   │   ├── market_updater.py           # 多市场并行增量
-│   │   ├── data_updater.py             # A 股每日批量
+
 │   │   ├── dividend_updater.py / financial_updater.py / valuation_updater.py
 │   │   ├── circulating_shares.py / indicator_store.py / indicator.py
 │   │   ├── api_utils.py / db_schema.py

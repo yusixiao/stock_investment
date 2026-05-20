@@ -23,9 +23,8 @@ class TestScreenerRoutes:
     @pytest.mark.skip(
         reason="Phase 6.1: 旧 ScreenerStrategy 已删除,统一 Strategy 尚未被 /api/screener/run 接受;待 Phase 5 调整 API 后重新启用"
     )
-    @patch("routers.screener.RAW_KLINE_DIR")
     @patch("routers.screener.get_store")
-    def test_run_screener_with_mock_data(self, mock_get_store, mock_dir, tmp_path):
+    def test_run_screener_with_mock_data(self, mock_get_store, tmp_path):
         n = 60
         np.random.seed(42)
         close = 100 + np.cumsum(np.random.randn(n))
@@ -44,7 +43,6 @@ class TestScreenerRoutes:
         )
         pq_path = tmp_path / "TEST.SH.parquet"
         df.to_parquet(pq_path)
-        mock_dir.glob = tmp_path.glob
         from unittest.mock import MagicMock
 
         mock_store = MagicMock()

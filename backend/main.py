@@ -40,7 +40,6 @@ logging.getLogger("uvicorn").setLevel(logging.INFO)
 logging.getLogger("watchfiles").setLevel(logging.WARNING)
 
 from routers.stock import router as stock_router
-from routers.data_update import router as data_update_router
 from routers.backtest import router as backtest_router
 from routers.screener import router as screener_router
 from routers.portfolio import router as portfolio_router
@@ -80,7 +79,6 @@ app.add_middleware(
 )
 
 app.include_router(stock_router)
-app.include_router(data_update_router)
 app.include_router(backtest_router)
 app.include_router(screener_router)
 app.include_router(portfolio_router)
