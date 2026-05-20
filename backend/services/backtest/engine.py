@@ -91,6 +91,24 @@ class BacktestEngine:
         dates = self._market_data.dates
         n_bars = len(dates)
 
+        # 起始 flow 事件:记录策略类、参数与数据范围,便于离线追溯
+        if self._log_sink.enabled and n_bars > 0:
+            self._log_sink.log_flow(
+                "engine.run.start",
+                idx=0,
+                ts=dates[0],
+                strategy=type(self._strategy).__name__,
+                frequency=getattr(self._strategy, "frequency", ""),
+                symbols=len(self._all_symbols),
+                bars=n_bars,
+                start_date=dates[0],
+                end_date=dates[-1],
+                params={
+                    k: getattr(self._strategy.p, k, None)
+                    for k in getattr(self._strategy, "params", {})
+                },
+            )
+
         target_symbols: set[str] = set()
         screener_cache: list[str] = []
         prev_period_key: str | None = None
@@ -103,7 +121,20 @@ class BacktestEngine:
 
             # 1) T+1 撮合:用今日 bar 填昨日挂单,prev_closes 仅用于涨跌停判定
             if idx > 0 and self._broker.pending_orders:
-                self._broker.fill_orders(current_date, current_bars, prev_closes)
+                fills = self._broker.fill_orders(
+                    current_date, current_bars, prev_closes
+                )
+                # 把成交事件写入 exec.jsonl(策略侧无法直接捕获 T+1 撮合)
+                for trade in fills:
+                    self._log_sink.log_exec(
+                        trade["direction"],
+                        trade["symbol"],
+                        idx=idx,
+                        ts=current_date,
+                        shares=int(trade["shares"]),
+                        price=float(trade["price"]),
+                        note=f"commission={trade['commission']:.2f},tax={trade.get('tax', 0):.2f}",
+                    )
 
             ctx = Context(
                 strategy=self._strategy,
@@ -144,6 +175,16 @@ class BacktestEngine:
             if self._on_progress:
                 self._on_progress(idx + 1, n_bars)
 
+        # 收尾 flow 事件:总交易笔数 + 累计目标池大小
+        if self._log_sink.enabled and n_bars > 0:
+            self._log_sink.log_flow(
+                "engine.run.done",
+                idx=n_bars - 1,
+                ts=dates[-1],
+                trades=len(self._broker.all_trades),
+                target_pool=len(target_symbols),
+                final_cash=float(self._broker.portfolio.cash),
+            )
         # 落盘日志缓冲
         self._log_sink.flush()
 

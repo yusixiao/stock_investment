@@ -76,6 +76,66 @@ class TestBacktestRun:
         assert "task_id" in resp.json()
 
     @patch("routers.backtest._load_stock_data")
+    def test_run_writes_decision_logs_to_task_dir(self, mock_load):
+        """Phase 7: 路由必须把 LOG_DIR/backtest/{task_id}/ 传给 Engine,
+        否则 DecisionLogSink 会被禁用,日志全部丢失。"""
+        import time
+        import pandas as pd
+        import numpy as np
+        from pathlib import Path
+        from config import LOG_DIR
+
+        n = 30
+        np.random.seed(42)
+        close = 100 + np.cumsum(np.random.randn(n))
+        df = pd.DataFrame(
+            {
+                "date": pd.date_range("2024-01-01", periods=n, freq="B")
+                .strftime("%Y-%m-%d")
+                .tolist(),
+                "open": close,
+                "high": close + 1,
+                "low": close - 1,
+                "close": close,
+                "volume": [1e6] * n,
+                "amount": [1e7] * n,
+            }
+        )
+        mock_load.return_value = {"TEST.SH": df}
+
+        strategies_dir = (
+            Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
+        )
+        screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
+
+        resp = client.post(
+            "/api/backtest/run",
+            json={
+                "strategy_class": "MaTangleValueStrategy",
+                "filepath": screener_path,
+                "params": {},
+            },
+        )
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+
+        # 等待后台线程跑完(数据小,通常 < 2s)
+        from services.backtest.task_manager import task_manager
+
+        for _ in range(40):
+            status = task_manager.get_status(task_id)
+            if status and status["status"] != "running":
+                break
+            time.sleep(0.1)
+
+        log_dir = LOG_DIR / "backtest" / task_id
+        # flow.jsonl 应至少含 engine.run.start
+        flow_path = log_dir / "flow.jsonl"
+        assert flow_path.exists(), f"flow.jsonl not written under {log_dir}"
+        content = flow_path.read_text()
+        assert "engine.run.start" in content
+
+    @patch("routers.backtest._load_stock_data")
     def test_run_accepts_flat_payload(self, mock_load):
         """Phase 5: 新扁平 payload {strategy_class, filepath, params}。"""
         import pandas as pd

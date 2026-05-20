@@ -250,6 +250,65 @@ def test_engine_writes_decision_log_when_log_dir_given(tmp_path, stock_data):
     assert result["log_dir"] == str(log_dir)
 
 
+def test_engine_writes_run_lifecycle_flow_records(tmp_path, stock_data):
+    """flow.jsonl 应包含 engine.run.start / engine.run.done 事件,
+    含 strategy 名、参数、bars、trades 等字段,便于离线追溯。"""
+    log_dir = tmp_path / "lifecycle"
+    BacktestEngine(
+        strategy=_LoggingStrategy(),
+        stock_data=stock_data,
+        log_dir=log_dir,
+        enable_decision_log=True,
+    ).run()
+    flow_lines = [
+        json.loads(line)
+        for line in (log_dir / "flow.jsonl").read_text().splitlines()
+        if line
+    ]
+    stages = {rec["stage"] for rec in flow_lines}
+    assert "engine.run.start" in stages
+    assert "engine.run.done" in stages
+    start = next(r for r in flow_lines if r["stage"] == "engine.run.start")
+    assert start["counts"]["strategy"] == "_LoggingStrategy"
+    assert start["counts"]["bars"] > 0
+
+
+def test_engine_writes_exec_log_on_fills(tmp_path, stock_data, daily_dates):
+    """成交事件应写入 exec.jsonl(策略侧无法捕获 T+1 撮合,由 engine 兜底)。"""
+
+    class _BuyOnce(Strategy):
+        frequency = "daily"
+
+        def __init__(self):
+            super().__init__()
+            self.bought = False
+
+        def screen(self, ctx, symbols):
+            return list(symbols)
+
+        def on_buy(self, ctx):
+            if not self.bought and "000001" in ctx.target_symbols:
+                ctx.order_shares("000001", 100)
+                self.bought = True
+
+    log_dir = tmp_path / "exec_run"
+    BacktestEngine(
+        strategy=_BuyOnce(),
+        stock_data=stock_data,
+        log_dir=log_dir,
+        enable_decision_log=True,
+    ).run()
+    exec_path = log_dir / "exec.jsonl"
+    assert exec_path.exists()
+    lines = [json.loads(line) for line in exec_path.read_text().splitlines() if line]
+    assert len(lines) == 1
+    rec = lines[0]
+    assert rec["action"] == "buy"
+    assert rec["symbol"] == "000001"
+    assert rec["shares"] == 100
+    assert rec["ts"] == daily_dates[1]
+
+
 def test_engine_disabled_log_does_not_write(tmp_path, stock_data):
     log_dir = tmp_path / "run2"
     result = BacktestEngine(

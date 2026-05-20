@@ -13,6 +13,7 @@ from fastapi import APIRouter, Body, HTTPException
 from config import (
     DIVIDEND_DIR,
     FINANCIAL_DIR,
+    LOG_DIR,
     STRATEGY_DIR,
     VALUATION_DIR,
 )
@@ -108,6 +109,8 @@ def api_run_backtest(body: dict = Body(...)):
                 len(stock_data),
                 f"数据加载完成 ({len(stock_data)} 只)",
             )
+            # 决策日志目录:每个 task 独立子目录,与 task_manager 内部默认路径一致
+            task_log_dir = LOG_DIR / "backtest" / task_id
             engine = BacktestEngine(
                 strategy=strategy,
                 stock_data=stock_data,
@@ -115,6 +118,7 @@ def api_run_backtest(body: dict = Body(...)):
                 dividend_data=dividend_data,
                 financial_data=financial_data,
                 on_progress=lambda cur, total: on_progress(cur, total, "回测中..."),
+                log_dir=task_log_dir,
             )
             result = engine.run()
             result = safe_json(result)
