@@ -141,3 +141,51 @@ class Context:
             price=price,
             note=note,
         )
+
+
+class ScreenContext:
+    """选股阶段轻量 Context — 无 broker、无日志,只代理数据访问。
+
+    用于 /api/screener/run 这类一次性选股调用,不涉及下单/回测循环。
+    与 Context 接口兼容(策略 .screen() 可直接复用)。
+    """
+
+    def __init__(self, *, market_data, idx: int):
+        self._market_data = market_data
+        self.current_idx = idx
+        self.current_date = market_data.dates[idx] if market_data.dates else None
+        self.target_symbols: set[str] = set()
+        self.new_symbols: list[str] = []
+
+    def get_price(self, symbol: str, period: str = "daily"):
+        return self._market_data.get_price(symbol, period=period, idx=self.current_idx)
+
+    def get_history(self, symbol: str, n: int, period: str = "daily"):
+        return self._market_data.get_history(
+            symbol, n=n, period=period, idx=self.current_idx
+        )
+
+    def get_valuation(self, symbol: str):
+        return self._market_data.get_valuation(symbol, date=self.current_date)
+
+    def get_dividend(self, symbol: str):
+        return self._market_data.get_dividend(symbol, date=self.current_date)
+
+    def get_financial(self, symbol: str):
+        return self._market_data.get_financial(symbol, date=self.current_date)
+
+    def indicator(self, name: str, symbol: str, **kwargs):
+        return self._market_data.indicator(name, symbol, idx=self.current_idx, **kwargs)
+
+    # 选股不写日志,接口兼容用
+    def log_pass(self, *args, **kwargs) -> None:
+        pass
+
+    def log_reject(self, *args, **kwargs) -> None:
+        pass
+
+    def log_flow(self, *args, **kwargs) -> None:
+        pass
+
+    def remove_target(self, symbol: str) -> None:
+        pass

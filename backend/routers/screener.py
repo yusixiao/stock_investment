@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
 
+from services.backtest.context import ScreenContext
 from services.backtest.market_data import MarketData
 from services.backtest.strategy_loader import load_strategy_from_file
 from services.duckdb_store import get_store
@@ -49,52 +50,10 @@ def api_run_screener(body: dict = Body(...)):
         if not df.empty:
             stock_data[symbol] = df
 
-    # 仅在最后一根 bar 上调 screen():用一个最小化 Context 包装 MarketData
+    # 仅在最后一根 bar 上调 screen():用 ScreenContext 包装 MarketData
     market_data = MarketData(stock_data=stock_data, frequency=instance.frequency)
     last_idx = len(market_data.dates) - 1 if market_data.dates else 0
-
-    class _ScreenStub:
-        """选股阶段不需要 broker / log_sink,提供必要属性即可。"""
-
-        def __init__(self, md, idx):
-            self.current_idx = idx
-            self.current_date = md.dates[idx] if md.dates else None
-            self._market_data = md
-            self.target_symbols = set()
-            self.new_symbols = []
-
-        def get_price(self, sym, period="daily"):
-            return self._market_data.get_price(sym, period=period, idx=self.current_idx)
-
-        def get_history(self, sym, n, period="daily"):
-            return self._market_data.get_history(
-                sym, n=n, period=period, idx=self.current_idx
-            )
-
-        def get_valuation(self, sym):
-            return self._market_data.get_valuation(sym, date=self.current_date)
-
-        def get_dividend(self, sym):
-            return self._market_data.get_dividend(sym, date=self.current_date)
-
-        def get_financial(self, sym):
-            return self._market_data.get_financial(sym, date=self.current_date)
-
-        def indicator(self, name, sym, **kwargs):
-            return self._market_data.indicator(
-                name, sym, idx=self.current_idx, **kwargs
-            )
-
-        def log_pass(self, *a, **kw):
-            pass
-
-        def log_reject(self, *a, **kw):
-            pass
-
-        def log_flow(self, *a, **kw):
-            pass
-
-    ctx = _ScreenStub(market_data, last_idx)
+    ctx = ScreenContext(market_data=market_data, idx=last_idx)
     screened = list(instance.screen(ctx, list(stock_data.keys())))
 
     _latest_result = {

@@ -2,14 +2,29 @@ import json
 
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import Response
-from pathlib import Path
 from typing import Optional
 
-from config import RAW_KLINE_DIR
-from services.stock_data import list_stocks, get_kline, aggregate_kline
+from services.stock_data import aggregate_kline
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
 from services.duckdb_store import get_store
 from services.api_utils import safe_json
+
+_KLINE_COLS = ["date", "open", "high", "low", "close", "volume", "amount"]
+
+
+def _load_kline(symbol: str, adjust: str, start_date, end_date):
+    """统一从 DuckDB 取 K 线(raw / qfq),返回 7 列升序 DataFrame。"""
+    store = get_store()
+    if adjust == "qfq":
+        df = store.query_qfq_kline("A", symbol, start_date, end_date)
+    else:
+        df = store.query_kline("A", symbol, start_date=start_date, end_date=end_date)
+        # query_kline 返回视图全部列(含 _symbol/filename),裁剪到标准 7 列
+        df = df[[c for c in _KLINE_COLS if c in df.columns]]
+    if df.empty:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    return df
+
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
@@ -20,12 +35,25 @@ def api_list_stocks(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
 ):
-    all_stocks = list_stocks(search=search)
-    total = len(all_stocks)
+    """A 股清单 + 最新 K 线汇总。从 DuckDB 一条 SQL 取每只股票最新 (date, close, volume)。"""
+    store = get_store()
+    sql = """
+        SELECT _symbol AS symbol, date AS latest_date, close, volume
+        FROM v_a_daily
+        QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1
+    """
+    df = store.query(sql)
+    if search:
+        df = df[df["symbol"].str.contains(search, case=False, na=False)]
+    df = df.sort_values("symbol").reset_index(drop=True)
+    # NaN/Inf 防御:close/volume 转 float 时清洗
+    df["close"] = df["close"].fillna(0.0).astype(float)
+    df["volume"] = df["volume"].fillna(0.0).astype(float)
+    total = len(df)
     start = (page - 1) * page_size
     end = start + page_size
     return {
-        "stocks": all_stocks[start:end],
+        "stocks": df.iloc[start:end].to_dict(orient="records"),
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -40,15 +68,7 @@ def api_get_kline(
     period: str = Query("daily", description="daily/weekly/monthly"),
     adjust: str = Query("raw", description="raw/qfq"),
 ):
-    if adjust == "qfq":
-        df = get_store().query_qfq_kline("A", symbol, start_date, end_date)
-        if df.empty:
-            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-    else:
-        filepath = RAW_KLINE_DIR / f"{symbol}.parquet"
-        if not filepath.exists():
-            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-        df = get_kline(filepath, start_date=start_date, end_date=end_date)
+    df = _load_kline(symbol, adjust, start_date, end_date)
     if period in ("weekly", "monthly"):
         df = aggregate_kline(df, period=period)
     return df.to_dict(orient="records")
@@ -63,15 +83,7 @@ def api_get_indicators(
     period: str = Query("daily", description="daily/weekly/monthly"),
     adjust: str = Query("raw", description="raw/qfq"),
 ):
-    if adjust == "qfq":
-        df = get_store().query_qfq_kline("A", symbol, start_date, end_date)
-        if df.empty:
-            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-    else:
-        filepath = RAW_KLINE_DIR / f"{symbol}.parquet"
-        if not filepath.exists():
-            raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-        df = get_kline(filepath, start_date=start_date, end_date=end_date)
+    df = _load_kline(symbol, adjust, start_date, end_date)
     if period in ("weekly", "monthly"):
         df = aggregate_kline(df, period=period)
 
