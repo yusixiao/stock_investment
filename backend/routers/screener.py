@@ -8,7 +8,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
 
-from config import RAW_KLINE_DIR
 from services.backtest.market_data import MarketData
 from services.backtest.strategy_loader import load_strategy_from_file
 from services.duckdb_store import get_store
@@ -45,8 +44,7 @@ def api_run_screener(body: dict = Body(...)):
 
     stock_data = {}
     store = get_store()
-    for filepath in RAW_KLINE_DIR.glob("*.parquet"):
-        symbol = filepath.stem
+    for symbol in store.list_symbols("A"):
         df = store.query_qfq_kline("A", symbol)
         if not df.empty:
             stock_data[symbol] = df

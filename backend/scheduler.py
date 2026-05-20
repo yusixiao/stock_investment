@@ -5,24 +5,25 @@ scheduler = BackgroundScheduler()
 
 
 def _snapshot_job():
-    import pandas as pd
-    from config import RAW_KLINE_DIR
+    """每日收盘快照:从 DuckDB 取 A 股最新收盘价 → 持仓估值。"""
+    from services.duckdb_store import get_store
     from services.portfolio.db import get_connection, init_db
     from services.portfolio.manager import PortfolioManager
 
-    current_prices = {}
-    latest_date = ""
-    for filepath in RAW_KLINE_DIR.glob("*.parquet"):
-        symbol = filepath.stem
-        df = pd.read_parquet(filepath, columns=["date", "close"])
-        if not df.empty:
-            current_prices[symbol] = float(df.iloc[0]["close"])
-            d = df.iloc[0]["date"]
-            if d > latest_date:
-                latest_date = d
-
-    if not latest_date:
+    store = get_store()
+    # 单条 SQL 取每只 A 股的最新 (date, close)
+    df = store.query(
+        """
+        SELECT _symbol, date, close
+        FROM v_a_daily
+        QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1
+        """
+    )
+    if df.empty:
         return
+
+    current_prices = {row["_symbol"]: float(row["close"]) for _, row in df.iterrows()}
+    latest_date = str(df["date"].max())
 
     conn = get_connection()
     init_db(conn)
@@ -70,6 +71,7 @@ def _backup_job():
 
 
 def start_scheduler():
+    # misfire_grace_time=3600: 进程在计划时间后 1 小时内启动仍补跑,避免错过定时任务
     scheduler.add_job(
         _market_update_job,
         "cron",
@@ -78,6 +80,7 @@ def start_scheduler():
         minute=0,
         id="daily_market_update",
         replace_existing=True,
+        misfire_grace_time=3600,
     )
     scheduler.add_job(
         _snapshot_job,
@@ -87,6 +90,7 @@ def start_scheduler():
         minute=SCHEDULER_MINUTE + 10,
         id="daily_snapshot",
         replace_existing=True,
+        misfire_grace_time=3600,
     )
     scheduler.add_job(
         _backup_job,
@@ -96,6 +100,7 @@ def start_scheduler():
         minute=0,
         id="weekly_backup",
         replace_existing=True,
+        misfire_grace_time=3600,
     )
     scheduler.start()
 

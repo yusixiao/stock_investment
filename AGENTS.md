@@ -131,7 +131,7 @@
 2. **#27 BatchBuyTrader**(2026-04-24):分 N 批买入(默认 4 个月 4 批),Broker `price_func` 机制 — 检查 `market_cap_weighted_buyer` 是否覆盖此场景或需独立策略
 3. **#30 StrategyGroup 三层 UI**(2026-05-09):后端已有,前端三层页面(组列表/组详情/运行详情)是否完成需核对
 4. **#32 Buy/Sell 系统**(2026-05-09):引擎已落地;策略基类拆分完成度需确认
-5. **APScheduler misfire_grace_time 调大**(2026-05-19):`backend/scheduler.py` 中 3 个 `add_job` 默认 `misfire_grace_time=None`,导致进程晚启动 1 分钟就错过 06:00 定时更新(已发生 5/19)。改为 `misfire_grace_time=3600`,进程在 06:00-07:00 间任何时刻启动都能补跑。**等本次手动更新跑完再做**
+5. ~~**APScheduler misfire_grace_time 调大**~~ ✅ 2026-05-20 完成:三个 `add_job` 都加了 `misfire_grace_time=3600`
 
 ## Relevant files / directories
 

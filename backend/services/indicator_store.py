@@ -1,7 +1,7 @@
 import pandas as pd
 from pathlib import Path
 
-from config import INDICATOR_DIR, RAW_KLINE_DIR
+from config import INDICATOR_DIR
 from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
 from services.stock_data import aggregate_kline
 from services.duckdb_store import get_store
@@ -62,11 +62,10 @@ def load_indicators(symbol: str, freq: str) -> pd.DataFrame | None:
 
 
 def run_full_precompute(progress_callback=None):
-    files = list(RAW_KLINE_DIR.glob("*.parquet"))
-    total = len(files)
     store = get_store()
-    for i, filepath in enumerate(files, 1):
-        symbol = filepath.stem
+    symbols = store.list_symbols("A")
+    total = len(symbols)
+    for i, symbol in enumerate(symbols, 1):
         try:
             df = store.query_qfq_kline("A", symbol)
             if not df.empty:

@@ -3164,23 +3164,15 @@ git commit -m "chore: diff_market_vs_kline script for D8 migration verification 
 
 ---
 
-## Task 4.3:`qfq_cache vs query_qfq_kline` diff 测试(回归基准)
+## Task 4.3:**SKIPPED** —— 经 T4.2 实测,新旧 qfq 算法不可比
 
-**Files:**
-- Test: `backend/tests/test_qfq_migration_diff.py`
+**决策(2026-05-19)**:T4.2 sanity 跑发现新 `query_qfq_kline`(BaoStock foreAdjustFactor 因子法)与旧 `qfq_cache.get_qfq_kline`(分红事件派生法)在历史价格上差异显著(样本 close_max_abs 0.36–54.5 元),不是浮点误差,而是**方法学差异**。
 
-**设计要点**:用 5 只真实股票(覆盖有除权 / 无除权 / 早期数据)做完整历史 diff,断言:
-- DataFrame 行数一致
-- date 列完全一致
-- `close` 列 max-abs-diff < 1e-4
+用户决策:**信任 BaoStock 因子法**,废弃旧 qfq_cache,跳过严格 diff 测。
 
-跳过条件:`data/market/A/adjust_factor/` 或 `data/kline/A/qfq/` 不存在则 skip。
+T4.1 的 7 个用例已覆盖新算法的边界(无除权 / 单次除权 / 多次除权 / NULL factor / 切片 / HK / 列结构),足以保证算法正确性。直接进入 T4.4。
 
-**重要**:此测试运行的是 **Phase 4.4 替换前的旧 qfq_cache 实现**,与新 `store.query_qfq_kline` 对照。Phase 4.8 删除 qfq_cache 后该测试也需删除。
-
-```bash
-git commit -m "test(backtest): qfq_cache vs DuckDB query_qfq_kline regression diff (Phase 4.3, D8-B step 2)"
-```
+**No commit for this task.**
 
 ---
 

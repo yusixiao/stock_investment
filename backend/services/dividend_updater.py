@@ -8,7 +8,7 @@ from concurrent.futures import TimeoutError as FutureTimeout
 import akshare as ak
 import pandas as pd
 
-from config import DIVIDEND_DIR, RAW_KLINE_DIR, LOG_DIR
+from config import DIVIDEND_DIR, LOG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,10 @@ def fetch_symbol_dividend(symbol: str) -> pd.DataFrame | None:
 
 
 def get_all_symbols() -> list[str]:
-    return [f.stem for f in sorted(RAW_KLINE_DIR.glob("*.parquet"))]
+    """从 DuckDB 取 A 股全市场代码列表(已按代码排序)。"""
+    from services.duckdb_store import get_store
+
+    return get_store().list_symbols("A")
 
 
 def run_dividend_update(

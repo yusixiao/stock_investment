@@ -1,8 +1,7 @@
 import sqlite3
-import pandas as pd
 from fastapi import APIRouter, HTTPException, Body
 
-from config import RAW_KLINE_DIR
+from services.duckdb_store import get_store
 from services.portfolio.db import get_connection, init_db
 from services.portfolio.manager import PortfolioManager
 from services.backtest.task_manager import task_manager
@@ -72,11 +71,19 @@ def api_get_trades(portfolio_id: int):
 
 
 def _get_latest_close(symbol: str) -> float | None:
-    """从parquet文件读取最新收盘价。"""
-    candidates = list(RAW_KLINE_DIR.glob(f"{symbol}.*.parquet"))
-    if not candidates:
-        return None
-    df = pd.read_parquet(candidates[0], columns=["close"])
+    """从 DuckDB 取 A 股最新收盘价。symbol 可为 '000001' 或 '000001.SZ'。"""
+    store = get_store()
+    # 兼容裸代码:用 LIKE 前缀匹配 _symbol
+    pattern = symbol if "." in symbol else f"{symbol}.%"
+    df = store.query(
+        """
+        SELECT close FROM v_a_daily
+        WHERE _symbol LIKE ?
+        ORDER BY date DESC
+        LIMIT 1
+        """,
+        [pattern],
+    )
     if df.empty:
         return None
     return float(df.iloc[0]["close"])
@@ -93,15 +100,17 @@ def api_get_holdings(portfolio_id: int):
         cost_value = h["shares"] * h["avg_cost"]
         pnl = market_value - cost_value
         pnl_pct = (pnl / cost_value * 100) if cost_value > 0 else 0.0
-        result.append({
-            "symbol": sym,
-            "shares": h["shares"],
-            "avg_cost": h["avg_cost"],
-            "current_price": current_price,
-            "market_value": market_value,
-            "pnl": round(pnl, 2),
-            "pnl_pct": round(pnl_pct, 2),
-        })
+        result.append(
+            {
+                "symbol": sym,
+                "shares": h["shares"],
+                "avg_cost": h["avg_cost"],
+                "current_price": current_price,
+                "market_value": market_value,
+                "pnl": round(pnl, 2),
+                "pnl_pct": round(pnl_pct, 2),
+            }
+        )
     return result
 
 
@@ -115,7 +124,9 @@ def api_get_snapshots(portfolio_id: int):
 def api_import_from_backtest(task_id: str, body: dict = Body(...)):
     result = task_manager.get_result(task_id)
     if result is None or result.get("status") != "success":
-        raise HTTPException(status_code=404, detail="Backtest result not found or not successful")
+        raise HTTPException(
+            status_code=404, detail="Backtest result not found or not successful"
+        )
     mgr = _get_manager()
     try:
         return mgr.import_from_backtest(result["result"], body["name"])
