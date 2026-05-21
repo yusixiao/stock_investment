@@ -57,9 +57,14 @@ def get_dividend_progress() -> dict:
 
 
 def _get_adapter():
-    from backend.adapters.baostock_adapter import BaoStockAdapter
+    """A 股 dividend 数据源 = EastMoney(RPT_SHAREBONUS_DET 一次返回该股所有历史)。
 
-    return BaoStockAdapter()
+    BaoStock 必须按年循环 query → 5519 × 30 年 ≈ 16w 次调用(慢且 session 不稳)。
+    EastMoney 单股 1 次调用 ≈ 1s,~1.5h 跑完全市场。
+    """
+    from backend.adapters.eastmoney_adapter import EastMoneyAdapter
+
+    return EastMoneyAdapter()
 
 
 def _get_repo():
@@ -69,6 +74,29 @@ def _get_repo():
     from backend.repositories.event_repo import EventRepository
 
     return EventRepository(DATA_DIR / "market" / "A")
+
+
+def _listing_year(code: str) -> Optional[int]:
+    """从 data/market/A/daily/{code}.parquet 取最早日期作为上市年。
+    用于裁剪 dividend 抓取的 year_start,避免扫上市前的空年份。
+    """
+    p = DATA_DIR / "market" / "A" / "daily" / f"{code}.parquet"
+    if not p.exists():
+        return None
+    try:
+        import pyarrow.parquet as pq
+
+        # 只读 date 列,minimal IO
+        tbl = pq.read_table(p, columns=["date"])
+        if tbl.num_rows == 0:
+            return None
+        # date 列是字符串 YYYY-MM-DD,parquet 文件内按降序;min 取最早
+        dates = tbl.column("date").to_pylist()
+        earliest = min(dates)
+        return int(earliest[:4])
+    except Exception as e:
+        logger.warning(f"[A] read listing year {code}: {e}")
+        return None
 
 
 def _latest_dividend_year(repo, code: str) -> Optional[int]:
@@ -89,22 +117,28 @@ def _latest_dividend_year(repo, code: str) -> Optional[int]:
         return None
 
 
-def _fetch_dividend_years(adapter, code: str, year_start: int, year_end: int) -> list:
-    """遍历 [year_start, year_end] 年份,合并所有 DividendRecord。
+def _is_connection_error(exc: Exception) -> bool:
+    """判断是否为 BaoStock 连接/会话异常(适合重连恢复)。"""
+    msg = str(exc).lower()
+    keywords = [
+        "broken pipe",
+        "error_code=10001",  # 网络
+        "error_code=10002",  # 系统内部
+        "error_code=10004",  # 用户未登录
+        "接收数据异常",
+        "连接已断开",
+        "未登录",
+    ]
+    return any(k.lower() in msg for k in keywords)
 
-    BaoStock query_dividend_data 按年查询,空年份返回 [],不抛错。
+
+def _fetch_dividends_all(adapter, code: str) -> list:
+    """一次性拉取该股所有历史分红(EastMoney 单接口)。
+
+    EastMoney 端有内置重试(_fetch_page_with_retry,3 次指数退避),
+    这里只做最外层 wrap,不再叠加重试。
     """
-    all_records = []
-    for year in range(year_start, year_end + 1):
-        try:
-            records = adapter.fetch_dividends(code, year=str(year))
-            if records:
-                all_records.extend(records)
-        except Exception as e:
-            # 单年失败不阻断,记录到上层 errors
-            logger.warning(f"[A] dividend {code} year={year}: {e}")
-            raise
-    return all_records
+    return adapter.fetch_dividends(code)
 
 
 def update_a_dividend(
@@ -154,22 +188,23 @@ def update_a_dividend(
     adapter.login()
 
     try:
-        if max_workers <= 1:
-            for idx, code in enumerate(codes, 1):
-                _progress.current_index = idx
-                _progress.current_code = code
-                _process_one(
-                    adapter, repo, code, year_start, year_end, incremental, result
-                )
-        else:
-            # BaoStock 同 session 不支持并发查询,需要每线程独立 login
-            # 简化:序列化(rate-limit 友好);后续若需并行,改为多 adapter
+        if max_workers > 1:
             logger.warning("BaoStock 不支持并发,强制 max_workers=1")
-            for idx, code in enumerate(codes, 1):
-                _progress.current_index = idx
-                _progress.current_code = code
-                _process_one(
-                    adapter, repo, code, year_start, year_end, incremental, result
+
+        total = len(codes)
+        log_every = 100  # 每 N 只打一次进度
+        for idx, code in enumerate(codes, 1):
+            _progress.current_index = idx
+            _progress.current_code = code
+            _process_one(adapter, repo, code, year_start, year_end, incremental, result)
+            if idx % log_every == 0 or idx == total:
+                el = time.time() - t0
+                rate = idx / el if el > 0 else 0
+                eta_h = (total - idx) / rate / 3600 if rate > 0 else 0
+                logger.info(
+                    f"[A dividend] progress {idx}/{total} "
+                    f"updated={result.updated} skipped={result.skipped} "
+                    f"failed={result.failed} rate={rate:.2f}/s eta={eta_h:.1f}h"
                 )
     finally:
         adapter.logout()
@@ -197,30 +232,19 @@ def _process_one(
 ) -> None:
     """处理单只股票的 dividend 抓取与写入。错误不抛出,累加到 result。"""
     try:
-        if incremental:
-            latest = _latest_dividend_year(repo, code)
-            # 增量补抓:从 latest 当年(覆盖年中可能新派的)到 year_end
-            start = latest if latest else year_start
-        else:
-            start = year_start
-
-        if start > year_end:
-            result.skipped += 1
-            return
-
-        new_records = _fetch_dividend_years(adapter, code, start, year_end)
+        # EastMoney 一次返回所有历史分红,year_start/year_end 不再需要
+        new_records = _fetch_dividends_all(adapter, code)
 
         if not new_records:
             result.skipped += 1
             return
 
-        if incremental and start <= year_end:
-            # 增量模式:合并旧数据 + 新数据,按 dividOperateDate 去重
+        if incremental:
+            # 增量模式:合并旧数据 + 新数据,按 dividOperateDate 去重(新覆盖旧)
             try:
                 existing = repo.read_dividends(code)
             except FileNotFoundError:
                 existing = []
-            # 用 dividOperateDate 作为 key 去重(新记录覆盖旧记录)
             merged_map = {r.dividOperateDate: r for r in existing}
             for r in new_records:
                 merged_map[r.dividOperateDate] = r
