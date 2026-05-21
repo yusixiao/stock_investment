@@ -17,7 +17,6 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -74,14 +73,30 @@ def _load_valuation(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
     """估值序列(English schema:date / peTTM / pbMRQ / psTTM / pcfNcfTTM)。
     源:DuckDB v_{market}_daily 的估值列(A 股 BaoStock 自带)。
     """
-    return get_store().query_valuation_bulk(market, symbols)
+    try:
+        out = get_store().query_valuation_bulk(market, symbols)
+        logger.info(
+            "_load_valuation: market=%s in=%d out=%d", market, len(symbols), len(out)
+        )
+        return out
+    except Exception as e:
+        logger.exception("_load_valuation failed: %s", e)
+        return {}
 
 
 def _load_dividend(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
     """分红事件(English schema:date / cash_dividend / stocks_ps / record_date / pay_date)。
     源:DuckDB v_{market}_dividend(A 股 BaoStock,HK/US 从 cashflow.DIVIDENDS_PAID 派生)。
     """
-    return get_store().query_dividend_bulk(market, symbols)
+    try:
+        out = get_store().query_dividend_bulk(market, symbols)
+        logger.info(
+            "_load_dividend: market=%s in=%d out=%d", market, len(symbols), len(out)
+        )
+        return out
+    except Exception as e:
+        logger.exception("_load_dividend failed: %s", e)
+        return {}
 
 
 def _load_financial(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
@@ -109,18 +124,11 @@ def _load_market_blocking(market: str) -> MarketBundle:
         p.total = len(symbols)
         p.phase = f"K 线加载完成({len(symbols)} 只),加载估值/分红/财务..."
 
-        valuation_data: dict[str, pd.DataFrame] = {}
-        dividend_data: dict[str, pd.DataFrame] = {}
-        financial_data: dict[str, pd.DataFrame] = {}
-
-        # 三市场都通过 DuckDB 视图加载;HK/US 估值视图缺失会返回空 dict(防御)
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            fv = pool.submit(_load_valuation, market, symbols)
-            fd = pool.submit(_load_dividend, market, symbols)
-            ff = pool.submit(_load_financial, market, symbols)
-            valuation_data = fv.result()
-            dividend_data = fd.result()
-            financial_data = ff.result()
+        # DuckDB 单连接不支持并发查询(会触发 "result closed"),串行执行。
+        # 三个 bulk 查询合计 ~10-30s,影响可接受;视图缺失返回空 dict(防御)。
+        valuation_data = _load_valuation(market, symbols)
+        dividend_data = _load_dividend(market, symbols)
+        financial_data = _load_financial(market, symbols)
 
         bundle = MarketBundle(
             market=market,

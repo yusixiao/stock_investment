@@ -7,6 +7,7 @@ from services.circulating_shares import (
     get_circulating_shares,
 )
 from services.api_utils import BackgroundTaskRunner
+from services.duckdb_store import reload_views, get_store
 
 router = APIRouter(prefix="/api/meta", tags=["meta"])
 
@@ -45,6 +46,43 @@ def api_circulating_shares_status():
         "phase": progress.get("phase"),
         "result": status["result"],
     }
+
+
+@router.post("/duckdb/reload")
+def api_reload_duckdb_views():
+    """运行期重新注册所有 DuckDB 视图(补落新数据后刷新,无需重启进程)。"""
+    reload_views()
+    store = get_store()
+    views = (
+        store._conn.execute("SELECT view_name FROM duckdb_views() ORDER BY view_name")
+        .fetchdf()["view_name"]
+        .tolist()
+    )
+    return {"status": "ok", "views": views}
+
+
+@router.get("/duckdb/diag")
+def api_duckdb_diag():
+    """诊断:store id + 业务视图行数 + bulk 抽样。"""
+    store = get_store()
+    out = {"store_id": id(store)}
+    try:
+        out["v_a_dividend_count"] = store._conn.execute(
+            "SELECT COUNT(*) FROM v_a_dividend"
+        ).fetchone()[0]
+    except Exception as e:
+        out["v_a_dividend_count_error"] = str(e)
+    try:
+        bulk = store.query_dividend_bulk("A", None)
+        out["dividend_bulk_keys"] = len(bulk)
+    except Exception as e:
+        out["dividend_bulk_error"] = str(e)
+    try:
+        val = store.query_valuation_bulk("A", ["600519.SH"])
+        out["val_sample"] = list(val.keys())
+    except Exception as e:
+        out["val_error"] = str(e)
+    return out
 
 
 @router.get("/circulating-shares")

@@ -488,6 +488,13 @@ def init_duckdb_with_health_check():
     )
 
 
+def reload_views():
+    """重新创建所有视图(用于运行期补落新数据后刷新视图,无需重启进程)。"""
+    store = get_store()
+    store._setup_views()
+    logger.info("DuckDB views reloaded")
+
+
 def shutdown_duckdb():
     global _store
     if _store is not None:
