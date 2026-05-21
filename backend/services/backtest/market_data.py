@@ -149,12 +149,16 @@ class MarketData:
     @staticmethod
     def _extract_ohlc(df: pd.DataFrame) -> dict[str, np.ndarray]:
         """抽取 OHLC 四列为 numpy 数组(零拷贝 view,共享底层 buffer)。"""
-        return {
+        out = {
             "open": df["open"].to_numpy(),
             "high": df["high"].to_numpy(),
             "low": df["low"].to_numpy(),
             "close": df["close"].to_numpy(),
         }
+        # volume 用于 broker 拒单:停牌填充 bar volume=0 不应成交
+        if "volume" in df.columns:
+            out["volume"] = df["volume"].to_numpy()
+        return out
 
     def _build_period_cache(self, period: str) -> None:
         """聚合所有 symbol 的日线为 weekly/monthly,缓存升序。"""
@@ -247,13 +251,16 @@ class MarketData:
         if strict and bar_date != target:
             return None
         ohlc = self._ohlc_arrays[period][symbol]
-        return {
+        bar = {
             "open": float(ohlc["open"][pos]),
             "high": float(ohlc["high"][pos]),
             "low": float(ohlc["low"][pos]),
             "close": float(ohlc["close"][pos]),
             "date": bar_date,
         }
+        if "volume" in ohlc:
+            bar["volume"] = float(ohlc["volume"][pos])
+        return bar
 
     def get_history(
         self,

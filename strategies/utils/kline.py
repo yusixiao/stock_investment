@@ -168,8 +168,15 @@ def has_consecutive_red_bars(
     return False
 
 
-def _is_tangle(df, end: int, col_f: str, col_m: str, col_s: str,
-               tangle_months: int, threshold: float) -> bool:
+def _is_tangle(
+    df,
+    end: int,
+    col_f: str,
+    col_m: str,
+    col_s: str,
+    tangle_months: int,
+    threshold: float,
+) -> bool:
     """end 索引处往前 tangle_months 根都满足 |MA - avg|/avg <= threshold。
     最后一根额外要求 MA_slow < MA_fast(为后续向上发散预留)。"""
     if end < tangle_months - 1:
@@ -189,8 +196,9 @@ def _is_tangle(df, end: int, col_f: str, col_m: str, col_s: str,
     return last[col_s] < last[col_f]
 
 
-def _check_spread_bar(row, col_f: str, col_m: str, col_s: str,
-                      spread_threshold: float) -> bool:
+def _check_spread_bar(
+    row, col_f: str, col_m: str, col_s: str, spread_threshold: float
+) -> bool:
     avg = (row[col_f] + row[col_m] + row[col_s]) / 3.0
     if avg == 0:
         return False
@@ -203,11 +211,16 @@ def _check_spread_bar(row, col_f: str, col_m: str, col_s: str,
 
 
 def _has_red_run(rows, min_run: int) -> bool:
-    """rows 中存在 min_run 长度的连续 close >= open 段。"""
+    """rows 中存在 min_run 长度的连续阳线段(close > open,严格)。
+
+    注:用 ``>`` 而非 ``>=`` 是为了排除停牌期 BaoStock 填充 bar(OHLC 全等于
+    上一根 close,doji)被错误识别为"连续阳线"。真实交易日的 doji 极少,
+    且不应作为"价升量增"的信号。
+    """
     cur = 0
     for i in range(len(rows)):
         r = rows.iloc[i]
-        if r["close"] >= r["open"]:
+        if r["close"] > r["open"]:
             cur += 1
             if cur >= min_run:
                 return True
@@ -217,8 +230,12 @@ def _has_red_run(rows, min_run: int) -> bool:
 
 
 def detect_ma_tangle_breakout(
-    ctx, symbol: str, *,
-    fast: int = 5, mid: int = 10, slow: int = 20,
+    ctx,
+    symbol: str,
+    *,
+    fast: int = 5,
+    mid: int = 10,
+    slow: int = 20,
     tangle_threshold: float = 0.05,
     tangle_months: int = 2,
     spread_months: int = 6,
@@ -241,8 +258,7 @@ def detect_ma_tangle_breakout(
         ctx.log_reject(symbol, stage, "no_data", have=0, need=need)
         return False
     if len(bars) < need:
-        ctx.log_reject(symbol, stage, "insufficient_history",
-                       have=len(bars), need=need)
+        ctx.log_reject(symbol, stage, "insufficient_history", have=len(bars), need=need)
         return False
 
     df = _pd.DataFrame(bars)
@@ -253,8 +269,13 @@ def detect_ma_tangle_breakout(
 
     n = len(df)
     if n < tangle_months + 1:
-        ctx.log_reject(symbol, stage, "insufficient_history_after_ma",
-                       have=n, need=tangle_months + 1)
+        ctx.log_reject(
+            symbol,
+            stage,
+            "insufficient_history_after_ma",
+            have=n,
+            need=tangle_months + 1,
+        )
         return False
 
     last_idx = n - 1
@@ -264,8 +285,9 @@ def detect_ma_tangle_breakout(
     for tangle_end in range(tangle_months - 1, n - 1):
         if tangle_end <= skip_until:
             continue
-        if not _is_tangle(df, tangle_end, col_f, col_m, col_s,
-                          tangle_months, tangle_threshold):
+        if not _is_tangle(
+            df, tangle_end, col_f, col_m, col_s, tangle_months, tangle_threshold
+        ):
             continue
 
         spread_start = tangle_end + 1
@@ -276,8 +298,9 @@ def detect_ma_tangle_breakout(
             spread_window_end = min(spread_start + spread_months, n)
             spread_rows = df.iloc[spread_start:spread_window_end]
             all_spread = all(
-                _check_spread_bar(spread_rows.iloc[j], col_f, col_m, col_s,
-                                  spread_threshold)
+                _check_spread_bar(
+                    spread_rows.iloc[j], col_f, col_m, col_s, spread_threshold
+                )
                 for j in range(len(spread_rows))
             )
             if not all_spread:
@@ -296,9 +319,15 @@ def detect_ma_tangle_breakout(
         skip_until = spread_window_end - 1
 
     if matched:
-        ctx.log_pass(symbol, stage,
-                     fast=fast, mid=mid, slow=slow,
-                     tangle_months=tangle_months, spread_months=spread_months)
+        ctx.log_pass(
+            symbol,
+            stage,
+            fast=fast,
+            mid=mid,
+            slow=slow,
+            tangle_months=tangle_months,
+            spread_months=spread_months,
+        )
         return True
     ctx.log_reject(symbol, stage, "no_breakout_at_current_bar")
     return False

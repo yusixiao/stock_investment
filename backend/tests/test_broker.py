@@ -71,7 +71,9 @@ class TestBroker:
         b.submit_order("600519.SH", shares=100, direction="buy")
         bar = {"open": 100.0, "close": 100.0, "high": 110.0, "low": 90.0}
         prev_close = 95.0
-        trades = b.fill_orders("2024-01-16", {"600519.SH": bar}, {"600519.SH": prev_close})
+        trades = b.fill_orders(
+            "2024-01-16", {"600519.SH": bar}, {"600519.SH": prev_close}
+        )
         assert len(trades) == 1
         assert trades[0]["direction"] == "buy"
         assert trades[0]["shares"] == 100
@@ -123,7 +125,9 @@ class TestBroker:
         prev_close = 100.0
         limit_up = round(prev_close * 1.1, 2)
         bar = {"open": limit_up, "close": limit_up, "high": limit_up, "low": limit_up}
-        trades = b.fill_orders("2024-01-16", {"600519.SH": bar}, {"600519.SH": prev_close})
+        trades = b.fill_orders(
+            "2024-01-16", {"600519.SH": bar}, {"600519.SH": prev_close}
+        )
         assert len(trades) == 0
 
     def test_limit_down_rejects_sell(self):
@@ -134,10 +138,51 @@ class TestBroker:
         b.submit_order("600519.SH", shares=100, direction="sell")
         prev_close = 100.0
         limit_down = round(prev_close * 0.9, 2)
-        bar2 = {"open": limit_down, "close": limit_down, "high": limit_down, "low": limit_down}
-        trades = b.fill_orders("2024-01-16", {"600519.SH": bar2}, {"600519.SH": prev_close})
+        bar2 = {
+            "open": limit_down,
+            "close": limit_down,
+            "high": limit_down,
+            "low": limit_down,
+        }
+        trades = b.fill_orders(
+            "2024-01-16", {"600519.SH": bar2}, {"600519.SH": prev_close}
+        )
         sell_trades = [t for t in trades if t["direction"] == "sell"]
         assert len(sell_trades) == 0
+
+    def test_volume_zero_rejects_buy(self):
+        """停牌日 volume=0,broker 必须拒单(防止 BaoStock 填充 bar 误成交)。"""
+        b = self._make_broker()
+        b.submit_order("600519.SH", shares=100, direction="buy")
+        # 模拟停牌:OHLC 全等于 prev_close,volume=0
+        bar = {"open": 100.0, "close": 100.0, "high": 100.0, "low": 100.0, "volume": 0}
+        trades = b.fill_orders("2024-01-16", {"600519.SH": bar}, {"600519.SH": 100.0})
+        assert len(trades) == 0
+
+    def test_volume_zero_rejects_sell(self):
+        b = self._make_broker()
+        b.submit_order("600519.SH", shares=100, direction="buy")
+        bar = {
+            "open": 100.0,
+            "close": 100.0,
+            "high": 110.0,
+            "low": 90.0,
+            "volume": 1000,
+        }
+        b.fill_orders("2024-01-15", {"600519.SH": bar}, {"600519.SH": 95.0})
+        b.submit_order("600519.SH", shares=100, direction="sell")
+        bar2 = {"open": 100.0, "close": 100.0, "high": 100.0, "low": 100.0, "volume": 0}
+        trades = b.fill_orders("2024-01-16", {"600519.SH": bar2}, {"600519.SH": 100.0})
+        sell_trades = [t for t in trades if t["direction"] == "sell"]
+        assert len(sell_trades) == 0
+
+    def test_missing_volume_field_allows_fill(self):
+        """老调用方未提供 volume 字段时保持向后兼容(不拒单)。"""
+        b = self._make_broker()
+        b.submit_order("600519.SH", shares=100, direction="buy")
+        bar = {"open": 100.0, "close": 100.0, "high": 110.0, "low": 90.0}
+        trades = b.fill_orders("2024-01-16", {"600519.SH": bar}, {"600519.SH": 95.0})
+        assert len(trades) == 1
 
     def test_buy_rounds_to_100_shares(self):
         b = self._make_broker()

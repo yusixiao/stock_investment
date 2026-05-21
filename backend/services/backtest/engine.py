@@ -84,6 +84,8 @@ class BacktestEngine:
                 "high": bar["high"],
                 "low": bar["low"],
                 "close": close,
+                # volume 透传到 broker;停牌填充日 volume=0 → broker 拒单
+                "volume": bar.get("volume", 0.0),
             }
             prices[sym] = close
         return bars, prices

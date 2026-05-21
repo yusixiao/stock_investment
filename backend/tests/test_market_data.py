@@ -390,7 +390,8 @@ def test_get_bar_at_returns_ohlc_dict(stock_data):
     md = MarketData(stock_data=stock_data, frequency="daily")
     bar = md.get_bar_at("000001", idx=10, period="daily")
     assert bar is not None
-    assert set(bar.keys()) == {"open", "high", "low", "close", "date"}
+    # volume 字段在 stock_data 含 volume 列时随之返回(broker volume=0 拒单依赖)
+    assert {"open", "high", "low", "close", "date"}.issubset(bar.keys())
     # 与 get_price 对照(同 idx 同 symbol)
     row = md.get_price("000001", "daily", idx=10)
     for k in ("open", "high", "low", "close"):
