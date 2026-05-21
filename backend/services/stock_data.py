@@ -1,4 +1,4 @@
-"""K 线辅助工具:日线 → 周/月线聚合(供 routers/stock + indicator_store + market_data 使用)。"""
+"""K 线辅助工具:日线 → 周/月线聚合(供 routers/stock + market_data 使用)。"""
 
 import pandas as pd
 
