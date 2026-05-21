@@ -5,14 +5,22 @@ from strategies.utils.composite.market_cap_weighted_batch_buyer import (
 
 
 def _ctx_with_two_new_symbols(cash=1_000_000):
+    # English schema(2026-05-21):total_mv 派生自 close × TOTAL_SHARE
+    # A: 12 × 5e10 = 6e11;B: 22 × ~1.818e10 ≈ 4e11
     return MockContext(
-        valuation={
-            "A": {"total_mv": 6e11},
-            "B": {"total_mv": 4e11},
+        financial={
+            "A": {"TOTAL_SHARE": 5e10},
+            "B": {"TOTAL_SHARE": 4e11 / 22.0},
         },
         price={
-            "A": {"weekly": {"open": 10.0, "close": 12.0}},  # mid=11
-            "B": {"weekly": {"open": 20.0, "close": 22.0}},  # mid=21
+            "A": {
+                "daily": {"close": 12.0},
+                "weekly": {"open": 10.0, "close": 12.0},  # mid=11
+            },
+            "B": {
+                "daily": {"close": 22.0},
+                "weekly": {"open": 20.0, "close": 22.0},  # mid=21
+            },
         },
         target_symbols=["A", "B"],
         new_symbols=["A", "B"],
@@ -127,9 +135,10 @@ def test_step_no_valuation_data_uses_equal_weight():
 
 
 def test_step_skips_when_no_price():
+    # 提供 financial(派生 mv 用)但 price 为空,使本周买入跳过
     ctx = MockContext(
-        valuation={"A": {"total_mv": 6e11}},
-        price={},  # 无价格
+        financial={"A": {"TOTAL_SHARE": 5e10}},
+        price={},  # 无价格 → 派生 mv 失败,等权 fallback,且 _execute_weekly_buys 也无 weekly 报价
         target_symbols=["A"],
         new_symbols=["A"],
         available_cash=1_000_000,

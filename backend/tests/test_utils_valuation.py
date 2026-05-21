@@ -3,18 +3,27 @@ from strategies.utils import valuation
 
 
 def test_get_pe_returns_value():
-    ctx = MockContext(valuation={"A": {"pe_ttm": 5.2, "pb": 0.7, "total_mv": 4.5e11}})
+    ctx = MockContext(valuation={"A": {"peTTM": 5.2, "pbMRQ": 0.7}})
     assert valuation.get_pe(ctx, "A") == 5.2
 
 
 def test_get_pb_returns_value():
-    ctx = MockContext(valuation={"A": {"pe_ttm": 5.2, "pb": 0.7}})
+    ctx = MockContext(valuation={"A": {"peTTM": 5.2, "pbMRQ": 0.7}})
     assert valuation.get_pb(ctx, "A") == 0.7
 
 
-def test_get_total_mv_returns_value():
-    ctx = MockContext(valuation={"A": {"total_mv": 4.5e11}})
-    assert valuation.get_total_mv(ctx, "A") == 4.5e11
+def test_get_total_mv_derives_from_close_and_total_share():
+    # English schema:total_mv 不再独立存储,改为 close × TOTAL_SHARE 派生
+    ctx = MockContext(
+        financial={"A": {"TOTAL_SHARE": 1_000_000_000}},
+        price={"A": {"daily": {"close": 100.0}}},
+    )
+    assert valuation.get_total_mv(ctx, "A") == 100.0 * 1_000_000_000
+
+
+def test_get_total_mv_returns_none_when_missing():
+    ctx = MockContext()
+    assert valuation.get_total_mv(ctx, "A") is None
 
 
 def test_get_pe_no_data_returns_none():
@@ -25,8 +34,8 @@ def test_get_pe_no_data_returns_none():
 def test_filter_by_pe_pb_product_in_range():
     ctx = MockContext(
         valuation={
-            "P": {"pe_ttm": 4.0, "pb": 1.5},
-            "F": {"pe_ttm": 30.0, "pb": 5.0},
+            "P": {"peTTM": 4.0, "pbMRQ": 1.5},
+            "F": {"peTTM": 30.0, "pbMRQ": 5.0},
         }
     )
     result = valuation.filter_by_pe_pb_product(
@@ -51,7 +60,7 @@ def test_filter_by_pe_pb_product_in_range():
 
 
 def test_filter_by_pe_pb_product_below_min():
-    ctx = MockContext(valuation={"X": {"pe_ttm": 1.0, "pb": 0.5}})
+    ctx = MockContext(valuation={"X": {"peTTM": 1.0, "pbMRQ": 0.5}})
     result = valuation.filter_by_pe_pb_product(
         ctx, ["X"], min_value=1.0, max_value=22.0
     )
@@ -71,7 +80,7 @@ def test_filter_by_pe_pb_product_no_data():
 
 
 def test_filter_by_pe_pb_product_missing_pe_or_pb():
-    ctx = MockContext(valuation={"X": {"pe_ttm": 5.0}})
+    ctx = MockContext(valuation={"X": {"peTTM": 5.0}})
     result = valuation.filter_by_pe_pb_product(
         ctx, ["X"], min_value=0.0, max_value=22.0
     )
@@ -80,6 +89,6 @@ def test_filter_by_pe_pb_product_missing_pe_or_pb():
 
 
 def test_filter_by_pe_pb_product_logs_flow():
-    ctx = MockContext(valuation={"P": {"pe_ttm": 4.0, "pb": 1.5}})
+    ctx = MockContext(valuation={"P": {"peTTM": 4.0, "pbMRQ": 1.5}})
     valuation.filter_by_pe_pb_product(ctx, ["P", "X"], min_value=0.0, max_value=22.0)
     assert ctx.flow_logs == [("valuation.pe_pb_product", {"input": 2, "passed": 1})]

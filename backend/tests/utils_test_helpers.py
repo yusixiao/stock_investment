@@ -112,29 +112,29 @@ class MockContext:
     def set_dividend_years(self, mapping: dict[str, int]) -> None:
         """将 {symbol: years} 转成 dividend.filter_by_dividend_years 期望的 DataFrame。
 
-        每个 year 生成一行 cash > 0 的记录(报告期 = "{year}-12-31")。
+        每个 year 生成一行 cash > 0 的记录(English schema:date / cash_dividend)。
         """
         import pandas as pd
 
         for sym, years in mapping.items():
             rows = [
-                {"报告期": f"{2000 + i}-12-31", "现金分红-现金分红比例": 1.0}
+                {"date": f"{2000 + i}-12-31", "cash_dividend": 1.0}
                 for i in range(int(years))
             ]
             self._dividend[sym] = pd.DataFrame(rows)
 
     def set_pe_pb(self, mapping: dict[str, tuple[float, float]]) -> None:
-        """{symbol: (pe, pb)} → valuation 字典。"""
+        """{symbol: (pe, pb)} → valuation 字典(English schema:peTTM / pbMRQ)。"""
         for sym, (pe, pb) in mapping.items():
             entry = self._valuation.setdefault(sym, {})
-            entry["pe_ttm"] = pe
-            entry["pb"] = pb
+            entry["peTTM"] = pe
+            entry["pbMRQ"] = pb
 
     def set_roe(self, mapping: dict[str, float]) -> None:
-        """{symbol: roe%} → financial 字典。"""
+        """{symbol: roe%} → financial 字典(English schema:ROEJQ)。"""
         for sym, roe in mapping.items():
             entry = self._financial.setdefault(sym, {})
-            entry["净资产收益率"] = roe
+            entry["ROEJQ"] = roe
 
     def set_ma_tangle_breakout_hits(self, hits: set[str]) -> None:
         """记录 detect_ma_tangle_breakout 应命中的 symbols。

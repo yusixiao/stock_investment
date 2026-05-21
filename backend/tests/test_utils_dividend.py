@@ -4,11 +4,11 @@ from strategies.utils import dividend
 
 
 def _div_df(rows):
-    """rows: list of (报告期, 现金分红-现金分红比例)"""
+    """rows: list of (date, cash_dividend) — English schema(2026-05-21)"""
     return pd.DataFrame(
         {
-            "报告期": [r[0] for r in rows],
-            "现金分红-现金分红比例": [r[1] for r in rows],
+            "date": [r[0] for r in rows],
+            "cash_dividend": [r[1] for r in rows],
         }
     )
 
@@ -43,7 +43,7 @@ def test_count_dividend_years_no_data_returns_none():
 
 
 def test_count_dividend_years_missing_column_returns_none():
-    df = pd.DataFrame({"报告期": ["2020-12-31"]})
+    df = pd.DataFrame({"date": ["2020-12-31"]})
     ctx = MockContext(dividend={"A": df})
     assert dividend.count_dividend_years(ctx, "A") is None
 
@@ -62,7 +62,7 @@ def test_count_dividend_years_memoized_via_df_attrs():
 
 def test_count_dividend_years_missing_column_memoized_as_none():
     """列缺失情形也应 memoize,避免重复列检查。"""
-    df = pd.DataFrame({"报告期": ["2020-12-31"]})
+    df = pd.DataFrame({"date": ["2020-12-31"]})
     ctx = MockContext(dividend={"A": df})
     assert dividend.count_dividend_years(ctx, "A") is None
     # sentinel = -1 表示「应返回 None」

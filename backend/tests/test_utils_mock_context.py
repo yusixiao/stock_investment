@@ -5,23 +5,21 @@ from tests.utils_test_helpers import MockContext
 
 
 def test_get_dividend_returns_injected_df():
-    df = pd.DataFrame({"现金分红-现金分红比例": [3.62], "报告期": ["2023-12-31"]})
+    df = pd.DataFrame({"cash_dividend": [3.62], "date": ["2023-12-31"]})
     ctx = MockContext(dividend={"000001.SZ": df})
     assert ctx.get_dividend("000001.SZ") is df
     assert ctx.get_dividend("999999.SZ") is None
 
 
 def test_get_financial_returns_injected_dict():
-    ctx = MockContext(financial={"000001.SZ": {"净资产收益率": 14.7}})
-    assert ctx.get_financial("000001.SZ") == {"净资产收益率": 14.7}
+    ctx = MockContext(financial={"000001.SZ": {"ROEJQ": 14.7}})
+    assert ctx.get_financial("000001.SZ") == {"ROEJQ": 14.7}
 
 
 def test_get_valuation_returns_injected_dict():
-    ctx = MockContext(
-        valuation={"000001.SZ": {"pe_ttm": 5.2, "pb": 0.7, "total_mv": 4.5e11}}
-    )
+    ctx = MockContext(valuation={"000001.SZ": {"peTTM": 5.2, "pbMRQ": 0.7}})
     val = ctx.get_valuation("000001.SZ")
-    assert val["pe_ttm"] == 5.2
+    assert val["peTTM"] == 5.2
 
 
 def test_get_history_returns_injected_list_capped_by_n():

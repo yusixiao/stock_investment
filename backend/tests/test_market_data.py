@@ -239,11 +239,12 @@ def test_get_valuation_unsorted_input_still_correct(stock_data):
 
 
 def test_get_financial_nan_returns_none_no_ffill(stock_data):
-    """financial 不做 ffill — NaN 字段返回 None,与旧逻辑一致。"""
+    """financial 不做 ffill — NaN 字段返回 None,与旧逻辑一致。
+    English schema:REPORT_DATE 替代 报告期。"""
     fin_df = pd.DataFrame(
         {
-            "报告期": ["2023-12-31", "2024-03-31"],
-            "净利润": [100.0, float("nan")],
+            "REPORT_DATE": ["2023-12-31", "2024-03-31"],
+            "NETPROFIT": [100.0, float("nan")],
         }
     )
     md = MarketData(
@@ -251,7 +252,7 @@ def test_get_financial_nan_returns_none_no_ffill(stock_data):
     )
     row = md.get_financial("000001", date="2024-04-15")
     assert row is not None
-    assert row["净利润"] is None  # 不向前回填
+    assert row["NETPROFIT"] is None  # 不向前回填
 
 
 def test_get_dividend_returns_df_when_present(stock_data):
@@ -272,9 +273,9 @@ def test_get_dividend_none_when_missing(stock_data):
 def test_get_financial_returns_latest_on_or_before_date(stock_data):
     fin_df = pd.DataFrame(
         {
-            "报告期": ["2023-12-31", "2024-03-31"],
-            "净利润": [100.0, 120.0],
-            "ROE": [0.1, 0.12],
+            "REPORT_DATE": ["2023-12-31", "2024-03-31"],
+            "NETPROFIT": [100.0, 120.0],
+            "ROEJQ": [0.1, 0.12],
         }
     )
     md = MarketData(
@@ -282,7 +283,7 @@ def test_get_financial_returns_latest_on_or_before_date(stock_data):
     )
     row = md.get_financial("000001", date="2024-04-15")
     assert row is not None
-    assert row["净利润"] == 120.0
+    assert row["NETPROFIT"] == 120.0
 
 
 def test_get_financial_none_when_missing(stock_data):

@@ -59,19 +59,19 @@ def _pick_symbols_with_history(n: int = 5) -> dict[str, pd.DataFrame]:
 
 
 def _build_mock_valuation(symbols: list[str], start: str, end: str) -> dict:
-    """每只股票一条早于 start 的 valuation 记录,Mock 值确保 PE*PB ∈ [0, 22]。"""
+    """每只股票一条早于 start 的 valuation 记录,Mock 值确保 PE*PB ∈ [0, 22]。
+    English schema:peTTM / pbMRQ。"""
     out = {}
     for sym in symbols:
-        out[sym] = pd.DataFrame(
-            [{"date": "2020-01-01", "pe_ttm": 10.0, "pb": 1.5, "total_mv": 1.0e10}]
-        )
+        out[sym] = pd.DataFrame([{"date": "2020-01-01", "peTTM": 10.0, "pbMRQ": 1.5}])
     return out
 
 
 def _build_mock_dividend(symbols: list[str]) -> dict:
-    """每只股票 6 个不同年度的现金分红记录,确保 ``min_dividend_years=5`` 通过。"""
+    """每只股票 6 个不同年度的现金分红记录,确保 ``min_dividend_years=5`` 通过。
+    English schema:date / cash_dividend。"""
     rows = [
-        {"报告期": f"{y}-12-31", "现金分红-现金分红比例": 1.0}
+        {"date": f"{y}-12-31", "cash_dividend": 1.0}
         for y in (2018, 2019, 2020, 2021, 2022, 2023)
     ]
     out = {}
@@ -81,16 +81,18 @@ def _build_mock_dividend(symbols: list[str]) -> dict:
 
 
 def _build_mock_financial(symbols: list[str]) -> dict:
-    """每只股票一条 ROE=15 的财务记录,确保 ``min_roe=10`` 通过。"""
+    """每只股票一条 ROE=15 的财务记录,确保 ``min_roe=10`` 通过。
+    English schema:REPORT_DATE / ROEJQ / EPSJB / PARENTNETPROFITTZ / TOTAL_SHARE。"""
     out = {}
     for sym in symbols:
         out[sym] = pd.DataFrame(
             [
                 {
-                    "报告期": "2023-12-31",
-                    "净资产收益率": 15.0,
-                    "基本每股收益": 1.0,
-                    "净利润同比增长率": 10.0,
+                    "REPORT_DATE": "2023-12-31",
+                    "ROEJQ": 15.0,
+                    "EPSJB": 1.0,
+                    "PARENTNETPROFITTZ": 10.0,
+                    "TOTAL_SHARE": 1_000_000_000,
                 }
             ]
         )
