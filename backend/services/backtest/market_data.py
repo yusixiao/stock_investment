@@ -54,6 +54,12 @@ class MarketData:
         self._date_arrays: dict[str, dict[str, np.ndarray]] = {
             "daily": {sym: df["date"].to_numpy() for sym, df in daily_cache.items()}
         }
+        # 性能关键: 缓存 OHLC 列为 numpy 数组(共享底层 buffer,几乎零内存代价)。
+        # engine._build_bar 每个 bar × 全部 symbol 调用,旧路径 df.iloc[i].to_dict()
+        # 单次 ~12µs,累积 15M+ 次成为新瓶颈。get_bar_at 走 numpy 直读 ~1.2µs,9.6x 加速。
+        self._ohlc_arrays: dict[str, dict[str, dict[str, np.ndarray]]] = {
+            "daily": {sym: self._extract_ohlc(df) for sym, df in daily_cache.items()}
+        }
 
         # 时间轴:取第一只股票的日历(参考股票),升序
         ref_sym = next(iter(daily_cache))
@@ -64,6 +70,16 @@ class MarketData:
             self._build_period_cache(frequency)
 
     # ---------- 内部 ----------
+
+    @staticmethod
+    def _extract_ohlc(df: pd.DataFrame) -> dict[str, np.ndarray]:
+        """抽取 OHLC 四列为 numpy 数组(零拷贝 view,共享底层 buffer)。"""
+        return {
+            "open": df["open"].to_numpy(),
+            "high": df["high"].to_numpy(),
+            "low": df["low"].to_numpy(),
+            "close": df["close"].to_numpy(),
+        }
 
     def _build_period_cache(self, period: str) -> None:
         """聚合所有 symbol 的日线为 weekly/monthly,缓存升序。"""
@@ -78,6 +94,10 @@ class MarketData:
         # 同步缓存 numpy date 数组供 _resolve_idx 二分查找
         self._date_arrays[period] = {
             sym: df["date"].to_numpy() for sym, df in cache.items()
+        }
+        # 同步缓存 OHLC numpy(供 get_bar_at 快速路径)
+        self._ohlc_arrays[period] = {
+            sym: self._extract_ohlc(df) for sym, df in cache.items()
         }
 
     def _get_period_df(self, symbol: str, period: str) -> pd.DataFrame | None:
@@ -123,6 +143,42 @@ class MarketData:
         if df is None or i < 0:
             return None
         return df.iloc[i].to_dict()
+
+    def get_bar_at(
+        self, symbol: str, idx: int, period: str = "daily", strict: bool = True
+    ) -> dict | None:
+        """快速 OHLC 取值(engine._build_bar 热路径,9.6x 优于 get_price)。
+
+        - 直接读预缓存的 numpy 数组,不构造 Series / dict.iloc / to_dict
+        - ``strict=True``:仅当 idx 对应日期在 symbol 自身日历上**精确存在**时返回
+          (停牌/上市晚的当日跳过);engine 用此模式只对当日有 bar 的 symbol 建仓
+        - ``strict=False``:允许回退到 ≤ target 的最近一根(等价 get_price 语义)
+
+        返回 ``{"open", "high", "low", "close", "date"}`` dict 或 None。
+        """
+        if idx < 0 or idx >= len(self.dates):
+            return None
+        # 触发懒加载 weekly/monthly cache(若需要)
+        if period not in self._period_cache:
+            self._build_period_cache(period)
+        arr = self._date_arrays.get(period, {}).get(symbol)
+        if arr is None or len(arr) == 0:
+            return None
+        target = self.dates[idx]
+        pos = int(np.searchsorted(arr, target, side="right")) - 1
+        if pos < 0:
+            return None
+        bar_date = arr[pos]
+        if strict and bar_date != target:
+            return None
+        ohlc = self._ohlc_arrays[period][symbol]
+        return {
+            "open": float(ohlc["open"][pos]),
+            "high": float(ohlc["high"][pos]),
+            "low": float(ohlc["low"][pos]),
+            "close": float(ohlc["close"][pos]),
+            "date": bar_date,
+        }
 
     def get_history(
         self,

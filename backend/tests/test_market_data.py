@@ -320,3 +320,69 @@ def test_resolve_idx_idx_at_boundaries(stock_data):
     assert i_neg == -1
     _, i_huge = md._resolve_idx("000001", "daily", 10_000_000)
     assert i_huge == -1
+
+
+# ============= get_bar_at(快速路径,engine._build_bar 用) =============
+
+
+def test_get_bar_at_returns_ohlc_dict(stock_data):
+    """正常返回 OHLC + date 五字段。"""
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    bar = md.get_bar_at("000001", idx=10, period="daily")
+    assert bar is not None
+    assert set(bar.keys()) == {"open", "high", "low", "close", "date"}
+    # 与 get_price 对照(同 idx 同 symbol)
+    row = md.get_price("000001", "daily", idx=10)
+    for k in ("open", "high", "low", "close"):
+        assert bar[k] == pytest.approx(row[k])
+    assert bar["date"] == row["date"]
+
+
+def test_get_bar_at_strict_skips_suspended_day(daily_dates):
+    """strict=True:停牌当日返回 None;strict=False:回退到前一交易日。"""
+    full = _make_daily(daily_dates, base=10.0)
+    sparse_dates = [d for d in daily_dates if not ("2024-02-12" <= d <= "2024-02-23")]
+    sparse = _make_daily(sparse_dates, base=20.0)
+    md = MarketData(stock_data={"FULL": full, "SPARSE": sparse}, frequency="daily")
+    target_idx = md.dates.index("2024-02-15")
+    # strict: 停牌当日 → None
+    assert md.get_bar_at("SPARSE", target_idx, strict=True) is None
+    # 非 strict: 回退到 2024-02-09
+    bar = md.get_bar_at("SPARSE", target_idx, strict=False)
+    assert bar is not None
+    assert bar["date"] == "2024-02-09"
+
+
+def test_get_bar_at_idx_out_of_range_returns_none(stock_data):
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    assert md.get_bar_at("000001", -1) is None
+    assert md.get_bar_at("000001", 10_000_000) is None
+
+
+def test_get_bar_at_unknown_symbol_returns_none(stock_data):
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    assert md.get_bar_at("999999", idx=0) is None
+
+
+def test_get_bar_at_weekly_lazy_builds_cache(stock_data):
+    """weekly 缓存懒构建:首次访问触发,后续直接命中。"""
+    md = MarketData(stock_data=stock_data, frequency="daily")  # 启动只建 daily
+    assert "weekly" not in md._period_cache
+    bar = md.get_bar_at("000001", idx=20, period="weekly", strict=False)
+    assert bar is not None
+    assert "weekly" in md._period_cache
+    assert "weekly" in md._ohlc_arrays
+
+
+def test_get_bar_at_consistency_across_dates(stock_data):
+    """对照测试:get_bar_at 与 get_price OHLC 完全一致(strict=False)。"""
+    md = MarketData(stock_data=stock_data, frequency="weekly")
+    for idx in range(0, len(md.dates), 5):
+        bar = md.get_bar_at("000001", idx, period="weekly", strict=False)
+        row = md.get_price("000001", "weekly", idx=idx)
+        if row is None:
+            assert bar is None
+            continue
+        assert bar is not None
+        for k in ("open", "high", "low", "close"):
+            assert bar[k] == pytest.approx(row[k]), f"mismatch at idx={idx} field={k}"
