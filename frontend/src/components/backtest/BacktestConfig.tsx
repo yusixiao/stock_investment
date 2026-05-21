@@ -54,17 +54,27 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
     }
   }, [selectedStrategy?.className]);
 
-  // 单股模式固定走 A,全市场模式跟随 market 选择
-  const targetMarket = mode === 'market' ? market : 'A';
+  // 个股模式按 symbol 后缀推断市场:.HK → HK,US 后缀 → US,其他默认 A
+  const inferMarketFromSymbol = (raw: string): 'A' | 'HK' | 'US' => {
+    const s = raw.trim().toUpperCase();
+    if (s.endsWith('.HK')) return 'HK';
+    if (/\.(US|N|O|NASDAQ|NYSE)$/.test(s)) return 'US';
+    return 'A';
+  };
+  const normalizedSymbol = symbol.includes('.') ? symbol : symbol ? `${symbol}.SZ` : '';
+  const targetMarket: 'A' | 'HK' | 'US' =
+    mode === 'market' ? market : (normalizedSymbol ? inferMarketFromSymbol(normalizedSymbol) : 'A');
   const targetCache = cacheStatus?.[targetMarket];
   const isCacheReady = targetCache?.loaded === true;
   const cacheHint = !cacheStatus
     ? null
-    : targetCache?.status === 'loading'
-      ? `${targetMarket} 数据加载中…`
-      : isCacheReady
-        ? null
-        : `${targetMarket} 数据未加载,请点击顶部「加载数据」按钮先加载`;
+    : mode === 'single' && !symbol
+      ? null
+      : targetCache?.status === 'loading'
+        ? `${targetMarket} 数据加载中…`
+        : isCacheReady
+          ? null
+          : `${targetMarket} 数据未加载,请点击顶部「加载数据」按钮先加载`;
 
   const handleRun = async () => {
     if (!selectedStrategy) return;
@@ -78,7 +88,7 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
       mode,
       strategyName: selectedStrategy.name,
       symbol: mode === 'single' ? symbol : undefined,
-      market: mode === 'market' ? market : 'A',
+      market: targetMarket,
       period,
       startDate,
       endDate,
@@ -91,9 +101,7 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
     onRun(task);
 
     try {
-      const symbols = mode === 'single' && symbol
-        ? [symbol.includes('.') ? symbol : `${symbol}.SZ`]
-        : undefined;
+      const symbols = mode === 'single' && symbol ? [normalizedSymbol] : undefined;
 
       const hasOverrides = Object.keys(paramValues).length > 0;
       const resp = await backtestEngineApi.runBacktest({
@@ -104,7 +112,7 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
         start_date: startDate,
         end_date: endDate,
         symbols,
-        market: mode === 'market' ? market : 'A',
+        market: targetMarket,
       });
 
       const realTaskId = resp.task_id;
@@ -164,7 +172,7 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
             type="text"
             value={symbol}
             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-            placeholder="如 000001.SZ 或 600519.SH"
+            placeholder="如 000001.SZ / 600519.SH / 00700.HK"
             className="input-surface input-focus-glow h-9 w-full rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none"
           />
         </div>
