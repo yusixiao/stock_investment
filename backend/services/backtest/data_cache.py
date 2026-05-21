@@ -23,7 +23,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import DIVIDEND_DIR, FINANCIAL_DIR, VALUATION_DIR
 from services.duckdb_store import get_store
 
 logger = logging.getLogger(__name__)
@@ -71,33 +70,25 @@ def _load_stock_data_full(market: str) -> dict[str, pd.DataFrame]:
     return store.query_qfq_kline_bulk(market=market, symbols=None, start=None, end=None)
 
 
-def _load_valuation(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    out: dict[str, pd.DataFrame] = {}
-    for sym in symbols:
-        fp = VALUATION_DIR / f"{sym}.parquet"
-        if fp.exists():
-            df = pd.read_parquet(fp).sort_values("date").reset_index(drop=True)
-            out[sym] = df
-    return out
+def _load_valuation(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """估值序列(English schema:date / peTTM / pbMRQ / psTTM / pcfNcfTTM)。
+    源:DuckDB v_{market}_daily 的估值列(A 股 BaoStock 自带)。
+    """
+    return get_store().query_valuation_bulk(market, symbols)
 
 
-def _load_dividend(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    out: dict[str, pd.DataFrame] = {}
-    for sym in symbols:
-        fp = DIVIDEND_DIR / f"{sym}.parquet"
-        if fp.exists():
-            out[sym] = pd.read_parquet(fp)
-    return out
+def _load_dividend(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """分红事件(English schema:date / cash_dividend / stocks_ps / record_date / pay_date)。
+    源:DuckDB v_{market}_dividend(A 股 BaoStock,HK/US 从 cashflow.DIVIDENDS_PAID 派生)。
+    """
+    return get_store().query_dividend_bulk(market, symbols)
 
 
-def _load_financial(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    out: dict[str, pd.DataFrame] = {}
-    for sym in symbols:
-        fp = FINANCIAL_DIR / f"{sym}.parquet"
-        if fp.exists():
-            df = pd.read_parquet(fp).sort_values("报告期").reset_index(drop=True)
-            out[sym] = df
-    return out
+def _load_financial(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """财务指标(English schema:REPORT_DATE / ROEJQ / EPSJB / BPS / TOTAL_SHARE / ...)。
+    源:DuckDB v_{market}_indicator(EastMoney)。
+    """
+    return get_store().query_financial_bulk(market, symbols, fin_type="indicator")
 
 
 def _load_market_blocking(market: str) -> MarketBundle:
@@ -122,15 +113,14 @@ def _load_market_blocking(market: str) -> MarketBundle:
         dividend_data: dict[str, pd.DataFrame] = {}
         financial_data: dict[str, pd.DataFrame] = {}
 
-        # 估值/分红/财务目前只有 A 股数据
-        if market == "A":
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                fv = pool.submit(_load_valuation, symbols)
-                fd = pool.submit(_load_dividend, symbols)
-                ff = pool.submit(_load_financial, symbols)
-                valuation_data = fv.result()
-                dividend_data = fd.result()
-                financial_data = ff.result()
+        # 三市场都通过 DuckDB 视图加载;HK/US 估值视图缺失会返回空 dict(防御)
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            fv = pool.submit(_load_valuation, market, symbols)
+            fd = pool.submit(_load_dividend, market, symbols)
+            ff = pool.submit(_load_financial, market, symbols)
+            valuation_data = fv.result()
+            dividend_data = fd.result()
+            financial_data = ff.result()
 
         bundle = MarketBundle(
             market=market,

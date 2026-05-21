@@ -12,11 +12,11 @@
   - 前端 React 19 + TypeScript + Vite 7 + Tailwind v4 + zustand + react-router 7 + lightweight-charts(K 线)+ recharts(回测曲线)+ react-markdown
 - **数据源**:多 adapter 架构 — `AKShareAdapter`(A 股)、`BaoStockAdapter`、`EastMoneyAdapter`(财务/估值默认)、`YFinanceAdapter`(港股/美股)。`adapters/data_source.py::create_default_data_source()` 统一装配
 - **数据存储**:
+  - **🚨 铁律(2026-05-21):所有业务数据来源**必须**是 `data/market/`,绝对禁止读取 `data/{kline,financial,dividend,valuation,indicators}/...` 等任何旧路径**。新增数据(分红、估值等当前缺失类目)也**必须落到 `data/market/{A,HK,US}/<category>/`** 下,按市场分区组织,统一英文 schema(对齐 EastMoney/YFinance 原始字段)
   - **唯一业务数据源 = DuckDB**(2026-05-18 决策):所有业务代码(回测、选股、K 线展示、财务/估值/分红查询)**必须**经 `services/duckdb_store.py` 访问数据,**禁止**直接 `glob` parquet 或读旧路径文件。新增数据访问 API 必须先在 `DuckDBStore` 上加方法/视图
-  - **DuckDB 唯一来源 = `data/market/`**:`data/market/{A,HK,US}/{daily,adjust_factor,financial/*}/*.parquet`(DuckDB 视图 `v_a_daily / v_a_adjust_factor / v_a_income / ...` 等)
-  - **旧路径完全废弃**:`data/kline/A/raw/`、`data/kline/A/qfq/` 不再被任何业务代码读取(2026-05-20 housekeeping 完成)。manual update 流程下线,`services/data_updater.py` + `routers/data_update.py` + `services/qfq_cache.py` 全部删除。物理目录可手动清理
+  - **DuckDB 唯一来源 = `data/market/`**:`data/market/{A,HK,US}/{daily,adjust_factor,financial/{income,balance,cashflow,indicator}}/*.parquet`(DuckDB 视图 `v_a_daily / v_a_adjust_factor / v_a_income / v_a_indicator / ...` 等)。财务表统一英文 schema(`REPORT_DATE / NETPROFIT / BASIC_EPS / ROEJQ / EPSJB / BPS / ...`)
+  - **旧路径完全废弃**(2026-05-21 重申):`data/kline/`、`data/financial/A/`(中文 schema)、`data/dividend/A/`、`data/valuation/A/`、`data/indicators/A/` 全部不再被任何业务代码读取。当前残留引用(`config.py` 的 `VALUATION_DIR/DIVIDEND_DIR/FINANCIAL_DIR/INDICATOR_DIR`、`data_cache._load_valuation/_load_dividend/_load_financial`、`valuation_updater/dividend_updater` 写路径、`strategies/utils/{dividend,valuation,financial}.py` 中文字段名)需要逐步清理。物理目录可手动删除
   - 复权因子:`data/market/{market}/adjust_factor/*.parquet`
-  - 分红:`data/dividend/A/`,财务:`data/financial/A/`,估值:`data/valuation/A/`,指标:`data/indicators/A/`(逐步纳入 DuckDB 视图)
   - 业务库:`data/portfolio.db`(SQLite)— portfolios / trades / snapshots / backtest_tasks / strategy_groups / group_runs
 - **代码注释**:复杂/非显然逻辑必须加注释;日志保持信息量
 - **MACD bar**:`2 × (DIF - DEA)`(用户明确要求)

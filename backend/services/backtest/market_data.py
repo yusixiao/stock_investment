@@ -112,7 +112,7 @@ class MarketData:
             for sym, df in self._valuation.items()
         }
         self._financial_cache: dict[str, _StaticTable] = {
-            sym: _build_static_table(df, date_col="报告期", ffill=False)
+            sym: _build_static_table(df, date_col="REPORT_DATE", ffill=False)
             for sym, df in self._financial.items()
         }
 
@@ -312,7 +312,7 @@ class MarketData:
         pos = int(np.searchsorted(table.dates, date, side="right")) - 1
         if pos < 0:
             return None
-        result: dict[str, Any] = {"报告期": table.dates[pos]}
+        result: dict[str, Any] = {"REPORT_DATE": table.dates[pos]}
         for col, arr in table.num_cols.items():
             v = arr[pos]
             result[col] = None if math.isnan(v) else float(v)

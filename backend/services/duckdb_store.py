@@ -44,7 +44,79 @@ class DuckDBStore:
                 if fin_dir.exists():
                     self._create_glob_view(f"v_{market.lower()}_{fin_type}", fin_dir)
 
+        # 分红视图 — 三市场统一 schema:_symbol / date / cash_dividend
+        # A 股:从 data/market/A/dividend/*.parquet 直接映射(BaoStock 英文 schema)
+        # HK/US:从 cashflow.DIVIDENDS_PAID 派生(粒度仅到年报)
+        for market in MARKETS:
+            self._setup_dividend_view(market)
+
         logger.info("DuckDB views created for all market parquet data")
+
+    def _setup_dividend_view(self, market: str):
+        """创建分红视图。A 股读独立 parquet,HK/US 从 cashflow 派生。
+
+        统一 schema:_symbol / date / cash_dividend(>0)
+        其它字段(stocks_ps / record_date / pay_date)A 股有,HK/US 为 NULL。
+        """
+        view_name = f"v_{market.lower()}_dividend"
+        if market == "A":
+            div_dir = MARKET_DIR / "A" / "dividend"
+            if not div_dir.exists() or not any(div_dir.glob("*.parquet")):
+                logger.info(f"Skip {view_name}: no parquet in {div_dir}")
+                return
+            glob_pattern = str(div_dir / "*.parquet")
+            # BaoStock 字段:dividOperateDate(除权日) / dividCashPsBeforeTax(税前每股) / ...
+            sql = f"""
+                CREATE OR REPLACE VIEW {view_name} AS
+                SELECT
+                    regexp_extract(filename, '([^/]+)\\.parquet$', 1) AS _symbol,
+                    dividOperateDate AS date,
+                    TRY_CAST(dividCashPsBeforeTax AS DOUBLE) AS cash_dividend,
+                    TRY_CAST(dividStocksPs AS DOUBLE) AS stocks_ps,
+                    dividRegistDate AS record_date,
+                    dividPayDate AS pay_date
+                FROM read_parquet('{glob_pattern}', filename=true, union_by_name=true)
+                WHERE dividOperateDate IS NOT NULL
+                  AND TRY_CAST(dividCashPsBeforeTax AS DOUBLE) > 0
+            """
+            try:
+                self._conn.execute(sql)
+                logger.debug(f"View created: {view_name} (A股独立 parquet)")
+            except Exception as e:
+                logger.warning(f"Failed to create {view_name}: {e}")
+        else:
+            # HK/US:从 cashflow.DIVIDENDS_PAID > 0 派生
+            cashflow_view = f"v_{market.lower()}_cashflow"
+            if not self._view_exists(cashflow_view):
+                logger.info(f"Skip {view_name}: {cashflow_view} not available")
+                return
+            sql = f"""
+                CREATE OR REPLACE VIEW {view_name} AS
+                SELECT
+                    _symbol,
+                    REPORT_DATE AS date,
+                    DIVIDENDS_PAID AS cash_dividend,
+                    NULL::DOUBLE AS stocks_ps,
+                    NULL::VARCHAR AS record_date,
+                    NULL::VARCHAR AS pay_date
+                FROM {cashflow_view}
+                WHERE DIVIDENDS_PAID IS NOT NULL AND DIVIDENDS_PAID > 0
+            """
+            try:
+                self._conn.execute(sql)
+                logger.debug(f"View created: {view_name} (从 {cashflow_view} 派生)")
+            except Exception as e:
+                logger.warning(f"Failed to create {view_name}: {e}")
+
+    def _view_exists(self, view_name: str) -> bool:
+        try:
+            n = self._conn.execute(
+                "SELECT count(*) FROM duckdb_views() WHERE view_name = ?",
+                [view_name],
+            ).fetchone()[0]
+            return n > 0
+        except Exception:
+            return False
 
     def _create_glob_view(self, view_name: str, directory: Path):
         """用 read_parquet glob 创建视图，filename 提取股票代码"""
@@ -253,6 +325,84 @@ class DuckDBStore:
         if limit:
             sql += f" LIMIT {limit}"
         return self._conn.execute(sql, [symbol]).fetchdf()
+
+    # -------- 业务层 bulk 查询入口(替代旧 parquet glob) --------
+
+    def _bulk_split(self, df: pd.DataFrame, sort_col: str) -> dict[str, pd.DataFrame]:
+        """共用:按 _symbol 切分 + 按 sort_col 升序 + reset_index。空 df → {}"""
+        if df.empty:
+            return {}
+        result: dict[str, pd.DataFrame] = {}
+        for sym, g in df.groupby("_symbol", sort=False):
+            sub = g.drop(columns="_symbol").sort_values(sort_col).reset_index(drop=True)
+            result[sym] = sub
+        return result
+
+    def query_valuation_bulk(
+        self,
+        market: str,
+        symbols: Optional[list[str]] = None,
+    ) -> dict[str, pd.DataFrame]:
+        """批量取估值序列(date/peTTM/pbMRQ/psTTM/pcfNcfTTM)。
+        A 股直接来自 v_a_daily 的估值列;HK/US daily 不含估值时返回空 dict。
+        """
+        view = f"v_{market.lower()}_daily"
+        # 检查列是否存在(HK/US daily 可能没有估值列)
+        cols = self._conn.execute(f"DESCRIBE {view}").fetchdf()["column_name"].tolist()
+        val_cols = [c for c in ("peTTM", "pbMRQ", "psTTM", "pcfNcfTTM") if c in cols]
+        if not val_cols:
+            return {}
+        select = ", ".join(["_symbol", "date"] + val_cols)
+        params: list = []
+        where = ""
+        if symbols:
+            placeholders = ",".join(["?"] * len(symbols))
+            where = f"WHERE _symbol IN ({placeholders})"
+            params.extend(symbols)
+        sql = f"SELECT {select} FROM {view} {where} ORDER BY _symbol, date"
+        df = self._conn.execute(sql, params).fetchdf()
+        return self._bulk_split(df, sort_col="date")
+
+    def query_dividend_bulk(
+        self,
+        market: str,
+        symbols: Optional[list[str]] = None,
+    ) -> dict[str, pd.DataFrame]:
+        """批量取分红事件序列。视图 v_{x}_dividend 不存在时返回空 dict。"""
+        view = f"v_{market.lower()}_dividend"
+        if not self._view_exists(view):
+            return {}
+        params: list = []
+        where = ""
+        if symbols:
+            placeholders = ",".join(["?"] * len(symbols))
+            where = f"WHERE _symbol IN ({placeholders})"
+            params.extend(symbols)
+        sql = f"SELECT * FROM {view} {where} ORDER BY _symbol, date"
+        df = self._conn.execute(sql, params).fetchdf()
+        return self._bulk_split(df, sort_col="date")
+
+    def query_financial_bulk(
+        self,
+        market: str,
+        symbols: Optional[list[str]] = None,
+        fin_type: str = "indicator",
+    ) -> dict[str, pd.DataFrame]:
+        """批量取财务序列(默认 indicator,REPORT_DATE 升序)。
+        视图缺失返回 {}。
+        """
+        view = f"v_{market.lower()}_{fin_type}"
+        if not self._view_exists(view):
+            return {}
+        params: list = []
+        where = ""
+        if symbols:
+            placeholders = ",".join(["?"] * len(symbols))
+            where = f"WHERE _symbol IN ({placeholders})"
+            params.extend(symbols)
+        sql = f"SELECT * FROM {view} {where} ORDER BY _symbol, REPORT_DATE"
+        df = self._conn.execute(sql, params).fetchdf()
+        return self._bulk_split(df, sort_col="REPORT_DATE")
 
     def search_symbols(self, market: str, pattern: str) -> list[str]:
         """模糊搜索股票代码"""
