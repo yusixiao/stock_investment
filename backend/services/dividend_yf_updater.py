@@ -16,6 +16,7 @@
 """
 
 import logging
+import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
@@ -80,7 +81,8 @@ def update_dividend(
     market: str,
     codes: Optional[list[str]] = None,
     incremental: bool = True,
-    max_workers: int = 4,
+    max_workers: int = 2,
+    skip_existing: bool = True,
 ) -> DividendUpdateResult:
     """HK/US 分红事件抓取(yfinance)。
 
@@ -88,7 +90,9 @@ def update_dividend(
         market: "HK" | "US"
         codes: None 时使用 daily 目录下所有股票
         incremental: True 时,合并已有 parquet(按 dividOperateDate 去重,新覆盖旧)
-        max_workers: 并发线程数,默认 4(Yahoo 限流敏感,>8 易触发 429)
+        max_workers: 并发线程数,默认 2(Yahoo 限流敏感,实测 4 会快速触发 429)
+        skip_existing: True 时,跳过已存在的 parquet(用于断点续抓);
+                       置 False 强制全部重抓(覆盖更新)
     """
     global _progress
 
@@ -104,6 +108,15 @@ def update_dividend(
 
     div_dir = DATA_DIR / "market" / market / "dividend"
     div_dir.mkdir(parents=True, exist_ok=True)
+
+    if skip_existing:
+        existed = {p.stem for p in div_dir.glob("*.parquet")}
+        before = len(codes)
+        codes = [c for c in codes if c not in existed]
+        logger.info(
+            f"[{market} dividend] skip_existing=True: {before} → {len(codes)} "
+            f"(已抓 {before - len(codes)} 只)"
+        )
 
     _progress = DividendUpdateProgress(
         status="running",
@@ -168,9 +181,33 @@ def update_dividend(
     return result
 
 
+def _is_rate_limited(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "too many requests" in msg or "rate limit" in msg or "429" in msg
+
+
+def _fetch_with_retry(adapter, code: str, max_attempts: int = 4):
+    """对 yfinance 限流(429)做指数退避重试,其它异常直接抛出。"""
+    for attempt in range(max_attempts):
+        try:
+            return adapter.fetch_dividends(code)
+        except Exception as e:
+            if _is_rate_limited(e) and attempt < max_attempts - 1:
+                # 指数退避 + 抖动:5s, 10s, 20s
+                sleep = 5 * (2**attempt) + random.uniform(0, 2)
+                logger.warning(
+                    f"[dividend] {code} rate-limited, sleep {sleep:.1f}s "
+                    f"(attempt {attempt + 1}/{max_attempts})"
+                )
+                time.sleep(sleep)
+                continue
+            raise
+    raise RuntimeError(f"{code}: rate-limited after {max_attempts} attempts")
+
+
 def _process_one(adapter, repo, code: str, incremental: bool, result, lock) -> None:
     """单股处理:抓取 → 合并 → 落盘。"""
-    new_records = adapter.fetch_dividends(code)
+    new_records = _fetch_with_retry(adapter, code)
 
     if not new_records:
         with lock:
