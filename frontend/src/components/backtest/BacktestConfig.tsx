@@ -14,6 +14,7 @@ interface Props {
 
 const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
   const [symbol, setSymbol] = useState('');
+  const [market, setMarket] = useState<'A' | 'HK' | 'US'>('A');
   const [strategy, setStrategy] = useState('');
   const [period, setPeriod] = useState('daily');
   const [startDate, setStartDate] = useState('2023-01-01');
@@ -62,7 +63,7 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
       mode,
       strategyName: selectedStrategy.name,
       symbol: mode === 'single' ? symbol : undefined,
-      market: 'A',
+      market: mode === 'market' ? market : 'A',
       period,
       startDate,
       endDate,
@@ -88,7 +89,7 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
         start_date: startDate,
         end_date: endDate,
         symbols,
-        market: 'A',
+        market: mode === 'market' ? market : 'A',
       });
 
       const realTaskId = resp.task_id;
@@ -141,7 +142,7 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
         回测配置
       </div>
 
-      {mode === 'single' && (
+      {mode === 'single' ? (
         <div className="flex flex-col gap-1.5">
           <label className="text-xs text-secondary-text">股票代码</label>
           <input
@@ -151,6 +152,19 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
             placeholder="如 000001.SZ 或 600519.SH"
             className="input-surface input-focus-glow h-9 w-full rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none"
           />
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs text-secondary-text">市场</label>
+          <select
+            value={market}
+            onChange={(e) => setMarket(e.target.value as 'A' | 'HK' | 'US')}
+            className="input-surface input-focus-glow h-9 w-full appearance-none rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none"
+          >
+            <option value="A">A 股</option>
+            <option value="HK">港股</option>
+            <option value="US">美股</option>
+          </select>
         </div>
       )}
 
