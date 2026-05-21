@@ -5,8 +5,9 @@ from typing import List, Optional
 import pandas as pd
 import yfinance as yf
 
-from backend.adapters.base import MarketDataAdapter
+from backend.adapters.base import MarketDataAdapter, EventDataAdapter
 from backend.models.market import DailyKlineRecord, AdjustFactorRecord
+from backend.models.event import DividendRecord
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +29,8 @@ def _to_standard_code(yf_code: str) -> str:
     return yf_code
 
 
-class YFinanceAdapter(MarketDataAdapter):
-    """yfinance 数据源适配器 — 用于港股行情数据"""
+class YFinanceAdapter(MarketDataAdapter, EventDataAdapter):
+    """yfinance 数据源适配器 — 港股/美股行情 + 每股分红事件。"""
 
     def fetch_daily_kline(
         self, code: str, start_date: str, end_date: str
@@ -174,4 +175,41 @@ class YFinanceAdapter(MarketDataAdapter):
                 )
             )
 
+        return records
+
+    def fetch_dividends(
+        self, code: str, year: Optional[str] = None
+    ) -> List[DividendRecord]:
+        """获取每股分红事件序列(yfinance.Ticker.dividends)。
+
+        yfinance dividends 返回 pandas Series,index=ex-dividend date(本币每股金额)。
+        映射到 DividendRecord 的 BaoStock 字段以与 A 股 schema 对齐:
+          - dividOperateDate = ex-dividend date(YYYY-MM-DD)
+          - dividCashPsBeforeTax = 每股分红(本币,yfinance 默认税前)
+          其余 dividRegistDate / dividPayDate / dividStocksPs 等字段 yfinance 不提供,留空。
+
+        参数 year 暂未使用(yfinance 一次性返回全部历史,与 EastMoneyAdapter 行为一致)。
+        """
+        yf_code = _to_yfinance_code(code)
+        std_code = _to_standard_code(yf_code)
+        t = yf.Ticker(yf_code)
+        divs = t.dividends
+        if divs is None or divs.empty:
+            return []
+        records: List[DividendRecord] = []
+        for dt, amount in divs.items():
+            try:
+                amt = float(amount)
+            except (TypeError, ValueError):
+                continue
+            if amt <= 0:
+                continue
+            date_str = dt.strftime("%Y-%m-%d")
+            records.append(
+                DividendRecord(
+                    code=std_code,
+                    dividOperateDate=date_str,
+                    dividCashPsBeforeTax=amt,
+                )
+            )
         return records

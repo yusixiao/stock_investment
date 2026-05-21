@@ -53,17 +53,24 @@ class DuckDBStore:
         logger.info("DuckDB views created for all market parquet data")
 
     def _setup_dividend_view(self, market: str):
-        """创建分红视图。A 股读独立 parquet,HK/US 从 cashflow 派生。
+        """创建分红视图。三市场统一 schema:_symbol / date / cash_dividend(每股,>0) / ...
 
-        统一 schema:_symbol / date / cash_dividend(>0)
-        其它字段(stocks_ps / record_date / pay_date)A 股有,HK/US 为 NULL。
+        优先级:
+          1. data/market/{market}/dividend/*.parquet 独立文件存在 → 直接映射
+             - A 股:EastMoney 抓取(BaoStock 字段名)
+             - HK/US:yfinance Ticker.dividends(每股事件级,字段对齐 BaoStock)
+          2. 仅 HK/US fallback:从 cashflow.DIVIDENDS_PAID 派生(公司总额,语义弱)
+
+        统一 schema:_symbol / date / cash_dividend / stocks_ps / record_date / pay_date
+        独立 parquet 走方案 1 时,cash_dividend 为「每股税前分红」;
+        若 HK/US 退化到方案 2,cash_dividend 为「公司总分红现金流出」(语义不一致,
+        消费端需谨慎,选股策略应优先依赖方案 1)。
         """
         view_name = f"v_{market.lower()}_dividend"
-        if market == "A":
-            div_dir = MARKET_DIR / "A" / "dividend"
-            if not div_dir.exists() or not any(div_dir.glob("*.parquet")):
-                logger.info(f"Skip {view_name}: no parquet in {div_dir}")
-                return
+        div_dir = MARKET_DIR / market / "dividend"
+        has_parquet = div_dir.exists() and any(div_dir.glob("*.parquet"))
+
+        if has_parquet:
             glob_pattern = str(div_dir / "*.parquet")
             # BaoStock 字段:dividOperateDate(除权日) / dividCashPsBeforeTax(税前每股) / ...
             sql = f"""
@@ -81,32 +88,40 @@ class DuckDBStore:
             """
             try:
                 self._conn.execute(sql)
-                logger.debug(f"View created: {view_name} (A股独立 parquet)")
+                logger.debug(f"View created: {view_name} (独立 parquet,每股事件级)")
             except Exception as e:
                 logger.warning(f"Failed to create {view_name}: {e}")
-        else:
-            # HK/US:从 cashflow.DIVIDENDS_PAID > 0 派生
-            cashflow_view = f"v_{market.lower()}_cashflow"
-            if not self._view_exists(cashflow_view):
-                logger.info(f"Skip {view_name}: {cashflow_view} not available")
-                return
-            sql = f"""
-                CREATE OR REPLACE VIEW {view_name} AS
-                SELECT
-                    _symbol,
-                    REPORT_DATE AS date,
-                    DIVIDENDS_PAID AS cash_dividend,
-                    NULL::DOUBLE AS stocks_ps,
-                    NULL::VARCHAR AS record_date,
-                    NULL::VARCHAR AS pay_date
-                FROM {cashflow_view}
-                WHERE DIVIDENDS_PAID IS NOT NULL AND DIVIDENDS_PAID > 0
-            """
-            try:
-                self._conn.execute(sql)
-                logger.debug(f"View created: {view_name} (从 {cashflow_view} 派生)")
-            except Exception as e:
-                logger.warning(f"Failed to create {view_name}: {e}")
+            return
+
+        if market == "A":
+            logger.info(f"Skip {view_name}: no parquet in {div_dir}")
+            return
+
+        # HK/US fallback:cashflow 派生(公司总额,语义弱)
+        cashflow_view = f"v_{market.lower()}_cashflow"
+        if not self._view_exists(cashflow_view):
+            logger.info(f"Skip {view_name}: {cashflow_view} not available")
+            return
+        sql = f"""
+            CREATE OR REPLACE VIEW {view_name} AS
+            SELECT
+                _symbol,
+                REPORT_DATE AS date,
+                DIVIDENDS_PAID AS cash_dividend,
+                NULL::DOUBLE AS stocks_ps,
+                NULL::VARCHAR AS record_date,
+                NULL::VARCHAR AS pay_date
+            FROM {cashflow_view}
+            WHERE DIVIDENDS_PAID IS NOT NULL AND DIVIDENDS_PAID > 0
+        """
+        try:
+            self._conn.execute(sql)
+            logger.warning(
+                f"View created: {view_name} (从 {cashflow_view} 派生 — "
+                f"cash_dividend 为公司总额非每股,选股策略慎用)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create {view_name}: {e}")
 
     def _view_exists(self, view_name: str) -> bool:
         try:
