@@ -62,9 +62,25 @@ def _baostock_session():
 
 
 def _result_to_df(rs) -> pd.DataFrame:
+    """读取 BaoStock 结果集为 DataFrame。
+
+    BaoStock 用 error_code 字段表示错误(网络/限流/系统等),不抛异常。
+    若发生错误,这里 raise RuntimeError 让 _fetch_with_retry 重试,
+    避免被静默吞成空 DataFrame → market_updater 误计 skipped。
+    """
+    if rs.error_code != "0":
+        raise RuntimeError(
+            f"BaoStock error_code={rs.error_code}, error_msg={rs.error_msg}"
+        )
     rows = []
-    while (rs.error_code == "0") and rs.next():
+    while rs.next():
         rows.append(rs.get_row_data())
+        # next() 内部也可能切换到错误状态(分页拉取中断等)
+        if rs.error_code != "0":
+            raise RuntimeError(
+                f"BaoStock error_code={rs.error_code} during pagination, "
+                f"error_msg={rs.error_msg}"
+            )
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame(rows, columns=rs.fields)

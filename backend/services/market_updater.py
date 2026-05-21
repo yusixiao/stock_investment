@@ -46,6 +46,25 @@ MARKETS = ["A", "HK", "US"]
 MAX_RETRIES = 3
 RETRY_BACKOFF_CAP = 30
 
+# 单股拉取间节流(秒),用于缓解 yfinance 的 Yahoo 限流。
+# A 股走 BaoStock 不需要节流。
+THROTTLE_SEC_BY_MARKET = {
+    "A": 0.0,
+    "HK": 0.1,
+    "US": 0.1,
+}
+
+
+def _is_rate_limit_error(err: Exception) -> bool:
+    """识别 yfinance / 通用网络层的限流错误,用于针对性长退避"""
+    msg = str(err).lower()
+    return (
+        "too many requests" in msg
+        or "rate limit" in msg
+        or "rate-limit" in msg
+        or "429" in msg
+    )
+
 
 @dataclass
 class MarketUpdateResult:
@@ -82,14 +101,20 @@ def _fetch_with_retry(
     end_date: str,
     max_retries: int = MAX_RETRIES,
 ):
-    """带重试的 K线拉取"""
+    """带重试的 K线拉取。
+
+    限流错误使用更长的退避(基础 10s × 指数);其它错误用普通指数退避。
+    """
     last_error = None
     for attempt in range(max_retries):
         try:
             return adapter.fetch_daily_kline(code, start_date, end_date)
         except Exception as e:
             last_error = e
-            wait = min(2**attempt, RETRY_BACKOFF_CAP)
+            if _is_rate_limit_error(e):
+                wait = min(10 * (2**attempt), RETRY_BACKOFF_CAP)
+            else:
+                wait = min(2**attempt, RETRY_BACKOFF_CAP)
             logger.warning(
                 f"Fetch failed {code} attempt {attempt + 1}/{max_retries}, "
                 f"wait {wait}s: {e}"
@@ -118,8 +143,10 @@ def _update_market_kline(
 
     total = len(codes)
     end_date = date.today().strftime("%Y-%m-%d")
+    throttle_sec = THROTTLE_SEC_BY_MARKET.get(market, 0.0)
     logger.info(
-        f"[{market}] Start incremental update: {total} stocks, end_date={end_date}"
+        f"[{market}] Start incremental update: {total} stocks, end_date={end_date}, "
+        f"throttle={throttle_sec}s"
     )
 
     for idx, code in enumerate(codes, 1):
@@ -148,6 +175,7 @@ def _update_market_kline(
             records = _fetch_with_retry(adapter, code, start, end_date)
 
             if not records:
+                # 真正空数据(delisted / 区间无交易): 计为 skipped
                 result.skipped += 1
                 continue
 
@@ -155,10 +183,14 @@ def _update_market_kline(
             result.updated += 1
 
         except Exception as e:
+            # 重试后仍失败(含限流耗尽): 计为 failed,不再混入 skipped
             result.failed += 1
             if len(result.errors) < 50:
                 result.errors.append(f"{code}: {e}")
             logger.error(f"[{market}] Failed {code}: {e}")
+
+        if throttle_sec > 0:
+            time.sleep(throttle_sec)
 
         if on_progress and idx % 100 == 0:
             on_progress(market, idx, total)

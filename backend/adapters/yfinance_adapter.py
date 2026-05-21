@@ -36,12 +36,10 @@ class YFinanceAdapter(MarketDataAdapter):
         yf_code = _to_yfinance_code(code)
         std_code = _to_standard_code(yf_code)
 
-        try:
-            t = yf.Ticker(yf_code)
-            df = t.history(start=start_date, end=end_date, auto_adjust=False)
-        except Exception as e:
-            logger.error(f"yfinance fetch_daily_kline failed for {code}: {e}")
-            return []
+        # 不吞异常: rate-limit / network 错误向上抛供 _fetch_with_retry 重试;
+        # 真正空数据(delisted / 区间无交易)yfinance 返回 df.empty 而不抛
+        t = yf.Ticker(yf_code)
+        df = t.history(start=start_date, end=end_date, auto_adjust=False)
 
         if df.empty:
             return []
@@ -75,12 +73,9 @@ class YFinanceAdapter(MarketDataAdapter):
         yf_code = _to_yfinance_code(code)
         std_code = _to_standard_code(yf_code)
 
-        try:
-            t = yf.Ticker(yf_code)
-            df = t.history(period="max", auto_adjust=False)
-        except Exception as e:
-            logger.error(f"yfinance fetch_daily_kline_full failed for {code}: {e}")
-            return []
+        # 同 fetch_daily_kline: 不吞异常,让 retry 层处理可重试错误
+        t = yf.Ticker(yf_code)
+        df = t.history(period="max", auto_adjust=False)
 
         if df.empty:
             return []
@@ -114,14 +109,11 @@ class YFinanceAdapter(MarketDataAdapter):
         yf_code = _to_yfinance_code(code)
         std_code = _to_standard_code(yf_code)
 
-        try:
-            t = yf.Ticker(yf_code)
-            hist = t.history(period="max", auto_adjust=False)
-            divs = t.dividends
-            splits = t.splits
-        except Exception as e:
-            logger.error(f"yfinance fetch_adjust_factor failed for {code}: {e}")
-            return []
+        # 不吞异常,让 retry 层处理
+        t = yf.Ticker(yf_code)
+        hist = t.history(period="max", auto_adjust=False)
+        divs = t.dividends
+        splits = t.splits
 
         if hist.empty:
             return []
