@@ -194,6 +194,66 @@ def test_get_valuation_none_before_first_record(stock_data):
     assert md.get_valuation("000001", date="2024-01-01") is None
 
 
+def test_get_valuation_ffill_nan_in_latest_row(stock_data):
+    """最新一行 pe 为 NaN 时,应向前回填到最近一个非空值(保留旧 sub_mask 语义)。"""
+    val_df = pd.DataFrame(
+        {
+            "date": ["2024-01-15", "2024-02-15", "2024-03-15"],
+            "pe": [10.0, 12.0, float("nan")],
+            "pb": [1.0, float("nan"), 1.5],
+        }
+    )
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", valuation={"000001": val_df}
+    )
+    row = md.get_valuation("000001", date="2024-03-20")
+    assert row is not None
+    assert row["pe"] == 12.0  # ffill from 02-15
+    assert row["pb"] == 1.5  # 03-15 本身有值
+
+
+def test_get_valuation_leading_nan_returns_none(stock_data):
+    """开头就是 NaN(无可回填的历史值),返回 None。"""
+    val_df = pd.DataFrame(
+        {
+            "date": ["2024-01-15", "2024-02-15"],
+            "pe": [float("nan"), 12.0],
+        }
+    )
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", valuation={"000001": val_df}
+    )
+    row = md.get_valuation("000001", date="2024-01-20")
+    assert row is not None
+    assert row["pe"] is None
+
+
+def test_get_valuation_unsorted_input_still_correct(stock_data):
+    """入参顺序乱时,_StaticTable 内部按 date 排序,查询结果仍正确。"""
+    val_df = pd.DataFrame({"date": ["2024-02-15", "2024-01-15"], "pe": [12.0, 10.0]})
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", valuation={"000001": val_df}
+    )
+    assert md.get_valuation("000001", date="2024-01-20")["pe"] == 10.0
+    assert md.get_valuation("000001", date="2024-02-20")["pe"] == 12.0
+
+
+def test_get_financial_nan_returns_none_no_ffill(stock_data):
+    """financial 不做 ffill — NaN 字段返回 None,与旧逻辑一致。"""
+    fin_df = pd.DataFrame(
+        {
+            "报告期": ["2023-12-31", "2024-03-31"],
+            "净利润": [100.0, float("nan")],
+        }
+    )
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", financial={"000001": fin_df}
+    )
+    row = md.get_financial("000001", date="2024-04-15")
+    assert row is not None
+    assert row["净利润"] is None  # 不向前回填
+
+
 def test_get_dividend_returns_df_when_present(stock_data):
     div_df = pd.DataFrame({"ex_date": ["2024-02-15"], "dividend": [0.5]})
     md = MarketData(
