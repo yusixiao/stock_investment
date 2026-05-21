@@ -1,10 +1,12 @@
 import type React from 'react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { cn } from '../../utils/cn';
 import BacktestConfig from './BacktestConfig';
 import BacktestResult from './BacktestResult';
 import BacktestHistory from './BacktestHistory';
 import BacktestDetail from './BacktestDetail';
+import DataCacheModal from './DataCacheModal';
+import { backtestCacheApi, type CacheStatusMap } from '../../api/backtestCache';
 
 export type BacktestMode = 'single' | 'market';
 
@@ -78,6 +80,27 @@ const BacktestAnalysis: React.FC = () => {
   // 历史详情态:不为 null 时进入只读详情视图(左侧参数+ID,右侧复用 BacktestResult)
   const [detailTask, setDetailTask] = useState<BacktestTask | null>(null);
 
+  // 数据缓存:状态条 + 加载弹窗
+  const [cacheStatus, setCacheStatus] = useState<CacheStatusMap | null>(null);
+  const [cacheModalOpen, setCacheModalOpen] = useState(false);
+
+  const refreshStatus = useCallback(() => {
+    backtestCacheApi.status().then(setCacheStatus).catch(() => {});
+  }, []);
+
+  // 首次加载 + 任一市场 loading 时每 2s 轮询
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    if (!cacheStatus) return;
+    const anyLoading = Object.values(cacheStatus).some((s) => s.status === 'loading');
+    if (!anyLoading) return;
+    const t = setInterval(refreshStatus, 2000);
+    return () => clearInterval(t);
+  }, [cacheStatus, refreshStatus]);
+
   const handleRunBacktest = (task: BacktestTask) => {
     setCurrentTask(task);
     setDetailTask(null);
@@ -112,7 +135,7 @@ const BacktestAnalysis: React.FC = () => {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex-shrink-0 border-b border-border/30 bg-card/30 px-4 py-2">
+      <div className="flex flex-shrink-0 items-center gap-3 border-b border-border/30 bg-card/30 px-4 py-2">
         <div className="inline-flex rounded-lg border border-border/50 bg-elevated/50 p-0.5">
           {TABS.map(tab => (
             <button
@@ -130,7 +153,52 @@ const BacktestAnalysis: React.FC = () => {
             </button>
           ))}
         </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            refreshStatus();
+            setCacheModalOpen(true);
+          }}
+          className="rounded-md border border-border/50 bg-elevated/50 px-3 py-1.5 text-xs font-medium text-secondary-text transition-colors hover:text-foreground"
+        >
+          加载数据
+        </button>
+
+        <div className="ml-auto flex items-center gap-3 text-xs">
+          {(['A', 'HK', 'US'] as const).map((m) => {
+            const s = cacheStatus?.[m];
+            const label = m === 'A' ? 'A' : m === 'HK' ? 'H' : 'US';
+            const text = s?.status === 'loaded'
+              ? `已加载 ${s.symbols}`
+              : s?.status === 'loading'
+                ? '加载中…'
+                : s?.status === 'failed'
+                  ? '失败'
+                  : '未加载';
+            const color = s?.status === 'loaded'
+              ? 'text-emerald-400'
+              : s?.status === 'loading'
+                ? 'text-amber-400'
+                : s?.status === 'failed'
+                  ? 'text-rose-400'
+                  : 'text-muted-text';
+            return (
+              <span key={m} className="tabular-nums">
+                <span className="text-secondary-text">{label}</span>
+                <span className={`ml-1 ${color}`}>{text}</span>
+              </span>
+            );
+          })}
+        </div>
       </div>
+
+      <DataCacheModal
+        isOpen={cacheModalOpen}
+        status={cacheStatus}
+        onClose={() => setCacheModalOpen(false)}
+        onRefresh={refreshStatus}
+      />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {view === 'history' ? (
@@ -142,7 +210,12 @@ const BacktestAnalysis: React.FC = () => {
         ) : (
           <>
             <aside className="w-80 flex-shrink-0 overflow-y-auto border-r border-border/30 bg-card/20">
-              <BacktestConfig mode={mode} onRun={handleRunBacktest} onTaskUpdate={handleTaskUpdate} />
+              <BacktestConfig
+                mode={mode}
+                onRun={handleRunBacktest}
+                onTaskUpdate={handleTaskUpdate}
+                cacheStatus={cacheStatus}
+              />
             </aside>
             <main className="min-h-0 flex-1 overflow-y-auto">
               <BacktestResult task={currentTask} />

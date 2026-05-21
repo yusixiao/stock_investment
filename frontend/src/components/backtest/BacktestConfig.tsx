@@ -5,14 +5,16 @@ import { backtestEngineApi } from '../../api/backtestEngine';
 import type { StrategyInfo } from '../../api/backtestEngine';
 import type { BacktestMode, BacktestTask } from './BacktestAnalysis';
 import { mapPayloadToResultData } from '../../utils/backtestPayload';
+import type { CacheStatusMap } from '../../api/backtestCache';
 
 interface Props {
   mode: BacktestMode;
   onRun: (task: BacktestTask) => void;
   onTaskUpdate: (taskId: string, updates: Partial<BacktestTask>) => void;
+  cacheStatus: CacheStatusMap | null;
 }
 
-const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
+const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatus }) => {
   const [symbol, setSymbol] = useState('');
   const [market, setMarket] = useState<'A' | 'HK' | 'US'>('A');
   const [strategy, setStrategy] = useState('');
@@ -52,8 +54,21 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
     }
   }, [selectedStrategy?.className]);
 
+  // 单股模式固定走 A,全市场模式跟随 market 选择
+  const targetMarket = mode === 'market' ? market : 'A';
+  const targetCache = cacheStatus?.[targetMarket];
+  const isCacheReady = targetCache?.loaded === true;
+  const cacheHint = !cacheStatus
+    ? null
+    : targetCache?.status === 'loading'
+      ? `${targetMarket} 数据加载中…`
+      : isCacheReady
+        ? null
+        : `${targetMarket} 数据未加载,请点击顶部「加载数据」按钮先加载`;
+
   const handleRun = async () => {
     if (!selectedStrategy) return;
+    if (!isCacheReady) return;
     setIsRunning(true);
 
     const taskId = crypto.randomUUID().slice(0, 8);
@@ -299,10 +314,16 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate }) => {
         </div>
       </div>
 
+      {cacheHint && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          {cacheHint}
+        </div>
+      )}
+
       <button
         type="button"
         onClick={handleRun}
-        disabled={isRunning || !strategy}
+        disabled={isRunning || !strategy || !isCacheReady}
         className="btn-primary mt-2 flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isRunning ? (

@@ -3,8 +3,17 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 from main import app
+from services.backtest import data_cache
 
 client = TestClient(app)
+
+
+def _make_test_bundle(stock_data: dict) -> data_cache.MarketBundle:
+    """构造一个可被 data_cache.get_market 返回的 MarketBundle(测试专用)。"""
+    return data_cache.MarketBundle(
+        market="A",
+        stock_data=stock_data,
+    )
 
 
 class TestBacktestStrategies:
@@ -31,7 +40,7 @@ class TestBacktestRun:
         resp = client.post("/api/backtest/run", json={"pipeline": []})
         assert resp.status_code == 400
 
-    @patch("routers.backtest._load_stock_data")
+    @patch("services.backtest.data_cache.get_market")
     def test_run_returns_task_id(self, mock_load):
         import pandas as pd
         import numpy as np
@@ -52,7 +61,7 @@ class TestBacktestRun:
                 "amount": [1e7] * n,
             }
         )
-        mock_load.return_value = {"TEST.SH": df}
+        mock_load.return_value = _make_test_bundle({"TEST.SH": df})
 
         from pathlib import Path
 
@@ -75,7 +84,7 @@ class TestBacktestRun:
         assert resp.status_code == 200
         assert "task_id" in resp.json()
 
-    @patch("routers.backtest._load_stock_data")
+    @patch("services.backtest.data_cache.get_market")
     def test_run_writes_decision_logs_to_task_dir(self, mock_load):
         """Phase 7: 路由必须把 LOG_DIR/backtest/{task_id}/ 传给 Engine,
         否则 DecisionLogSink 会被禁用,日志全部丢失。"""
@@ -101,7 +110,7 @@ class TestBacktestRun:
                 "amount": [1e7] * n,
             }
         )
-        mock_load.return_value = {"TEST.SH": df}
+        mock_load.return_value = _make_test_bundle({"TEST.SH": df})
 
         strategies_dir = (
             Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
@@ -135,7 +144,7 @@ class TestBacktestRun:
         content = flow_path.read_text()
         assert "engine.run.start" in content
 
-    @patch("routers.backtest._load_stock_data")
+    @patch("services.backtest.data_cache.get_market")
     def test_run_accepts_flat_payload(self, mock_load):
         """Phase 5: 新扁平 payload {strategy_class, filepath, params}。"""
         import pandas as pd
@@ -157,7 +166,7 @@ class TestBacktestRun:
                 "amount": [1e7] * n,
             }
         )
-        mock_load.return_value = {"TEST.SH": df}
+        mock_load.return_value = _make_test_bundle({"TEST.SH": df})
 
         from pathlib import Path
 

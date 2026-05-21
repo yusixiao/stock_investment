@@ -5,24 +5,16 @@ Strategy class — 前端仍以 pipeline=[item] 形式提交,后端取首项实�
 """
 
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import pandas as pd
 from fastapi import APIRouter, Body, HTTPException
 
-from config import (
-    DIVIDEND_DIR,
-    FINANCIAL_DIR,
-    LOG_DIR,
-    STRATEGY_DIR,
-    VALUATION_DIR,
-)
+from config import LOG_DIR, STRATEGY_DIR
 from services.api_utils import safe_json
+from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
 from services.backtest.strategy_loader import load_strategy_from_file, scan_strategies
 from services.backtest.task_manager import task_manager
-from services.duckdb_store import get_store
 from strategies.base import Strategy
 
 
@@ -104,26 +96,24 @@ def api_run_backtest(body: dict = Body(...)):
 
     def run_task():
         try:
-            task_manager.update_progress(task_id, 0, 0, "加载数据中...")
-            stock_data = _load_stock_data(
-                start_date, end_date, target_symbols, market=market
+            # 数据必须事先通过 /api/backtest/cache/load 显式加载,
+            # 这里只做内存切片,不走任何 IO。
+            bundle = data_cache.get_market(market)
+            if bundle is None:
+                raise RuntimeError(
+                    f"{market} 市场数据未加载,请先在「策略回测」页点击「加载数据」"
+                )
+            task_manager.update_progress(task_id, 0, 0, "切片数据中...")
+            stock_data, valuation_data, dividend_data, financial_data = (
+                data_cache.slice_bundle(bundle, target_symbols, start_date, end_date)
             )
-            # 三个 parquet 目录的加载彼此完全独立(读不同目录、不同 symbol 子集均可),
-            # 串行 ~14s,并行后取最慢一路 ~5s,省 ~9s/回测。
-            # GIL 不影响 — 主要耗时在 pyarrow C 层 read_parquet 和文件 IO,均会释放 GIL。
-            symbols = list(stock_data.keys())
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                fut_val = pool.submit(_load_valuation_data, symbols)
-                fut_div = pool.submit(_load_dividend_data, symbols)
-                fut_fin = pool.submit(_load_financial_data, symbols)
-                valuation_data = fut_val.result()
-                dividend_data = fut_div.result()
-                financial_data = fut_fin.result()
+            if not stock_data:
+                raise RuntimeError("切片后无可用 K 线数据,检查日期范围/股票代码")
             task_manager.update_progress(
                 task_id,
                 len(stock_data),
                 len(stock_data),
-                f"数据加载完成 ({len(stock_data)} 只)",
+                f"数据就绪 ({len(stock_data)} 只)",
             )
             # 决策日志目录:每个 task 独立子目录,与 task_manager 内部默认路径一致
             task_log_dir = LOG_DIR / "backtest" / task_id
@@ -172,58 +162,3 @@ def api_list_tasks(show_deleted: bool = False):
 def api_delete_task(task_id: str):
     task_manager.delete_task(task_id)
     return {"ok": True}
-
-
-def _load_financial_data(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    financial_data = {}
-    for sym in symbols:
-        filepath = FINANCIAL_DIR / f"{sym}.parquet"
-        if filepath.exists():
-            df = pd.read_parquet(filepath)
-            df = df.sort_values("报告期").reset_index(drop=True)
-            financial_data[sym] = df
-    return financial_data
-
-
-def _load_dividend_data(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    dividend_data = {}
-    for sym in symbols:
-        filepath = DIVIDEND_DIR / f"{sym}.parquet"
-        if filepath.exists():
-            df = pd.read_parquet(filepath)
-            dividend_data[sym] = df
-    return dividend_data
-
-
-def _load_valuation_data(symbols: list[str]) -> dict[str, pd.DataFrame]:
-    valuation_data = {}
-    for sym in symbols:
-        filepath = VALUATION_DIR / f"{sym}.parquet"
-        if filepath.exists():
-            df = pd.read_parquet(filepath)
-            df = df.sort_values("date").reset_index(drop=True)
-            valuation_data[sym] = df
-    return valuation_data
-
-
-def _load_stock_data(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    symbols: list[str] | None = None,
-    market: str = "A",
-) -> dict[str, pd.DataFrame]:
-    """通过 DuckDBStore 加载前复权 K 线，禁止 glob parquet 旧路径。
-
-    使用 query_qfq_kline_bulk 一次 SQL 取所有股票数据 + groupby 拆 dict,
-    全市场加载可比 N+1 循环快 ~240x。
-
-    - symbols 为空/None → 全市场模式
-    - start_date/end_date 为 None → 不限制日期范围
-    """
-    store = get_store()
-    return store.query_qfq_kline_bulk(
-        market=market,
-        symbols=symbols if symbols else None,
-        start=start_date,
-        end=end_date,
-    )
