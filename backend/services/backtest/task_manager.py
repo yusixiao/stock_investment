@@ -41,6 +41,7 @@ class TaskManager:
         end_date: str | None = None,
         source_task_id: str | None = None,
         strategy_class: str | None = None,
+        strategy_name: str | None = None,
         params: dict | None = None,
         frequency: str | None = None,
         symbols: list[str] | None = None,
@@ -49,9 +50,11 @@ class TaskManager:
     ) -> str:
         task_id = str(uuid.uuid4())[:8]
         # merge-strategies 单策略模型: 显式传 strategy_class/params 时
-        # 覆盖/构造 pipeline_info = {strategy_class, params, frequency?, symbols?, market?}
+        # 覆盖/构造 pipeline_info = {strategy_class, strategy_name?, params, frequency?, symbols?, market?}
         if strategy_class is not None:
             pipeline_info = {"strategy_class": strategy_class, "params": params or {}}
+            if strategy_name:
+                pipeline_info["strategy_name"] = strategy_name
             if frequency is not None:
                 pipeline_info["frequency"] = frequency
             if symbols is not None:

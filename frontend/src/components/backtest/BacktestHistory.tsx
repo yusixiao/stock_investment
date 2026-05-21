@@ -29,6 +29,7 @@ function formatDateTime(iso: string): string {
 function extractStrategyName(item: TaskListItem): string {
   const pi = item.pipeline_info;
   if (!pi) return '旧版任务';
+  if (pi.strategy_name) return pi.strategy_name as string;
   if (pi.strategy_class) return pi.strategy_class;
   if (pi.strategies && pi.strategies.length > 0) {
     const first = pi.strategies[0];

@@ -81,7 +81,11 @@ export interface BacktestResultPayload {
 
 export interface TaskPipelineInfo {
   strategy_class?: string;
+  strategy_name?: string;
   params?: Record<string, unknown>;
+  frequency?: string;
+  symbols?: string[];
+  market?: string;
   // 旧任务可能存 {strategies: [...]} 嵌套结构
   strategies?: Array<Record<string, unknown>>;
 }
