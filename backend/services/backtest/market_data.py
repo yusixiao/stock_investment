@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from services.stock_data import aggregate_kline
@@ -47,6 +48,13 @@ class MarketData:
         }
         self._period_cache: dict[str, dict[str, pd.DataFrame]] = {"daily": daily_cache}
 
+        # 性能关键: 缓存每个 (period, symbol) 的 date 列为 numpy 数组,
+        # _resolve_idx 用 np.searchsorted O(log N) 查询,避免 pandas O(N) mask 扫描。
+        # 历史回测在永久持有策略下 hot path 调用频次极高,优化前 O(N²),此处降到 O(N log N)。
+        self._date_arrays: dict[str, dict[str, np.ndarray]] = {
+            "daily": {sym: df["date"].to_numpy() for sym, df in daily_cache.items()}
+        }
+
         # 时间轴:取第一只股票的日历(参考股票),升序
         ref_sym = next(iter(daily_cache))
         self.dates: list[str] = daily_cache[ref_sym]["date"].tolist()
@@ -67,6 +75,10 @@ class MarketData:
             agg = aggregate_kline(df, period=agg_period)
             cache[sym] = agg.sort_values("date").reset_index(drop=True)
         self._period_cache[period] = cache
+        # 同步缓存 numpy date 数组供 _resolve_idx 二分查找
+        self._date_arrays[period] = {
+            sym: df["date"].to_numpy() for sym, df in cache.items()
+        }
 
     def _get_period_df(self, symbol: str, period: str) -> pd.DataFrame | None:
         if period not in self._period_cache:
@@ -81,17 +93,24 @@ class MarketData:
         - daily:用 symbol 自身 DataFrame,按 ``dates[idx]`` 反查最大 ``date <= 目标``
           的行(允许个股停牌/交易日不齐)
         - weekly/monthly:在聚合后的 DataFrame 中查找最近一根「截止日 <= 目标」的周/月线
+
+        实现:date 列单调递增(YYYY-MM-DD 字符串字典序 == 时间序),
+        用 np.searchsorted(side="right") - 1 做 O(log N) 二分查找。
         """
         if idx < 0 or idx >= len(self.dates):
             return None, -1
         df = self._get_period_df(symbol, period)
         if df is None or df.empty:
             return None, -1
-        target_date = self.dates[idx]
-        mask = df["date"] <= target_date
-        if not mask.any():
+        arr = self._date_arrays.get(period, {}).get(symbol)
+        if arr is None or len(arr) == 0:
             return df, -1
-        return df, int(mask.values.nonzero()[0][-1])
+        target_date = self.dates[idx]
+        # searchsorted(side="right") 返回首个 > target 的位置,-1 即 <=target 的最后位置
+        pos = int(np.searchsorted(arr, target_date, side="right")) - 1
+        if pos < 0:
+            return df, -1
+        return df, pos
 
     # ---------- 公开 API ----------
 

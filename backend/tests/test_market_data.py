@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -227,3 +228,95 @@ def test_get_financial_returns_latest_on_or_before_date(stock_data):
 def test_get_financial_none_when_missing(stock_data):
     md = MarketData(stock_data=stock_data, frequency="daily")
     assert md.get_financial("000001", date="2024-04-15") is None
+
+
+# ============= _resolve_idx (searchsorted) 回归测试 =============
+# 这些测试针对 _resolve_idx 由 O(N) pandas mask → O(log N) np.searchsorted 的优化,
+# 重点覆盖 sparse 个股(停牌/上市晚)、target 早于首日、精确匹配等边界。
+
+
+def test_resolve_idx_daily_exact_match(stock_data):
+    """target_date 精确等于某一日 → 返回该日。"""
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    idx = md.dates.index("2024-02-15")
+    df, i = md._resolve_idx("000001", "daily", idx)
+    assert df is not None and i >= 0
+    assert df.iloc[i]["date"] == "2024-02-15"
+
+
+def test_resolve_idx_sparse_stock_falls_back_to_prev_trading_day(daily_dates):
+    """个股停牌 / 数据缺失:应返回 ≤ target 的最近一根。"""
+    # 参考股票有完整日历,sparse 股缺失 2024-02-12 ~ 2024-02-23 共两周
+    full = _make_daily(daily_dates, base=10.0)
+    sparse_dates = [d for d in daily_dates if not ("2024-02-12" <= d <= "2024-02-23")]
+    sparse = _make_daily(sparse_dates, base=20.0)
+    md = MarketData(
+        stock_data={"FULL": full, "SPARSE": sparse},  # FULL 在前,作为参考日历
+        frequency="daily",
+    )
+    # 在停牌窗口内查询 → 应回退到 2024-02-09(停牌前最后一日)
+    target_idx = md.dates.index("2024-02-15")
+    df, i = md._resolve_idx("SPARSE", "daily", target_idx)
+    assert df is not None and i >= 0
+    assert df.iloc[i]["date"] == "2024-02-09"
+
+
+def test_resolve_idx_target_before_first_date_returns_minus_one(daily_dates):
+    """target_date 早于个股首个交易日 → idx = -1。"""
+    full = _make_daily(daily_dates, base=10.0)
+    # 后上市股票:从 2024-03 才开始
+    late_dates = [d for d in daily_dates if d >= "2024-03-01"]
+    late = _make_daily(late_dates, base=30.0)
+    md = MarketData(
+        stock_data={"FULL": full, "LATE": late},
+        frequency="daily",
+    )
+    target_idx = md.dates.index("2024-01-15")
+    df, i = md._resolve_idx("LATE", "daily", target_idx)
+    assert df is not None  # df 存在但索引无效
+    assert i == -1
+    assert md.get_price("LATE", "daily", idx=target_idx) is None
+
+
+def test_resolve_idx_monthly_returns_last_completed_month(stock_data):
+    """月线:在 2 月中查询 → 返回 1 月线(最后一根 ≤ target 的月度收盘)。"""
+    md = MarketData(stock_data=stock_data, frequency="monthly")
+    mid_feb_idx = md.dates.index("2024-02-15")
+    df, i = md._resolve_idx("000001", "monthly", mid_feb_idx)
+    assert df is not None and i >= 0
+    # 聚合后的月线 date 是该月最后一个交易日
+    assert df.iloc[i]["date"].startswith("2024-01")
+
+
+def test_resolve_idx_consistency_with_pandas_mask(stock_data, daily_dates):
+    """对照测试:searchsorted 结果 == 旧版 (df['date'] <= target) 全表扫描结果。
+
+    这是优化前后等价性的核心保证。
+    """
+    md = MarketData(stock_data=stock_data, frequency="weekly")
+    weekly_df = md._period_cache["weekly"]["000001"]
+    arr = weekly_df["date"].to_numpy()
+    # 抽样所有日历日,逐个比对
+    for idx in range(0, len(md.dates), 5):
+        target = md.dates[idx]
+        # 旧逻辑:O(N) mask
+        mask = weekly_df["date"] <= target
+        expected = int(mask.sum()) - 1  # 最后一个 True 的位置;无匹配则 -1
+        # 新逻辑:O(log N) searchsorted
+        actual = int(np.searchsorted(arr, target, side="right")) - 1
+        assert actual == expected, f"mismatch at idx={idx} target={target}"
+
+
+def test_resolve_idx_idx_at_boundaries(stock_data):
+    """idx=0 / idx=len-1 边界。"""
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    df0, i0 = md._resolve_idx("000001", "daily", 0)
+    assert df0 is not None and i0 == 0
+    last = len(md.dates) - 1
+    dl, il = md._resolve_idx("000001", "daily", last)
+    assert dl is not None and il == last
+    # 越界
+    _, i_neg = md._resolve_idx("000001", "daily", -1)
+    assert i_neg == -1
+    _, i_huge = md._resolve_idx("000001", "daily", 10_000_000)
+    assert i_huge == -1
