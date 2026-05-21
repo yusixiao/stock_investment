@@ -12,18 +12,18 @@ def _get_field(ctx, symbol: str, field: str):
 
 
 def get_roe(ctx, symbol: str) -> float | None:
-    """净资产收益率(%)。"""
-    return _get_field(ctx, symbol, "净资产收益率")
+    """净资产收益率(%)。English schema:ROEJQ(EastMoney indicator)。"""
+    return _get_field(ctx, symbol, "ROEJQ")
 
 
 def get_eps(ctx, symbol: str) -> float | None:
-    """基本每股收益。"""
-    return _get_field(ctx, symbol, "基本每股收益")
+    """基本每股收益。English schema:EPSJB。"""
+    return _get_field(ctx, symbol, "EPSJB")
 
 
 def get_net_profit_growth(ctx, symbol: str) -> float | None:
-    """净利润同比增长率(%)。"""
-    return _get_field(ctx, symbol, "净利润同比增长率")
+    """归母净利润同比增长率(%)。English schema:PARENTNETPROFITTZ(EastMoney 累计同比)。"""
+    return _get_field(ctx, symbol, "PARENTNETPROFITTZ")
 
 
 def filter_by_roe(ctx, symbols: list[str], *, min_roe: float = 10.0) -> list[str]:

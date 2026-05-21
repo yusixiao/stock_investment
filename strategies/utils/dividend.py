@@ -34,23 +34,22 @@ def count_dividend_years(ctx, symbol: str) -> int | None:
     if cached is not None:
         return None if cached == _NONE_SENTINEL else cached
 
-    col = "现金分红-现金分红比例"
+    # English schema(2026-05-21):cash_dividend(税前每股分红额)/ date(除权日)
+    col = "cash_dividend"
     if col not in df.columns:
         if hasattr(df, "attrs"):
             df.attrs[_CACHE_KEY] = _NONE_SENTINEL
         return None
 
-    # 向量化:to_numeric(errors=coerce) 把非数值变 NaN,> 0 mask 一次过滤,
-    # 避开 per-row isinstance + math.isnan + df.loc 标签查找
+    # 向量化:to_numeric(errors=coerce) 把非数值变 NaN,> 0 mask 一次过滤
     vals = pd.to_numeric(df[col], errors="coerce")
     mask = vals.notna() & (vals > 0)
     if not mask.any():
         result = 0
     else:
-        # 取报告期前 4 位为年份字符串,去重 + 过滤掉长度不足 4 的
-        report_year = df.loc[mask, "报告期"].astype(str).str[:4]
-        # str.len() 对 NaN 返回 NaN,但 astype(str) 后已不会有 NaN
-        valid = report_year[report_year.str.len() >= 4]
+        # 取 date 前 4 位为年份字符串,去重 + 过滤掉长度不足 4 的
+        date_year = df.loc[mask, "date"].astype(str).str[:4]
+        valid = date_year[date_year.str.len() >= 4]
         result = int(valid.nunique())
 
     if hasattr(df, "attrs"):

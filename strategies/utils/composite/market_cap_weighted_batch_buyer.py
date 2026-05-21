@@ -1,6 +1,6 @@
 """市值加权 N 周分批买入器(跨数据源 + 有状态)。
 
-跨源:取 valuation.total_mv 决定权重,按 kline 周线 (open+close)/2 成交。
+跨源:total_mv 派生自 close × financial.TOTAL_SHARE 决定权重,按 kline 周线 (open+close)/2 成交。
 有状态:_buy_plans / _allocated_symbols 跨 step 调用累积,因此封装为 class。
 
 迁移自 strategies/examples/market_cap_weighted_buyer.py(2026-05-18 重构):
@@ -39,11 +39,16 @@ class MarketCapWeightedBatchBuyer:
         for sym in new_symbols:
             if sym in self._allocated_symbols:
                 continue
-            val = ctx.get_valuation(sym)
-            if val and val.get("total_mv"):
-                mv_map[sym] = val["total_mv"]
+            # English schema: total_mv = close × TOTAL_SHARE
+            # 取自 financial(EastMoney indicator)+ 当日 close
+            fin = ctx.get_financial(sym)
+            total_share = fin.get("TOTAL_SHARE") if fin else None
+            price = ctx.get_price(sym)
+            close = price.get("close") if price else None
+            if total_share and close:
+                mv_map[sym] = float(close) * float(total_share)
             else:
-                mv_map[sym] = 1.0  # 无市值数据时等权
+                mv_map[sym] = 1.0  # 无数据时等权
 
         if not mv_map:
             return

@@ -12,18 +12,34 @@ def _get_field(ctx, symbol: str, field: str):
 
 
 def get_pe(ctx, symbol: str) -> float | None:
-    """PE(TTM)。"""
-    return _get_field(ctx, symbol, "pe_ttm")
+    """PE(TTM)。English schema:peTTM(BaoStock daily)。"""
+    return _get_field(ctx, symbol, "peTTM")
 
 
 def get_pb(ctx, symbol: str) -> float | None:
-    """PB。"""
-    return _get_field(ctx, symbol, "pb")
+    """PB。English schema:pbMRQ(BaoStock daily)。"""
+    return _get_field(ctx, symbol, "pbMRQ")
 
 
 def get_total_mv(ctx, symbol: str) -> float | None:
-    """总市值(单位:元)。"""
-    return _get_field(ctx, symbol, "total_mv")
+    """总市值(单位:元)= 当前 close × 最近报告期 TOTAL_SHARE。
+    English schema:从 financial(indicator)取 TOTAL_SHARE,从 K 线最新 bar 取 close。
+    无任一数据 → None。
+    """
+    fin = ctx.get_financial(symbol)
+    if fin is None:
+        return None
+    total_share = fin.get("TOTAL_SHARE")
+    if total_share is None:
+        return None
+    # 取当前日期最近一根日 K 线 close
+    price = ctx.get_price(symbol)
+    if price is None:
+        return None
+    close = price.get("close")
+    if close is None:
+        return None
+    return float(close) * float(total_share)
 
 
 def filter_by_pe_pb_product(
