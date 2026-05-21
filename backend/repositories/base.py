@@ -47,11 +47,14 @@ def append_models_to_parquet(
     sort_by: str = "date",
     ascending: bool = False,
 ) -> None:
-    """增量追加记录到 parquet 文件，按 dedup_key 去重"""
+    """增量追加记录到 parquet 文件，按 dedup_key 去重。
+    冲突策略: 新记录覆盖旧记录 — 重要,因为下游可能在盘中误抓 partial bar,
+    收盘后需要被完整收盘数据覆盖。"""
     if not new_records:
         return
     existing = read_parquet_as_models(path, model_class, sort_by=None)
-    all_records = existing + new_records
+    # new_records 在前: 同 key 时新记录先入 seen,后续 existing 同 key 会被丢弃
+    all_records = list(new_records) + existing
     seen = set()
     deduped = []
     for r in all_records:

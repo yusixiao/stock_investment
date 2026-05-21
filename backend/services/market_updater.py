@@ -12,12 +12,37 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 from typing import Optional, Callable
+
+from zoneinfo import ZoneInfo
 
 from config import DATA_DIR
 
 logger = logging.getLogger(__name__)
+
+
+# 各市场收盘时间(本地时区)。增量更新只取至「最近一个已收盘的交易日」,
+# 避免把盘中 partial bar 写入历史。
+_MARKET_CLOSE = {
+    "A": (ZoneInfo("Asia/Shanghai"), dtime(15, 0)),
+    "HK": (ZoneInfo("Asia/Hong_Kong"), dtime(16, 10)),  # +10min 缓冲数据落库
+    "US": (ZoneInfo("America/New_York"), dtime(16, 10)),
+}
+
+
+def _last_closed_trading_date(market: str) -> str:
+    """返回该市场「最后一个已收盘」的日期(YYYY-MM-DD)。
+    若当前时间已过当地收盘 → 用当地今日;否则用昨日。
+    周末不专门跳过,因 yfinance/BaoStock 对非交易日返回空,append 时无影响。
+    """
+    tz, close_t = _MARKET_CLOSE.get(market, (ZoneInfo("UTC"), dtime(23, 59)))
+    now_local = datetime.now(tz)
+    if now_local.time() >= close_t:
+        d = now_local.date()
+    else:
+        d = now_local.date() - timedelta(days=1)
+    return d.strftime("%Y-%m-%d")
 
 
 def _get_adapter(market: str):
@@ -142,11 +167,12 @@ def _update_market_kline(
         return result
 
     total = len(codes)
-    end_date = date.today().strftime("%Y-%m-%d")
+    # 关键: 只更新到「最后一个已收盘交易日」,避免把盘中 partial bar 写入历史
+    end_date = _last_closed_trading_date(market)
     throttle_sec = THROTTLE_SEC_BY_MARKET.get(market, 0.0)
     logger.info(
-        f"[{market}] Start incremental update: {total} stocks, end_date={end_date}, "
-        f"throttle={throttle_sec}s"
+        f"[{market}] Start incremental update: {total} stocks, "
+        f"end_date={end_date} (last closed), throttle={throttle_sec}s"
     )
 
     for idx, code in enumerate(codes, 1):

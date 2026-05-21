@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import pandas as pd
@@ -38,8 +39,13 @@ class YFinanceAdapter(MarketDataAdapter):
 
         # 不吞异常: rate-limit / network 错误向上抛供 _fetch_with_retry 重试;
         # 真正空数据(delisted / 区间无交易)yfinance 返回 df.empty 而不抛
+        # yfinance/Yahoo 用半开区间 [start, end),为了让 end_date 当天也被包含,
+        # 把 end_date +1 天传给 yf;否则 start==end 时 Yahoo 返回 400 触发内部慢重试
+        yf_end = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
         t = yf.Ticker(yf_code)
-        df = t.history(start=start_date, end=end_date, auto_adjust=False)
+        df = t.history(start=start_date, end=yf_end, auto_adjust=False)
 
         if df.empty:
             return []
