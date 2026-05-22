@@ -1,44 +1,85 @@
 import type React from 'react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { RiSearchLine } from '@remixicon/react';
 import { cn } from '../../utils/cn';
+import { backtestEngineApi, type StrategyInfo } from '../../api/backtestEngine';
+
+// 时间范围:扫描时回看的历史窗口长度(用于策略计算所需的历史数据切片)
+type LookbackKey = '1m' | '1y' | '3y' | '5y';
+
+const LOOKBACK_OPTIONS: { value: LookbackKey; label: string }[] = [
+  { value: '1m', label: '一个月' },
+  { value: '1y', label: '一年' },
+  { value: '3y', label: '三年' },
+  { value: '5y', label: '五年' },
+];
 
 interface ScanConfig {
-  strategy: string;
+  strategyClass: string;
   market: string;
-  period: string;
+  lookback: LookbackKey;
 }
 
+// 选股结果项:每只命中股票一行
 interface ScanResultItem {
-  rank: number;
   symbol: string;
   name: string;
-  annReturn: number;
-  maxDrawdown: number;
-  sharpe: number;
-  winRate: number;
-  totalTrades: number;
-  alpha: number;
+  currentPrice: number;
+  changePct: number; // 当日涨跌幅(0.0123 = +1.23%)
+  signalDate: string; // 命中信号日期 YYYY-MM-DD
+  // 关键因子值:键名按策略而定(PE/PB/ROE/MA缠绕度/连续分红年数 等)
+  factors: Record<string, number | string>;
 }
 
 const StrategyRadar: React.FC = () => {
+  const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
+  const [strategiesLoading, setStrategiesLoading] = useState(false);
+  const [strategiesError, setStrategiesError] = useState<string | null>(null);
+
   const [config, setConfig] = useState<ScanConfig>({
-    strategy: '',
+    strategyClass: '',
     market: 'A',
-    period: 'daily',
+    lookback: '1y',
   });
   const [isScanning, setIsScanning] = useState(false);
   const [results, setResults] = useState<ScanResultItem[]>([]);
   const [scanDone, setScanDone] = useState(false);
+  const [scannedTotal, setScannedTotal] = useState(0);
+
+  // 拉真实策略列表(与 BacktestConfig 共用同一来源)
+  useEffect(() => {
+    setStrategiesLoading(true);
+    backtestEngineApi
+      .listStrategies()
+      .then((list) => {
+        setStrategies(list);
+        setStrategiesError(null);
+      })
+      .catch((err: unknown) => {
+        setStrategiesError(err instanceof Error ? err.message : '加载策略列表失败');
+      })
+      .finally(() => setStrategiesLoading(false));
+  }, []);
+
+  const selectedStrategy = useMemo(
+    () => strategies.find((s) => s.className === config.strategyClass),
+    [strategies, config.strategyClass],
+  );
 
   const handleScan = () => {
+    if (!config.strategyClass) return;
     setIsScanning(true);
     setScanDone(false);
+    // TODO: 接后端「全市场选股」API。当前为前端 mock 占位:
+    //   计划路由 POST /api/screener/run-market,入参 {strategy_class,filepath,
+    //   params,market,lookback},返回 {total_scanned,hits:[{symbol,name,
+    //   current_price,change_pct,signal_date,factors}]}
     setTimeout(() => {
       setResults([]);
+      setScannedTotal(0);
       setIsScanning(false);
       setScanDone(true);
-    }, 2000);
+    }, 1200);
   };
 
   return (
@@ -49,15 +90,23 @@ const StrategyRadar: React.FC = () => {
           <div className="flex flex-col gap-1">
             <label className="text-xs text-secondary-text">策略</label>
             <select
-              value={config.strategy}
-              onChange={(e) => setConfig({ ...config, strategy: e.target.value })}
-              className="input-surface input-focus-glow h-9 w-48 appearance-none rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none"
+              value={config.strategyClass}
+              onChange={(e) => setConfig({ ...config, strategyClass: e.target.value })}
+              disabled={strategiesLoading || !!strategiesError}
+              className="input-surface input-focus-glow h-9 w-56 appearance-none rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none disabled:opacity-50"
             >
-              <option value="">请选择策略</option>
-              <option value="ma_cross">均线交叉</option>
-              <option value="macd_divergence">MACD背离</option>
-              <option value="rsi_oversold">RSI超卖反弹</option>
-              <option value="breakout_60">60日突破</option>
+              <option value="">
+                {strategiesLoading
+                  ? '加载策略中...'
+                  : strategiesError
+                  ? '加载失败'
+                  : '请选择策略'}
+              </option>
+              {strategies.map((s) => (
+                <option key={s.className} value={s.className}>
+                  {s.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -75,29 +124,44 @@ const StrategyRadar: React.FC = () => {
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-secondary-text">周期</label>
+            <label className="text-xs text-secondary-text">时间范围</label>
             <select
-              value={config.period}
-              onChange={(e) => setConfig({ ...config, period: e.target.value })}
-              className="input-surface input-focus-glow h-9 w-24 appearance-none rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none"
+              value={config.lookback}
+              onChange={(e) =>
+                setConfig({ ...config, lookback: e.target.value as LookbackKey })
+              }
+              className="input-surface input-focus-glow h-9 w-28 appearance-none rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none"
             >
-              <option value="daily">日线</option>
-              <option value="weekly">周线</option>
-              <option value="monthly">月线</option>
+              {LOOKBACK_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
           </div>
 
           <button
             type="button"
             onClick={handleScan}
-            disabled={isScanning || !config.strategy}
+            disabled={isScanning || !config.strategyClass}
             className="btn-primary flex h-9 items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isScanning ? (
               <>
                 <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
                 </svg>
                 扫描中...
               </>
@@ -110,11 +174,21 @@ const StrategyRadar: React.FC = () => {
           </button>
 
           {isScanning && (
+            <span className="text-xs text-muted-text">正在扫描全市场...</span>
+          )}
+
+          {scanDone && !isScanning && (
             <span className="text-xs text-muted-text">
-              正在扫描全市场...
+              扫描了 {scannedTotal.toLocaleString()} 只股票,命中 {results.length} 只
             </span>
           )}
         </div>
+
+        {selectedStrategy?.frequency && (
+          <div className="mt-2 text-xs text-muted-text">
+            策略频率:{selectedStrategy.frequency} · 时间范围决定回看历史数据的长度,用于因子计算
+          </div>
+        )}
       </div>
 
       {/* Results */}
@@ -126,7 +200,9 @@ const StrategyRadar: React.FC = () => {
                 <RiSearchLine className="h-7 w-7 text-secondary-text" />
               </div>
               <p className="text-sm text-secondary-text">选择策略后开始扫描</p>
-              <p className="mt-1 text-xs text-muted-text">策略雷达会扫描全市场股票，按回测表现排名</p>
+              <p className="mt-1 text-xs text-muted-text">
+                策略雷达会扫描全市场股票,列出当前命中策略条件的标的
+              </p>
             </div>
           </div>
         )}
@@ -134,8 +210,10 @@ const StrategyRadar: React.FC = () => {
         {scanDone && results.length === 0 && (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
-              <p className="text-sm text-secondary-text">暂无扫描结果</p>
-              <p className="mt-1 text-xs text-muted-text">未找到符合策略条件的股票</p>
+              <p className="text-sm text-secondary-text">暂无命中股票</p>
+              <p className="mt-1 text-xs text-muted-text">
+                当前时间范围内没有满足策略条件的股票,可尝试调整参数或切换市场
+              </p>
             </div>
           </div>
         )}
@@ -145,34 +223,51 @@ const StrategyRadar: React.FC = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/30 text-left text-xs text-secondary-text">
-                  <th className="px-3 py-2">#</th>
                   <th className="px-3 py-2">代码</th>
                   <th className="px-3 py-2">名称</th>
-                  <th className="px-3 py-2 text-right">年化收益</th>
-                  <th className="px-3 py-2 text-right">最大回撤</th>
-                  <th className="px-3 py-2 text-right">夏普比</th>
-                  <th className="px-3 py-2 text-right">胜率</th>
-                  <th className="px-3 py-2 text-right">交易次数</th>
-                  <th className="px-3 py-2 text-right">Alpha</th>
+                  <th className="px-3 py-2 text-right">当前价</th>
+                  <th className="px-3 py-2 text-right">涨跌幅</th>
+                  <th className="px-3 py-2">命中信号日期</th>
+                  <th className="px-3 py-2">关键因子值</th>
                 </tr>
               </thead>
               <tbody>
                 {results.map((item) => (
-                  <tr key={item.symbol} className="border-b border-border/20 hover:bg-hover/30">
-                    <td className="px-3 py-2 text-muted-text">{item.rank}</td>
+                  <tr
+                    key={item.symbol}
+                    className="border-b border-border/20 hover:bg-hover/30"
+                  >
                     <td className="px-3 py-2 font-mono">{item.symbol}</td>
                     <td className="px-3 py-2">{item.name}</td>
-                    <td className={cn('px-3 py-2 text-right tabular-nums', item.annReturn >= 0 ? 'text-success' : 'text-danger')}>
-                      {(item.annReturn * 100).toFixed(2)}%
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {item.currentPrice.toFixed(2)}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-danger">
-                      {(item.maxDrawdown * 100).toFixed(2)}%
+                    <td
+                      className={cn(
+                        'px-3 py-2 text-right tabular-nums',
+                        item.changePct >= 0 ? 'text-success' : 'text-danger',
+                      )}
+                    >
+                      {item.changePct >= 0 ? '+' : ''}
+                      {(item.changePct * 100).toFixed(2)}%
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{item.sharpe.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{(item.winRate * 100).toFixed(1)}%</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{item.totalTrades}</td>
-                    <td className={cn('px-3 py-2 text-right tabular-nums', item.alpha >= 0 ? 'text-success' : 'text-danger')}>
-                      {item.alpha >= 0 ? '+' : ''}{(item.alpha * 100).toFixed(2)}%
+                    <td className="px-3 py-2 font-mono text-xs text-secondary-text">
+                      {item.signalDate}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(item.factors).map(([k, v]) => (
+                          <span
+                            key={k}
+                            className="inline-flex items-center gap-1 rounded-md border border-border/40 bg-card/40 px-2 py-0.5 text-xs"
+                          >
+                            <span className="text-muted-text">{k}</span>
+                            <span className="tabular-nums">
+                              {typeof v === 'number' ? v.toFixed(2) : v}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
                     </td>
                   </tr>
                 ))}
