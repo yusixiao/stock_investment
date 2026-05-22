@@ -50,7 +50,126 @@ class DuckDBStore:
         for market in MARKETS:
             self._setup_dividend_view(market)
 
+        # HK/US daily 视图覆盖:从 indicator 派生 peTTM / pbMRQ
+        # A 股 daily 已有 BaoStock 权威估值列,跳过
+        for market in ("HK", "US"):
+            self._override_daily_with_derived_valuation(market)
+
         logger.info("DuckDB views created for all market parquet data")
+
+    def _override_daily_with_derived_valuation(self, market: str):
+        """用 ASOF LEFT JOIN 把 indicator(EPSJB / BPS)派生的 peTTM/pbMRQ 覆盖到 daily 视图。
+
+        语义说明:
+        - HK/US 的 BaoStock-style daily schema 含 peTTM/pbMRQ 列,但 yfinance 抓取流程
+          只填 OHLCV,这些列长期为 NULL,导致估值类策略空运。
+        - indicator 视图含 EPSJB(每股收益)/ BPS(每股净资产)/ ROEJQ 等,REPORT_DATE
+          升序;HK 仅年报粒度(12-31),US 多到年报粒度。因此派生的 peTTM 实质是 PE_LYR,
+          pbMRQ 实质是 PB(最新报告期),命名沿用 BaoStock 仅为上层无感。
+        - close / NULLIF(EPSJB, 0):EPSJB ≤ 0 时 NULLIF 不生效但分母可能为负,
+          因此再用 CASE WHEN EPSJB > 0 才派生,避免负 PE 误导。
+        - 币种:HK indicator EPSJB 单位人民币、close 单位港币,直接相除有 ~10% 汇率
+          误差,当前阶段忽略(用户决策)。
+        """
+        daily_view = f"v_{market.lower()}_daily"
+        raw_view = f"v_{market.lower()}_daily_raw"
+        ind_view = f"v_{market.lower()}_indicator"
+        if not self._view_exists(daily_view) or not self._view_exists(ind_view):
+            logger.info(
+                "Skip derived valuation for %s: %s or %s missing",
+                market,
+                daily_view,
+                ind_view,
+            )
+            return
+
+        # 先把原 daily 视图 clone 到 _raw,再用 _raw 重建 daily,避免自引用
+        daily_dir = MARKET_DIR / market / "daily"
+        if not daily_dir.exists():
+            return
+        glob_pattern = str(daily_dir / "*.parquet")
+        try:
+            self._conn.execute(f"""
+                CREATE OR REPLACE VIEW {raw_view} AS
+                SELECT *, regexp_extract(filename, '([^/]+)\\.parquet$', 1) AS _symbol
+                FROM read_parquet('{glob_pattern}', filename=true, union_by_name=true)
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to create {raw_view}: {e}")
+            return
+
+        # 动态列保留:除估值列外原样保留,估值列用派生值
+        try:
+            cols = (
+                self._conn.execute(f"DESCRIBE {raw_view}")
+                .fetchdf()["column_name"]
+                .tolist()
+            )
+        except Exception as e:
+            logger.warning(f"DESCRIBE {raw_view} failed: {e}")
+            return
+
+        # 动态列保留:除估值列外原样保留,估值列用派生值
+        try:
+            cols = (
+                self._conn.execute(f"DESCRIBE {daily_view}")
+                .fetchdf()["column_name"]
+                .tolist()
+            )
+        except Exception as e:
+            logger.warning(f"DESCRIBE {daily_view} failed: {e}")
+            return
+
+        val_cols = {"peTTM", "pbMRQ", "psTTM", "pcfNcfTTM"}
+        keep_cols = [c for c in cols if c not in val_cols]
+        # 检查 indicator 视图是否含派生所需字段
+        ind_cols = (
+            self._conn.execute(f"DESCRIBE {ind_view}").fetchdf()["column_name"].tolist()
+        )
+        has_eps = "EPSJB" in ind_cols
+        has_bps = "BPS" in ind_cols
+        if not has_eps and not has_bps:
+            logger.info(
+                "Skip derived valuation for %s: %s 缺 EPSJB 和 BPS",
+                market,
+                ind_view,
+            )
+            return
+
+        keep_select = ", ".join(f"d.{c}" for c in keep_cols)
+        pe_expr = (
+            "CASE WHEN i.EPSJB > 0 THEN d.close / i.EPSJB ELSE NULL END AS peTTM"
+            if has_eps
+            else "NULL::DOUBLE AS peTTM"
+        )
+        pb_expr = (
+            "CASE WHEN i.BPS > 0 THEN d.close / i.BPS ELSE NULL END AS pbMRQ"
+            if has_bps
+            else "NULL::DOUBLE AS pbMRQ"
+        )
+
+        sql = f"""
+            CREATE OR REPLACE VIEW {daily_view} AS
+            SELECT
+                {keep_select},
+                {pe_expr},
+                {pb_expr},
+                NULL::DOUBLE AS psTTM,
+                NULL::DOUBLE AS pcfNcfTTM
+            FROM {raw_view} d
+            ASOF LEFT JOIN {ind_view} i
+              ON i._symbol = d._symbol
+             AND i.REPORT_DATE <= d.date
+        """
+        try:
+            self._conn.execute(sql)
+            logger.info(
+                "View overridden: %s (peTTM/pbMRQ 从 %s 派生,PE_LYR 语义)",
+                daily_view,
+                ind_view,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to override {daily_view}: {e}")
 
     def _setup_dividend_view(self, market: str):
         """创建分红视图。三市场统一 schema:_symbol / date / cash_dividend(每股,>0) / ...
