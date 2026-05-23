@@ -9,3 +9,6 @@ __pycache__/
 data/
 .superpowers/
 .worktrees/
+exported/
+ui_samples/
+
