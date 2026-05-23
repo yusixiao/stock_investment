@@ -33,7 +33,8 @@ def _snapshot_job():
 
 
 def _market_update_job():
-    """每日增量更新三市场 K线数据"""
+    """每日增量更新三市场 K线数据;完成后失效 data_cache 并触发后台重建,
+    让回测/雷达页 6:30 之后立刻能用最新数据(含预算指标)。"""
     import logging
 
     logger = logging.getLogger(__name__)
@@ -44,6 +45,18 @@ def _market_update_job():
         update_all_markets(parallel=True)
     except Exception as e:
         logger.error(f"Scheduled market update failed: {e}")
+        return
+
+    # 数据更新完成 → 失效 data_cache 各市场 → 后台异步重建(含预算指标)
+    try:
+        from services.backtest import data_cache
+
+        for market in data_cache.SUPPORTED_MARKETS:
+            data_cache.invalidate(market)
+            data_cache.load_market_async(market)
+        logger.info("data_cache invalidated + async rebuild kicked off")
+    except Exception as e:
+        logger.error(f"data_cache rebuild kickoff failed: {e}")
 
 
 def _backup_job():
