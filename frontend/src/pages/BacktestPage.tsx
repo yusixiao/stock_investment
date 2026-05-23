@@ -1,12 +1,13 @@
 import type React from 'react';
 import { useState, useEffect } from 'react';
-import { RiLineChartLine, RiRadarLine, RiPulseLine } from '@remixicon/react';
+import { RiLineChartLine, RiRadarLine, RiPulseLine, RiHistoryLine } from '@remixicon/react';
 import { cn } from '../utils/cn';
 import BacktestAnalysis from '../components/backtest/BacktestAnalysis';
 import StrategyRadar from '../components/backtest/StrategyRadar';
 import MarketMonitor from '../components/backtest/MarketMonitor';
+import BacktestHistoryView from '../components/backtest/BacktestHistoryView';
 
-type TabKey = 'backtest' | 'radar' | 'monitor';
+type TabKey = 'backtest' | 'radar' | 'monitor' | 'history';
 
 interface TabDef {
   key: TabKey;
@@ -18,6 +19,7 @@ const TABS: TabDef[] = [
   { key: 'backtest', label: '策略回测', icon: <RiLineChartLine className="h-4 w-4" /> },
   { key: 'radar', label: '策略雷达', icon: <RiRadarLine className="h-4 w-4" /> },
   { key: 'monitor', label: '盘面监控', icon: <RiPulseLine className="h-4 w-4" /> },
+  { key: 'history', label: '历史记录', icon: <RiHistoryLine className="h-4 w-4" /> },
 ];
 
 const BacktestPage: React.FC = () => {
@@ -54,6 +56,7 @@ const BacktestPage: React.FC = () => {
         {activeTab === 'backtest' && <BacktestAnalysis />}
         {activeTab === 'radar' && <StrategyRadar />}
         {activeTab === 'monitor' && <MarketMonitor />}
+        {activeTab === 'history' && <BacktestHistoryView />}
       </div>
     </div>
   );

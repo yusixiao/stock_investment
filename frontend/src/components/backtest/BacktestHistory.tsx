@@ -67,7 +67,9 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
     setOpeningId(item.task_id);
     try {
       const detail = await backtestEngineApi.getResult(item.task_id);
-      const result = detail.result ? mapPayloadToResultData(detail.result) : null;
+      const isRadar = (detail.task_type || item.task_type) === 'scan-radar';
+      const result = !isRadar && detail.result ? mapPayloadToResultData(detail.result) : null;
+      const radarPayload = isRadar ? (detail.result as unknown as import('../../api/backtestEngine').ScanRadarPayload) : null;
       // pipeline_info 兼容扁平 / 旧嵌套两种结构,提取 frequency 作 period 显示
       const pi = detail.pipeline_info as Record<string, unknown> | null | undefined;
       const params = (pi?.params as Record<string, unknown> | undefined) || {};
@@ -84,6 +86,9 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
           : item.status === 'failed'
             ? 'failed'
             : 'running';
+      // scan-radar 任务从 result.date_range 取实际窗口,优先于 task 表的 start/end_date
+      const radarStart = radarPayload?.date_range?.start;
+      const radarEnd = radarPayload?.date_range?.end;
       const task: BacktestTask = {
         taskId: item.task_id,
         status,
@@ -92,14 +97,16 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
         symbol: symbols && symbols.length === 1 ? symbols[0] : undefined,
         market,
         period: frequency,
-        startDate: detail.start_date || item.start_date || '',
-        endDate: detail.end_date || item.end_date || '',
+        startDate: radarStart || detail.start_date || item.start_date || '',
+        endDate: radarEnd || detail.end_date || item.end_date || '',
         capital: 0,
         commission: 0,
         result,
         error: detail.error,
         createdAt: detail.created_at || item.created_at,
         params,
+        taskType: detail.task_type || item.task_type,
+        radarPayload,
       };
       onSelect(task);
     } catch (err) {

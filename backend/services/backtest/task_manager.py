@@ -98,6 +98,15 @@ class TaskManager:
             }
 
     def _build_summary(self, result: dict) -> str:
+        if "hits" in result and "total_scanned" in result:
+            return json.dumps(
+                {
+                    "hit_count": len(result.get("hits") or []),
+                    "total_scanned": result.get("total_scanned"),
+                    "lookback_used": result.get("lookback_used"),
+                },
+                ensure_ascii=False,
+            )
         if "screened_symbols" in result:
             items = result["screened_symbols"]
             count = len(items)
@@ -117,12 +126,38 @@ class TaskManager:
 
     def complete_task(self, task_id: str, result: dict):
         summary = self._build_summary(result)
+        # 若 result 含 date_range(scan-radar 结果),回写到 start_date/end_date 列,
+        # 让历史记录列表与一般回测任务统一展示
+        dr = result.get("date_range") if isinstance(result, dict) else None
+        date_start = (dr or {}).get("start") if isinstance(dr, dict) else None
+        date_end = (dr or {}).get("end") if isinstance(dr, dict) else None
         conn = self._get_conn()
         try:
-            conn.execute(
-                "UPDATE backtest_tasks SET status = ?, result = ?, summary = ? WHERE task_id = ?",
-                ("success", json.dumps(result, ensure_ascii=False), summary, task_id),
-            )
+            if date_start and date_end:
+                conn.execute(
+                    "UPDATE backtest_tasks SET status = ?, result = ?, summary = ?, "
+                    "start_date = COALESCE(NULLIF(start_date, ''), ?), "
+                    "end_date = COALESCE(NULLIF(end_date, ''), ?) "
+                    "WHERE task_id = ?",
+                    (
+                        "success",
+                        json.dumps(result, ensure_ascii=False),
+                        summary,
+                        date_start,
+                        date_end,
+                        task_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    "UPDATE backtest_tasks SET status = ?, result = ?, summary = ? WHERE task_id = ?",
+                    (
+                        "success",
+                        json.dumps(result, ensure_ascii=False),
+                        summary,
+                        task_id,
+                    ),
+                )
             conn.commit()
         finally:
             conn.close()

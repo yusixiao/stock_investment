@@ -2,6 +2,7 @@ import type React from 'react';
 import { RiArrowLeftLine } from '@remixicon/react';
 import { Badge } from '../common';
 import BacktestResult from './BacktestResult';
+import RadarResultView from './RadarResultView';
 import type { BacktestTask } from './BacktestAnalysis';
 
 interface Props {
@@ -128,9 +129,13 @@ const BacktestDetail: React.FC<Props> = ({ task, onBack }) => {
         </div>
       </aside>
 
-      {/* Right: reuse BacktestResult */}
+      {/* Right: scan-radar 任务展示 hits 表,其余复用 BacktestResult */}
       <main className="min-h-0 flex-1 overflow-y-auto">
-        <BacktestResult task={task} />
+        {task.taskType === 'scan-radar' ? (
+          <RadarResultView payload={task.radarPayload} />
+        ) : (
+          <BacktestResult task={task} />
+        )}
       </main>
     </div>
   );

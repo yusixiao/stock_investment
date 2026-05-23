@@ -3,8 +3,6 @@ import { useState, useCallback, useEffect } from 'react';
 import { cn } from '../../utils/cn';
 import BacktestConfig from './BacktestConfig';
 import BacktestResult from './BacktestResult';
-import BacktestHistory from './BacktestHistory';
-import BacktestDetail from './BacktestDetail';
 import DataCacheModal from './DataCacheModal';
 import { backtestCacheApi, type CacheStatusMap } from '../../api/backtestCache';
 
@@ -29,6 +27,10 @@ export interface BacktestTask {
   createdAt: string;
   // 详情视图用:策略原始参数(pipeline_info.params),仅展示用
   params?: Record<string, unknown>;
+  // 任务类型(backtest / scan-radar / screener);影响详情视图的渲染
+  taskType?: string;
+  // scan-radar 任务的原始 payload,详情页直接复用展示
+  radarPayload?: import('../../api/backtestEngine').ScanRadarPayload | null;
 }
 
 export interface BacktestResultData {
@@ -66,19 +68,16 @@ export interface TradeRecord {
   holdDays: number;
 }
 
-type ViewTab = 'single' | 'market' | 'history';
+type ViewTab = 'single' | 'market';
 
 const TABS: { key: ViewTab; label: string }[] = [
   { key: 'single', label: '个股回测' },
   { key: 'market', label: '全市场回测' },
-  { key: 'history', label: '历史记录' },
 ];
 
 const BacktestAnalysis: React.FC = () => {
   const [view, setView] = useState<ViewTab>('single');
   const [currentTask, setCurrentTask] = useState<BacktestTask | null>(null);
-  // 历史详情态:不为 null 时进入只读详情视图(左侧参数+ID,右侧复用 BacktestResult)
-  const [detailTask, setDetailTask] = useState<BacktestTask | null>(null);
 
   // 数据缓存:状态条 + 加载弹窗
   const [cacheStatus, setCacheStatus] = useState<CacheStatusMap | null>(null);
@@ -103,7 +102,6 @@ const BacktestAnalysis: React.FC = () => {
 
   const handleRunBacktest = (task: BacktestTask) => {
     setCurrentTask(task);
-    setDetailTask(null);
   };
 
   const handleTaskUpdate = useCallback((taskId: string, updates: Partial<BacktestTask>) => {
@@ -116,18 +114,7 @@ const BacktestAnalysis: React.FC = () => {
     });
   }, []);
 
-  const handleViewHistory = (task: BacktestTask) => {
-    // 在历史记录页内点击行 → 进入详情(详情视图叠在历史 tab 上)
-    setDetailTask(task);
-  };
-
-  const handleBackFromDetail = () => {
-    setDetailTask(null);
-  };
-
-  // 切 tab 时清掉详情态,保证 tab 行为一致(点哪个 tab 就立刻显示对应内容)
   const handleSelectTab = (next: ViewTab) => {
-    setDetailTask(null);
     setView(next);
   };
 
@@ -201,27 +188,17 @@ const BacktestAnalysis: React.FC = () => {
       />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {view === 'history' ? (
-          detailTask ? (
-            <BacktestDetail task={detailTask} onBack={handleBackFromDetail} />
-          ) : (
-            <BacktestHistory onSelect={handleViewHistory} />
-          )
-        ) : (
-          <>
-            <aside className="w-80 flex-shrink-0 overflow-y-auto border-r border-border/30 bg-card/20">
-              <BacktestConfig
-                mode={mode}
-                onRun={handleRunBacktest}
-                onTaskUpdate={handleTaskUpdate}
-                cacheStatus={cacheStatus}
-              />
-            </aside>
-            <main className="min-h-0 flex-1 overflow-y-auto">
-              <BacktestResult task={currentTask} />
-            </main>
-          </>
-        )}
+        <aside className="w-80 flex-shrink-0 overflow-y-auto border-r border-border/30 bg-card/20">
+          <BacktestConfig
+            mode={mode}
+            onRun={handleRunBacktest}
+            onTaskUpdate={handleTaskUpdate}
+            cacheStatus={cacheStatus}
+          />
+        </aside>
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <BacktestResult task={currentTask} />
+        </main>
       </div>
     </div>
   );
