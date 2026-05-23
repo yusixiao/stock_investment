@@ -62,6 +62,9 @@ async def lifespan(app: FastAPI):
     init_db()
     init_duckdb_with_health_check()
     init_stock_index()
+    # 触发 agent 注册(导入即注册到 agent_harness.registry)
+    import services.agents  # noqa: F401
+
     start_scheduler()
     yield
     shutdown_scheduler()
