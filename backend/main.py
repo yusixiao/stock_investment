@@ -48,6 +48,7 @@ from routers.meta import router as meta_router
 from routers.market_update import router as market_update_router
 from routers.stock_search import router as stock_search_router
 from routers.market_kline import router as market_kline_router
+from routers.auth_stub import router as auth_stub_router
 from scheduler import start_scheduler, shutdown_scheduler
 
 
@@ -85,6 +86,7 @@ app.include_router(meta_router)
 app.include_router(market_update_router)
 app.include_router(stock_search_router)
 app.include_router(market_kline_router)
+app.include_router(auth_stub_router)
 
 
 @app.get("/api/health")
