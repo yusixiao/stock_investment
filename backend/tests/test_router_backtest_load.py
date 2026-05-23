@@ -8,7 +8,8 @@ data_cache 加载与切片测试。
 - _load_stock_data_full(market) 经 DuckDBStore 拉全市场全历史 K 线
 - HK 市场视图正常工作
 - slice_bundle 按 symbols 子集切片
-- slice_bundle 按 start/end 日期切片(只切 K 线,估值/分红/财务保持全量)
+- slice_bundle 用 start/end 日期推 iter_start/iter_end(2026-05-22 起,**daily 数据
+  全历史保留**,日期范围仅决定回测主循环迭代窗口)
 """
 
 import pandas as pd
@@ -97,28 +98,32 @@ def _make_bundle(symbols: list[str]) -> data_cache.MarketBundle:
 
 def test_slice_by_symbols_subset():
     bundle = _make_bundle(["000001.SZ", "000002.SZ", "000003.SZ"])
-    stock, _, _, _ = data_cache.slice_bundle(
-        bundle, ["000001.SZ", "000002.SZ"], None, None
-    )
-    assert set(stock.keys()) == {"000001.SZ", "000002.SZ"}
+    sliced = data_cache.slice_bundle(bundle, ["000001.SZ", "000002.SZ"], None, None)
+    assert set(sliced.stock_data.keys()) == {"000001.SZ", "000002.SZ"}
+    # 全历史保留(3 行)
+    assert len(sliced.stock_data["000001.SZ"]) == 3
+    assert sliced.iter_start_idx == 0
+    assert sliced.iter_end_idx == 2  # 全部
 
 
 def test_slice_by_symbols_none_returns_all():
     bundle = _make_bundle(["000001.SZ", "000002.SZ"])
-    stock, _, _, _ = data_cache.slice_bundle(bundle, None, None, None)
-    assert set(stock.keys()) == {"000001.SZ", "000002.SZ"}
+    sliced = data_cache.slice_bundle(bundle, None, None, None)
+    assert set(sliced.stock_data.keys()) == {"000001.SZ", "000002.SZ"}
 
 
-def test_slice_by_date_range():
+def test_slice_by_date_range_sets_iter_window_only():
+    """⚠️ 2026-05-22 架构升级:daily 不再被裁剪,只设 iter_start/iter_end。"""
     bundle = _make_bundle(["000001.SZ"])
-    stock, _, _, _ = data_cache.slice_bundle(bundle, None, "2024-02-01", "2024-02-28")
-    assert len(stock["000001.SZ"]) == 1
-    assert stock["000001.SZ"]["date"].tolist() == ["2024-02-02"]
+    sliced = data_cache.slice_bundle(bundle, None, "2024-02-01", "2024-02-28")
+    # 全历史保留
+    assert len(sliced.stock_data["000001.SZ"]) == 3
+    # iter window 仅覆盖 2024-02-02 这一根 bar
+    assert sliced.iter_start_idx == 1
+    assert sliced.iter_end_idx == 1
 
 
 def test_slice_unknown_symbol_skipped():
     bundle = _make_bundle(["000001.SZ"])
-    stock, _, _, _ = data_cache.slice_bundle(
-        bundle, ["000001.SZ", "NOPE.SZ"], None, None
-    )
-    assert set(stock.keys()) == {"000001.SZ"}
+    sliced = data_cache.slice_bundle(bundle, ["000001.SZ", "NOPE.SZ"], None, None)
+    assert set(sliced.stock_data.keys()) == {"000001.SZ"}

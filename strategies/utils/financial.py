@@ -38,6 +38,8 @@ def filter_by_roe(ctx, symbols: list[str], *, min_roe: float = 10.0) -> list[str
         if roe is None:
             ctx.log_reject(sym, stage, "no_data", threshold=min_roe)
             continue
+        # 因子收集 — 策略雷达展示 ROE 实际值
+        ctx.record_factor(sym, "ROE", roe)
         if roe >= min_roe:
             ctx.log_pass(sym, stage, roe=roe, threshold=min_roe)
             result.append(sym)

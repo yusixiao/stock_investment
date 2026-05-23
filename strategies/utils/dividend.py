@@ -78,6 +78,7 @@ def filter_by_dividend_years(
             continue
         if years >= min_years:
             ctx.log_pass(sym, stage, years=years, threshold=min_years)
+            ctx.record_factor(sym, "连续分红年数", years)
             result.append(sym)
         else:
             ctx.log_reject(

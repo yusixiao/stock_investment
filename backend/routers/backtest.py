@@ -5,6 +5,8 @@ Strategy class — 前端仍以 pipeline=[item] 形式提交,后端取首项实�
 """
 
 import threading
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
@@ -15,6 +17,7 @@ from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
 from services.backtest.strategy_loader import load_strategy_from_file, scan_strategies
 from services.backtest.task_manager import task_manager
+from services.stock_index import get_name as get_stock_name
 from strategies.base import Strategy
 
 
@@ -104,25 +107,29 @@ def api_run_backtest(body: dict = Body(...)):
                     f"{market} 市场数据未加载,请先在「策略回测」页点击「加载数据」"
                 )
             task_manager.update_progress(task_id, 0, 0, "切片数据中...")
-            stock_data, valuation_data, dividend_data, financial_data = (
-                data_cache.slice_bundle(bundle, target_symbols, start_date, end_date)
+            sliced = data_cache.slice_bundle(
+                bundle, target_symbols, start_date, end_date
             )
-            if not stock_data:
+            if not sliced.stock_data:
                 raise RuntimeError("切片后无可用 K 线数据,检查日期范围/股票代码")
             task_manager.update_progress(
                 task_id,
-                len(stock_data),
-                len(stock_data),
-                f"数据就绪 ({len(stock_data)} 只)",
+                len(sliced.stock_data),
+                len(sliced.stock_data),
+                f"数据就绪 ({len(sliced.stock_data)} 只)",
             )
             # 决策日志目录:每个 task 独立子目录,与 task_manager 内部默认路径一致
             task_log_dir = LOG_DIR / "backtest" / task_id
             engine = BacktestEngine(
                 strategy=strategy,
-                stock_data=stock_data,
-                valuation_data=valuation_data,
-                dividend_data=dividend_data,
-                financial_data=financial_data,
+                stock_data=sliced.stock_data,
+                valuation_data=sliced.valuation_data,
+                dividend_data=sliced.dividend_data,
+                financial_data=sliced.financial_data,
+                weekly_data=sliced.weekly_data,
+                monthly_data=sliced.monthly_data,
+                iter_start=sliced.iter_start_idx,
+                iter_end=sliced.iter_end_idx,
                 on_progress=lambda cur, total: on_progress(cur, total, "回测中..."),
                 log_dir=task_log_dir,
             )
@@ -162,3 +169,213 @@ def api_list_tasks(show_deleted: bool = False):
 def api_delete_task(task_id: str):
     task_manager.delete_task(task_id)
     return {"ok": True}
+
+
+# ---------- 策略雷达扫描(选股回测,无 trader)----------
+
+_LOOKBACK_DAYS = {
+    "yesterday": 0,
+    "1m": 30,
+    "6m": 182,
+    "1y": 365,
+    "3y": 365 * 3,
+    "5y": 365 * 5,
+}
+
+
+def _resolve_scan_dates(bundle, lookback: str) -> tuple[str, str]:
+    """从 bundle 推 end_date(数据最新日)+ 按 lookback 推 start_date。"""
+    latest = ""
+    for df in bundle.stock_data.values():
+        if df is not None and not df.empty:
+            d = str(df["date"].iloc[-1])
+            if d > latest:
+                latest = d
+    if not latest:
+        raise RuntimeError("数据 bundle 无可用 K 线")
+    end_date = latest
+    days = _LOOKBACK_DAYS[lookback]
+    if days == 0:
+        return end_date, end_date
+    start_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=days)
+    return start_dt.strftime("%Y-%m-%d"), end_date
+
+
+def _wait_for_data(market: str, timeout: float = 600.0) -> None:
+    """等待 data_cache 加载完成;若未在加载则触发 async 加载。"""
+    if data_cache.get_market(market) is not None:
+        return
+    data_cache.load_market_async(market)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        bundle = data_cache.get_market(market)
+        if bundle is not None:
+            return
+        status = data_cache._status_dict(market)  # noqa: SLF001 - 内部状态查询
+        if status.get("error"):
+            raise RuntimeError(f"数据加载失败: {status['error']}")
+        time.sleep(0.5)
+    raise RuntimeError("数据加载超时")
+
+
+def _aggregate_scan_hits(
+    events: dict[str, list[tuple[str, dict]]],
+    stock_data: dict,
+    market: str,
+) -> list[dict]:
+    """events {symbol: [(date, factors), ...]} → 每股一行的 hits 列表。"""
+    hits: list[dict] = []
+    for sym, evs in events.items():
+        if not evs:
+            continue
+        # 取最近一次命中作为信号点
+        last_date, last_factors = evs[-1]
+        df = stock_data.get(sym)
+        if df is None or df.empty:
+            continue
+        # 当前价 = qfq 最新 close
+        current_price = float(df["close"].iloc[-1])
+        # 信号日 close:精确匹配 last_date(若 missing,跳过)
+        match = df.loc[df["date"] == last_date]
+        if match.empty:
+            signal_close = None
+            change_pct = None
+        else:
+            signal_close = float(match["close"].iloc[0])
+            change_pct = (
+                (current_price - signal_close) / signal_close if signal_close else None
+            )
+        hits.append(
+            {
+                "symbol": sym,
+                "name": get_stock_name(sym, market),
+                "current_price": current_price,
+                "signal_close": signal_close,
+                "change_pct_since_signal": change_pct,
+                "last_match_date": last_date,
+                "match_count": len(evs),
+                "factors": last_factors,
+            }
+        )
+    # 按命中次数倒序、再按最近命中日倒序
+    hits.sort(key=lambda h: (h["match_count"], h["last_match_date"]), reverse=True)
+    return hits
+
+
+@router.post("/scan-radar")
+def api_scan_radar(body: dict = Body(...)):
+    """策略雷达全市场扫描 — 选股回测,在 lookback 窗口内每根 bar 评估 screen()。
+
+    Body:
+      {strategy_class, filepath, params?, lookback, market?}
+      lookback ∈ {yesterday, 1m, 1y, 3y, 5y}
+    """
+    class_name = body.get("strategy_class")
+    filepath_str = body.get("filepath")
+    lookback = body.get("lookback", "1y")
+    market = (body.get("market") or "A").upper()
+    overrides = body.get("params") or {}
+
+    if not class_name or not filepath_str:
+        raise HTTPException(status_code=400, detail="strategy_class 与 filepath 必填")
+    if lookback not in _LOOKBACK_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"lookback 非法: {lookback},可选 {list(_LOOKBACK_DAYS.keys())}",
+        )
+
+    classes = load_strategy_from_file(Path(filepath_str))
+    cls = next((c for c in classes if c.__name__ == class_name), None)
+    if cls is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Strategy class {class_name} not found in {filepath_str}",
+        )
+
+    intrinsic_frequency = getattr(cls, "frequency", "daily") or "daily"
+    # 频率冲突兜底:非日频策略 + yesterday 单日窗口无意义
+    if lookback == "yesterday" and intrinsic_frequency != "daily":
+        raise HTTPException(
+            status_code=400,
+            detail=f"策略频率为 {intrinsic_frequency},「最新交易日」仅适用于日频策略",
+        )
+
+    strategy: Strategy = cls(param_overrides=overrides)
+    intrinsic_name = getattr(cls, "name", None) or class_name
+    defaults = {k: v["default"] for k, v in getattr(cls, "params", {}).items()}
+    merged_params = {**defaults, **overrides}
+
+    task_id = task_manager.create_task(
+        task_type="scan-radar",
+        strategy_class=class_name,
+        strategy_name=intrinsic_name,
+        params=merged_params,
+        frequency=intrinsic_frequency,
+        market=market,
+    )
+
+    def on_progress(current, total, phase=""):
+        task_manager.update_progress(task_id, current, total, phase)
+
+    def run_task():
+        try:
+            on_progress(0, 0, "等待数据加载...")
+            _wait_for_data(market)
+            bundle = data_cache.get_market(market)
+            start_date, end_date = _resolve_scan_dates(bundle, lookback)
+            on_progress(0, 0, f"切片数据 {start_date}~{end_date}...")
+            sliced = data_cache.slice_bundle(bundle, None, start_date, end_date)
+            if not sliced.stock_data:
+                raise RuntimeError("切片后无 K 线数据")
+
+            engine = BacktestEngine(
+                strategy=strategy,
+                stock_data=sliced.stock_data,
+                valuation_data=sliced.valuation_data,
+                dividend_data=sliced.dividend_data,
+                financial_data=sliced.financial_data,
+                weekly_data=sliced.weekly_data,
+                monthly_data=sliced.monthly_data,
+                iter_start=sliced.iter_start_idx,
+                iter_end=sliced.iter_end_idx,
+                on_progress=lambda cur, total: on_progress(cur, total, "扫描中..."),
+                log_dir=LOG_DIR / "scan_radar" / task_id,
+            )
+            scan_result = engine.run_scan()
+            hits = _aggregate_scan_hits(
+                scan_result["events"], sliced.stock_data, market
+            )
+
+            # 数据最新日:bundle 内任一 df 的最大 date
+            data_latest_date = ""
+            for df in bundle.stock_data.values():
+                if df is not None and not df.empty:
+                    d = str(df["date"].iloc[-1])
+                    if d > data_latest_date:
+                        data_latest_date = d
+
+            result = {
+                "hits": hits,
+                "total_scanned": scan_result["all_symbols_count"],
+                "lookback_used": lookback,
+                "date_range": {"start": start_date, "end": end_date},
+                "data_latest_date": data_latest_date,
+                "strategy_class": class_name,
+                "strategy_name": intrinsic_name,
+                "frequency": intrinsic_frequency,
+            }
+            task_manager.complete_task(task_id, safe_json(result))
+        except Exception as e:
+            task_manager.fail_task(task_id, str(e))
+
+    threading.Thread(target=run_task, daemon=True).start()
+    return {"task_id": task_id, "status": "running"}
+
+
+@router.get("/scan-radar/result/{task_id}")
+def api_scan_radar_result(task_id: str):
+    """雷达扫描结果(独立路由,行为同 /result/{task_id} 但语义专属)。"""
+    result = task_manager.get_result(task_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return result

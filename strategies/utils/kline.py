@@ -15,8 +15,18 @@ import pandas as _pd  # 局部命名,避免与 utils 公共 namespace 冲突
 def get_ma(ctx, symbol: str, window: int, *, freq: str = "daily") -> float | None:
     """最近 window 根 K 线 close 的简单移动平均。
 
-    数据不足 → None。freq 决定从何种周期取数据。
+    优先走 ctx.get_indicator 查表(window ∈ 标准 5/10/20/30 时命中预算列,
+    O(1) 列下标);未命中则 fallback 到 history-based 计算。
+    数据不足 → None。
     """
+    # fast path:标准窗口直接查预算 ma{N} 列(命中即返回 float / None)
+    if hasattr(ctx, "get_indicator"):
+        v = ctx.get_indicator("ma", symbol, period=freq, window=window)
+        if v is not None:
+            return v
+        # 命中 None 有两种可能:1) 非标准窗口(resolve 返回 None 列)
+        # 2) 数据不足窗口期(NaN)。这里无法区分,统一 fallback 到 history,
+        # 数据不足时 history 路径也会返回 None,语义一致。
     bars = ctx.get_history(symbol, window, period=freq)
     if not bars or len(bars) < window:
         return None
@@ -59,6 +69,13 @@ def get_macd(
     if field not in {"dif", "dea", "hist"}:
         raise ValueError(f"field must be 'dif'/'dea'/'hist', got {field!r}")
 
+    # fast path:默认 12/26/9 参数命中预算列(macd_dif/macd_dea/macd_hist),
+    # 非默认参数走 fallback。命中 None 同样可能是数据不足,统一 fallback。
+    if (fast, slow, signal) == (12, 26, 9) and hasattr(ctx, "get_indicator"):
+        v = ctx.get_indicator("macd", symbol, period=freq, field=field)
+        if v is not None:
+            return v
+
     need = slow + signal
     bars = ctx.get_history(symbol, need + 1, period=freq)
     if not bars or len(bars) < slow:
@@ -87,6 +104,57 @@ def get_macd(
 
     # hist = 2 × (DIF - DEA),项目硬性约定
     return 2.0 * (dif_series[-1] - dea_series[-1])
+
+
+def filter_by_ma_close(
+    ctx,
+    symbols: list[str],
+    *,
+    fast: int = 5,
+    slow: int = 20,
+    threshold: float = 0.01,
+    freq: str = "monthly",
+) -> list[str]:
+    """筛选 |MA(fast) - MA(slow)| / MA(slow) <= threshold 的股票。
+
+    threshold=0.01 即 1%。使用 ``get_ma()`` 取两条均线最新值,
+    任一为 None(数据不足)→ 视作未通过。
+
+    stage = "kline.ma_close"
+    日志:
+      log_pass(symbol, stage, fast=N, slow=N, ratio=R, threshold=T)
+      log_reject(symbol, stage, "no_data", ...)
+      log_reject(symbol, stage, "above_threshold", ratio=R, threshold=T)
+    Factor 记录:
+      "MA{fast}-MA{slow}差%" → ratio*100
+    """
+    stage = "kline.ma_close"
+    result: list[str] = []
+    for sym in symbols:
+        ma_fast = get_ma(ctx, sym, fast, freq=freq)
+        ma_slow = get_ma(ctx, sym, slow, freq=freq)
+        if ma_fast is None or ma_slow is None or ma_slow == 0:
+            ctx.log_reject(sym, stage, "no_data", fast=fast, slow=slow)
+            continue
+        ratio = abs(ma_fast - ma_slow) / abs(ma_slow)
+        if ratio <= threshold:
+            ctx.log_pass(
+                sym, stage, fast=fast, slow=slow, ratio=ratio, threshold=threshold
+            )
+            ctx.record_factor(sym, f"MA{fast}-MA{slow}差%", round(ratio * 100, 3))
+            result.append(sym)
+        else:
+            ctx.log_reject(
+                sym,
+                stage,
+                "above_threshold",
+                fast=fast,
+                slow=slow,
+                ratio=ratio,
+                threshold=threshold,
+            )
+    ctx.log_flow(stage, input=len(symbols), passed=len(result))
+    return result
 
 
 def is_at_history_low(

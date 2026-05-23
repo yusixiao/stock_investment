@@ -142,4 +142,53 @@ export const backtestEngineApi = {
   async deleteTask(taskId: string): Promise<void> {
     await apiClient.delete(`/api/backtest/tasks/${taskId}`);
   },
+
+  async scanRadar(req: ScanRadarRequest): Promise<{ task_id: string; status: string }> {
+    const resp = await apiClient.post('/api/backtest/scan-radar', req);
+    return resp.data;
+  },
+
+  async getScanRadarResult(taskId: string): Promise<ScanRadarTaskResult> {
+    const resp = await apiClient.get(`/api/backtest/scan-radar/result/${taskId}`);
+    return resp.data;
+  },
 };
+
+export type RadarLookback = 'yesterday' | '1m' | '6m' | '1y' | '3y' | '5y';
+
+export interface ScanRadarRequest {
+  strategy_class: string;
+  filepath: string;
+  params?: Record<string, unknown>;
+  lookback: RadarLookback;
+  market?: string;
+}
+
+export interface ScanRadarHit {
+  symbol: string;
+  name: string | null;
+  current_price: number;
+  signal_close: number | null;
+  change_pct_since_signal: number | null;
+  last_match_date: string;
+  match_count: number;
+  factors: Record<string, number | string | null>;
+}
+
+export interface ScanRadarPayload {
+  hits: ScanRadarHit[];
+  total_scanned: number;
+  lookback_used: RadarLookback;
+  date_range: { start: string; end: string };
+  data_latest_date: string;
+  strategy_class: string;
+  strategy_name: string;
+  frequency: string;
+}
+
+export interface ScanRadarTaskResult {
+  task_id: string;
+  status: 'running' | 'success' | 'failed';
+  result: ScanRadarPayload | null;
+  error?: string;
+}

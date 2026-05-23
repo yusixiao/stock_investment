@@ -63,6 +63,11 @@ def filter_by_pe_pb_product(
             ctx.log_reject(sym, stage, "no_data", min=min_value, max=max_value)
             continue
         product = pe * pb
+        # 因子收集:无论是否最终通过,都先记录(策略雷达只在 hits 上读取,
+        # 不会读到被淘汰的;而最终通过的命中股票需要 PE / PB / PE*PB 三个值)
+        ctx.record_factor(sym, "PE", pe)
+        ctx.record_factor(sym, "PB", pb)
+        ctx.record_factor(sym, "PE*PB", product)
         if product < min_value:
             ctx.log_reject(
                 sym,
