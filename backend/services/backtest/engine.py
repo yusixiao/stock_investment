@@ -16,9 +16,11 @@ from typing import Callable
 
 import pandas as pd
 
+import copy
+
 from services.backtest.analyzer import compute_metrics, pair_round_trips
 from services.backtest.broker import Broker
-from services.backtest.context import Context
+from services.backtest.context import Context, ScreenContext
 from services.backtest.date_utils import format_match_date
 from services.backtest.decision_log import DecisionLogSink
 from services.backtest.market_data import MarketData
@@ -35,6 +37,10 @@ class BacktestEngine:
         valuation_data: dict | None = None,
         dividend_data: dict | None = None,
         financial_data: dict | None = None,
+        weekly_data: dict | None = None,
+        monthly_data: dict | None = None,
+        iter_start: int | None = None,
+        iter_end: int | None = None,
         on_progress: Callable[[int, int], None] | None = None,
         log_dir: Path | None = None,
         enable_decision_log: bool = True,
@@ -57,10 +63,19 @@ class BacktestEngine:
             valuation=valuation_data,
             dividend=dividend_data,
             financial=financial_data,
+            weekly_data=weekly_data,
+            monthly_data=monthly_data,
         )
         self._log_sink = DecisionLogSink(log_dir, enabled=enable_decision_log)
         self._on_progress = on_progress
         self._all_symbols = list(stock_data.keys())
+
+        # 迭代窗口:None 表示全历史。Engine 主循环只在 [iter_start, iter_end] 内
+        # 调 screen / on_buy / on_sell;数据查询(get_history / get_indicator)
+        # 仍可走全历史,因此长窗口指标(月线 MA20)在短 lookback 下也能正确计算。
+        n = len(self._market_data.dates)
+        self._iter_start = 0 if iter_start is None else max(0, iter_start)
+        self._iter_end = (n - 1) if iter_end is None else min(n - 1, iter_end)
 
     # ---------- 内部:基于 MarketData 派生 bar 视图 ----------
 
@@ -95,19 +110,24 @@ class BacktestEngine:
     def run(self) -> dict:
         dates = self._market_data.dates
         n_bars = len(dates)
+        iter_start = self._iter_start
+        iter_end = self._iter_end
+        # 迭代步数(供 progress 显示)= [iter_start, iter_end] 闭区间长度
+        n_iter = max(0, iter_end - iter_start + 1)
 
         # 起始 flow 事件:记录策略类、参数与数据范围,便于离线追溯
-        if self._log_sink.enabled and n_bars > 0:
+        if self._log_sink.enabled and n_bars > 0 and n_iter > 0:
             self._log_sink.log_flow(
                 "engine.run.start",
-                idx=0,
-                ts=dates[0],
+                idx=iter_start,
+                ts=dates[iter_start],
                 strategy=type(self._strategy).__name__,
                 frequency=getattr(self._strategy, "frequency", ""),
                 symbols=len(self._all_symbols),
-                bars=n_bars,
-                start_date=dates[0],
-                end_date=dates[-1],
+                bars=n_iter,
+                full_history_bars=n_bars,
+                start_date=dates[iter_start],
+                end_date=dates[iter_end],
                 params={
                     k: getattr(self._strategy.p, k, None)
                     for k in getattr(self._strategy, "params", {})
@@ -119,13 +139,14 @@ class BacktestEngine:
         prev_period_key: str | None = None
         prev_closes: dict[str, float] = {}
         equity_curve: list[dict] = []
+        progress_done = 0
 
-        for idx in range(n_bars):
+        for idx in range(iter_start, iter_end + 1):
             current_date = dates[idx]
             current_bars, current_prices = self._build_bar(idx)
 
             # 1) T+1 撮合:用今日 bar 填昨日挂单,prev_closes 仅用于涨跌停判定
-            if idx > 0 and self._broker.pending_orders:
+            if idx > iter_start and self._broker.pending_orders:
                 fills = self._broker.fill_orders(
                     current_date, current_bars, prev_closes
                 )
@@ -177,15 +198,16 @@ class BacktestEngine:
             )
             prev_closes = dict(current_prices)
 
+            progress_done += 1
             if self._on_progress:
-                self._on_progress(idx + 1, n_bars)
+                self._on_progress(progress_done, n_iter)
 
         # 收尾 flow 事件:总交易笔数 + 累计目标池大小
-        if self._log_sink.enabled and n_bars > 0:
+        if self._log_sink.enabled and n_iter > 0:
             self._log_sink.log_flow(
                 "engine.run.done",
-                idx=n_bars - 1,
-                ts=dates[-1],
+                idx=iter_end,
+                ts=dates[iter_end],
                 trades=len(self._broker.all_trades),
                 target_pool=len(target_symbols),
                 final_cash=float(self._broker.portfolio.cash),
@@ -204,4 +226,96 @@ class BacktestEngine:
             "trades": round_trips,
             "raw_trades": self._broker.all_trades,
             "log_dir": str(self._log_sink.log_dir) if self._log_sink.enabled else None,
+        }
+
+    # ---------- 选股雷达扫描(无 broker / 仅收集 hits + factors) ----------
+
+    def run_scan(self) -> dict:
+        """选股回测扫描(策略雷达专用)。
+
+        语义:窗口内每根 bar 调用 ``strategy.screen()``,记录命中事件 +
+        helper 内通过 ``ctx.record_factor`` 收集的因子值快照。
+        频率感知:周期未切换时复用上一次 screen 结果(不重算)。
+        每个新周期开始时调用 ``ctx.reset_factors()`` 清空,以便 helper 重新记录。
+
+        返回:
+          {
+            "events": {symbol: [(date, factors_dict), ...]},  # 每只股票的命中事件序列
+            "dates": [date_str, ...],                          # 实际扫描日期
+            "all_symbols_count": int,                          # 全市场扫描数量
+          }
+        """
+        dates = self._market_data.dates
+        n_bars = len(dates)
+        iter_start = self._iter_start
+        iter_end = self._iter_end
+        n_iter = max(0, iter_end - iter_start + 1)
+        events: dict[str, list[tuple[str, dict]]] = {}
+        all_symbols = list(self._all_symbols)
+
+        if n_bars == 0 or n_iter == 0:
+            return {
+                "events": {},
+                "dates": [],
+                "all_symbols_count": len(all_symbols),
+            }
+
+        # run_scan 也写决策日志:scan-radar 路由配 log_dir 后,helper 内的
+        # log_pass/log_reject/log_flow 应当落盘(此前因 ScreenContext 是 no-op
+        # 而完全丢失,2026-05-22 修复)
+        if self._log_sink.enabled:
+            self._log_sink.log_flow(
+                "engine.scan.start",
+                idx=iter_start,
+                ts=dates[iter_start],
+                strategy=type(self._strategy).__name__,
+                frequency=getattr(self._strategy, "frequency", ""),
+                symbols=len(all_symbols),
+                bars=n_iter,
+                start_date=dates[iter_start],
+                end_date=dates[iter_end],
+                params={
+                    k: getattr(self._strategy.p, k, None)
+                    for k in getattr(self._strategy, "params", {})
+                },
+            )
+
+        prev_period_key: str | None = None
+        progress_done = 0
+
+        for idx in range(iter_start, iter_end + 1):
+            current_date = dates[idx]
+            pk = format_match_date(current_date, self._strategy.frequency)
+            # 仅在频率周期切换时调一次 screen — 避免日内重复记录命中
+            if pk != prev_period_key:
+                ctx = ScreenContext(
+                    market_data=self._market_data,
+                    idx=idx,
+                    strategy=self._strategy,
+                    log_sink=self._log_sink,
+                )
+                ctx.reset_factors()
+                hits = list(self._strategy.screen(ctx, all_symbols))
+                for sym in hits:
+                    snapshot = copy.deepcopy(ctx.get_factors(sym))
+                    events.setdefault(sym, []).append((current_date, snapshot))
+                prev_period_key = pk
+
+            progress_done += 1
+            if self._on_progress:
+                self._on_progress(progress_done, n_iter)
+
+        if self._log_sink.enabled:
+            self._log_sink.log_flow(
+                "engine.scan.done",
+                idx=iter_end,
+                ts=dates[iter_end],
+                hit_symbols=len(events),
+            )
+        self._log_sink.flush()
+
+        return {
+            "events": events,
+            "dates": list(dates[iter_start : iter_end + 1]),
+            "all_symbols_count": len(all_symbols),
         }

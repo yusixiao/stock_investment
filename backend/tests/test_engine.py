@@ -378,3 +378,80 @@ def test_on_progress_called_per_bar(stock_data, daily_dates):
     assert len(progress) == n
     assert progress[0] == (1, n)
     assert progress[-1] == (n, n)
+
+
+# ============= iter window(2026-05-22 引入)=============
+
+
+def test_engine_iter_window_limits_main_loop(stock_data, daily_dates):
+    """iter_start/iter_end 限定主循环范围,equity_curve 长度 = 窗口大小。"""
+    strategy = Strategy()
+    eng = BacktestEngine(
+        strategy=strategy,
+        stock_data=stock_data,
+        iter_start=10,
+        iter_end=15,
+    )
+    result = eng.run()
+    # 闭区间 [10, 15] = 6 根 bar
+    assert len(result["equity_curve"]) == 6
+    assert result["equity_curve"][0]["date"] == daily_dates[10]
+    assert result["equity_curve"][-1]["date"] == daily_dates[15]
+
+
+def test_engine_iter_window_default_full_history(stock_data, daily_dates):
+    """未传 iter window → 跑全历史(向后兼容)。"""
+    strategy = Strategy()
+    eng = BacktestEngine(strategy=strategy, stock_data=stock_data)
+    result = eng.run()
+    assert len(result["equity_curve"]) == len(daily_dates)
+
+
+def test_engine_progress_uses_iter_window_size(stock_data):
+    """on_progress 的 total = 迭代窗口大小,不是全历史。"""
+    progress_calls: list[tuple[int, int]] = []
+
+    def on_progress(cur, total):
+        progress_calls.append((cur, total))
+
+    eng = BacktestEngine(
+        strategy=Strategy(),
+        stock_data=stock_data,
+        iter_start=20,
+        iter_end=24,
+        on_progress=on_progress,
+    )
+    eng.run()
+    assert len(progress_calls) == 5
+    assert progress_calls[-1] == (5, 5)
+
+
+def test_run_scan_writes_decision_log(tmp_path, stock_data):
+    """run_scan 接 log_sink 后,helper 内 log_pass/log_reject 应当落盘
+    (修复 ScreenContext 空 pass bug,2026-05-22)。"""
+
+    class MyScreener(Strategy):
+        name = "test_screener"
+        frequency = "daily"
+
+        def screen(self, ctx, symbols):
+            for s in symbols:
+                ctx.log_pass(s, "test_stage", value=1)
+            ctx.log_flow("test_stage", input=len(symbols), passed=len(symbols))
+            return list(symbols)
+
+    log_dir = tmp_path / "scan_log"
+    eng = BacktestEngine(
+        strategy=MyScreener(),
+        stock_data=stock_data,
+        iter_start=0,
+        iter_end=2,
+        log_dir=log_dir,
+    )
+    eng.run_scan()
+
+    # 只要日志目录里写了内容即视为通过(不依赖具体文件名)
+    files = list(log_dir.rglob("*.jsonl"))
+    assert files, "decision log 文件未生成"
+    contents = "\n".join(p.read_text() for p in files)
+    assert "test_stage" in contents

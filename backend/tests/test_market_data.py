@@ -448,3 +448,43 @@ def test_get_bar_at_consistency_across_dates(stock_data):
         assert bar is not None
         for k in ("open", "high", "low", "close"):
             assert bar[k] == pytest.approx(row[k]), f"mismatch at idx={idx} field={k}"
+
+
+# ============= get_indicator(2026-05-22 引入)=============
+
+
+def test_get_indicator_ma_standard_window_returns_value(stock_data):
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    # daily 全历史 ~63 根,ma20 在 idx=19 起有效
+    v_at_30 = md.get_indicator("ma", "000001", idx=30, window=20)
+    # 用同一 ctx 的 get_history 路径求 ground truth 对照
+    bars = md.get_history("000001", n=20, idx=30, period="daily")
+    expected = sum(b["close"] for b in bars[-20:]) / 20
+    assert v_at_30 == pytest.approx(expected)
+
+
+def test_get_indicator_non_standard_window_returns_none(stock_data):
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    # window=15 不在标准集 → resolve 返回 None → get_indicator 返回 None
+    assert md.get_indicator("ma", "000001", idx=30, window=15) is None
+
+
+def test_get_indicator_macd_default_params(stock_data):
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    dif = md.get_indicator("macd", "000001", idx=50, field="dif")
+    dea = md.get_indicator("macd", "000001", idx=50, field="dea")
+    hist = md.get_indicator("macd", "000001", idx=50, field="hist")
+    assert dif is not None and dea is not None and hist is not None
+    # AGENTS.md 硬性约定:hist = 2 × (DIF - DEA)
+    assert hist == pytest.approx(2.0 * (dif - dea))
+
+
+def test_get_indicator_data_insufficient_returns_none(stock_data):
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    # idx=0 时 ma20 尚不可用(NaN)
+    assert md.get_indicator("ma", "000001", idx=0, window=20) is None
+
+
+def test_get_indicator_unknown_symbol_returns_none(stock_data):
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    assert md.get_indicator("ma", "999999", idx=10, window=20) is None

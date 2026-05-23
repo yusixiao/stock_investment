@@ -1,16 +1,17 @@
-"""MarketData 适配器(Phase 3.2)。
+"""MarketData 适配器(2026-05-22 升级:接受预算 weekly/monthly + 提供 get_indicator)。
 
-被新 ``BacktestEngine`` (T3.3) 直接构造,封装 stock_data dict + 周/月聚合缓存,
-并对外暴露 ``Context`` (T3.1) 所需的最小数据访问 API。
+被 ``BacktestEngine`` 直接构造,封装 stock_data dict + 周/月聚合缓存,
+并对外暴露 ``Context`` 所需的最小数据访问 API。
 
-设计要点(plan §3.2):
-- 输入:``{symbol: pd.DataFrame(daily)}`` + ``frequency``,可选 valuation/dividend/financial 字典
-- ``dates``:以 stock_data 中第一只股票的日历为参考,升序日期列表
-- 启动时按 ``frequency`` 预聚合 weekly→W-FRI / monthly→M(daily 时不聚合);
-  其它 period 在被请求时按需懒计算并缓存,避免重复
+设计要点:
+- 输入:``stock_data`` (daily,带预算指标列) + 可选 ``weekly_data`` / ``monthly_data``
+  (data_cache 加载时已聚合并预算指标);未提供时 fallback 到运行时按需聚合(测试用)
+- ``dates``:以 stock_data 中第一只股票的全历史日历为参考,**不裁剪**
+- iter_start/iter_end 由 Engine 决定迭代窗口,MarketData 不参与
 - 持仓相关 API 由 Broker 提供,本类不负责
-- valuation / dividend / financial:对应 dict 入参,**默认 None 时返回 None**
-  (Phase 4 Layer B 之后会切换到 DuckDB)
+- get_indicator(symbol, name, period, idx, **kwargs):查表式 O(1) 取指标,
+  命中标准列(由 indicators.resolve_indicator_column 决定)即返回,否则 None
+- valuation/financial 不变,沿用预编译 _StaticTable
 """
 
 from __future__ import annotations
@@ -21,16 +22,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from services.backtest.indicators import compute_indicators, resolve_indicator_column
 from services.stock_data import aggregate_kline
 
 
 class _StaticTable:
-    """valuation/financial 的预编译缓存(列存 + 升序 date)。
-
-    - dates: 升序 str ndarray,searchsorted 用
-    - num_cols: {col: ffilled float ndarray}(NaN 已向前填充,查询直接下标即可)
-    - obj_cols: {col: object ndarray}(非数值列原值,例如 "股票代码"/"报告期")
-    """
+    """valuation/financial 的预编译缓存(列存 + 升序 date)。"""
 
     __slots__ = ("dates", "num_cols", "obj_cols", "n")
 
@@ -51,10 +48,8 @@ def _build_static_table(
 ) -> _StaticTable:
     if df is None or df.empty or date_col not in df.columns:
         return _StaticTable(np.array([], dtype=object), {}, {})
-    # 按 date 升序(repository 通常已排序,但二次保险)
     df = df.sort_values(date_col).reset_index(drop=True)
     dates_raw = df[date_col]
-    # 统一 date 为 str(只在 init 做一次,避开 _astype_nansafe 的 hot path)
     if len(dates_raw) > 0 and not isinstance(dates_raw.iloc[0], str):
         dates_arr = dates_raw.astype(str).to_numpy()
     else:
@@ -69,14 +64,11 @@ def _build_static_table(
         if pd.api.types.is_numeric_dtype(series):
             arr = series.to_numpy(dtype=float, copy=True)
             if ffill:
-                # 向前填充 NaN — 等价旧 get_valuation 的 sub_mask 回填语义
                 mask = np.isnan(arr)
                 if mask.any():
-                    # 经典 numpy ffill: 用 maximum.accumulate(idx where !nan)
                     idx = np.where(~mask, np.arange(len(arr)), 0)
                     np.maximum.accumulate(idx, out=idx)
                     arr = arr[idx]
-                    # 开头若仍是 NaN(首批就缺),保留 NaN
                     first_valid = (~mask).argmax() if (~mask).any() else len(arr)
                     if first_valid > 0:
                         arr[:first_valid] = np.nan
@@ -94,6 +86,8 @@ class MarketData:
         valuation: dict[str, pd.DataFrame] | None = None,
         dividend: dict[str, pd.DataFrame] | None = None,
         financial: dict[str, pd.DataFrame] | None = None,
+        weekly_data: dict[str, pd.DataFrame] | None = None,
+        monthly_data: dict[str, pd.DataFrame] | None = None,
     ):
         if not stock_data:
             raise ValueError("MarketData requires non-empty stock_data")
@@ -103,10 +97,7 @@ class MarketData:
         self._dividend = dividend or {}
         self._financial = financial or {}
 
-        # 性能关键: 预构建 valuation/financial 的 numpy 缓存。
-        # 旧路径每次查询都 astype(str) + O(N) mask + per-NaN df.loc 回填,
-        # cProfile 实测占 screen() 72% (4.4s/6.1s)。新路径 init 一次性把日期转 str、
-        # 数值列做 ffill,查询走 np.searchsorted + 数组下标,~50x 加速。
+        # valuation/financial 的预编译表(走 searchsorted + 数组下标快速查询)
         self._valuation_cache: dict[str, _StaticTable] = {
             sym: _build_static_table(df, date_col="date")
             for sym, df in self._valuation.items()
@@ -117,31 +108,76 @@ class MarketData:
         }
 
         # 按 symbol 缓存升序 daily DataFrame(stock_data 入参允许降序,统一规整)
-        daily_cache: dict[str, pd.DataFrame] = {
-            sym: df.sort_values("date").reset_index(drop=True)
-            for sym, df in stock_data.items()
-        }
-        self._period_cache: dict[str, dict[str, pd.DataFrame]] = {"daily": daily_cache}
+        # 检测是否已带预算指标列(ma5 出现即视为预算路径,避免重复 compute)
+        daily_cache: dict[str, pd.DataFrame] = {}
+        for sym, df in stock_data.items():
+            d = df.sort_values("date").reset_index(drop=True)
+            if "ma5" not in d.columns:
+                d = compute_indicators(d)
+            daily_cache[sym] = d
 
-        # 性能关键: 缓存每个 (period, symbol) 的 date 列为 numpy 数组,
-        # _resolve_idx 用 np.searchsorted O(log N) 查询,避免 pandas O(N) mask 扫描。
-        # 历史回测在永久持有策略下 hot path 调用频次极高,优化前 O(N²),此处降到 O(N log N)。
+        # weekly/monthly:优先用入参(data_cache 已预算);未提供时初始化空,
+        # 由 _build_period_cache 在被请求时按需聚合(测试 / 单股回测路径)
+        weekly_cache: dict[str, pd.DataFrame] = {}
+        monthly_cache: dict[str, pd.DataFrame] = {}
+        if weekly_data:
+            for sym, df in weekly_data.items():
+                w = df.sort_values("date").reset_index(drop=True)
+                if "ma5" not in w.columns:
+                    w = compute_indicators(w)
+                weekly_cache[sym] = w
+        if monthly_data:
+            for sym, df in monthly_data.items():
+                m = df.sort_values("date").reset_index(drop=True)
+                if "ma5" not in m.columns:
+                    m = compute_indicators(m)
+                monthly_cache[sym] = m
+
+        self._period_cache: dict[str, dict[str, pd.DataFrame]] = {
+            "daily": daily_cache,
+        }
+        if weekly_cache:
+            self._period_cache["weekly"] = weekly_cache
+        if monthly_cache:
+            self._period_cache["monthly"] = monthly_cache
+
+        # date 数组缓存(searchsorted)
         self._date_arrays: dict[str, dict[str, np.ndarray]] = {
             "daily": {sym: df["date"].to_numpy() for sym, df in daily_cache.items()}
         }
-        # 性能关键: 缓存 OHLC 列为 numpy 数组(共享底层 buffer,几乎零内存代价)。
-        # engine._build_bar 每个 bar × 全部 symbol 调用,旧路径 df.iloc[i].to_dict()
-        # 单次 ~12µs,累积 15M+ 次成为新瓶颈。get_bar_at 走 numpy 直读 ~1.2µs,9.6x 加速。
+        for period in ("weekly", "monthly"):
+            if period in self._period_cache:
+                self._date_arrays[period] = {
+                    sym: df["date"].to_numpy()
+                    for sym, df in self._period_cache[period].items()
+                }
+
+        # OHLC 数组缓存(get_bar_at 热路径)
         self._ohlc_arrays: dict[str, dict[str, dict[str, np.ndarray]]] = {
             "daily": {sym: self._extract_ohlc(df) for sym, df in daily_cache.items()}
         }
+        for period in ("weekly", "monthly"):
+            if period in self._period_cache:
+                self._ohlc_arrays[period] = {
+                    sym: self._extract_ohlc(df)
+                    for sym, df in self._period_cache[period].items()
+                }
 
-        # 时间轴:取第一只股票的日历(参考股票),升序
+        # 指标列 numpy 数组缓存(get_indicator 走 O(1) 列下标)
+        # 结构:_indicator_arrays[period][symbol][col_name] = np.ndarray
+        self._indicator_arrays: dict[str, dict[str, dict[str, np.ndarray]]] = {}
+        for period, syms_df in self._period_cache.items():
+            self._indicator_arrays[period] = {}
+            for sym, df in syms_df.items():
+                self._indicator_arrays[period][sym] = self._extract_indicators(df)
+
+        # 时间轴:取第一只股票全历史日历(参考股票),升序
         ref_sym = next(iter(daily_cache))
         self.dates: list[str] = daily_cache[ref_sym]["date"].tolist()
 
-        # 启动时按 frequency 预聚合(daily 不需要)
-        if frequency in ("weekly", "monthly"):
+        # 向后兼容:若策略 frequency 为 weekly/monthly 但调用方未提供预算
+        # weekly/monthly_data,启动时按需聚合一次(此前 MarketData 的固定行为)。
+        if frequency in ("weekly", "monthly") and frequency not in self._period_cache:
             self._build_period_cache(frequency)
 
     # ---------- 内部 ----------
@@ -155,28 +191,54 @@ class MarketData:
             "low": df["low"].to_numpy(),
             "close": df["close"].to_numpy(),
         }
-        # volume 用于 broker 拒单:停牌填充 bar volume=0 不应成交
         if "volume" in df.columns:
             out["volume"] = df["volume"].to_numpy()
         return out
 
+    @staticmethod
+    def _extract_indicators(df: pd.DataFrame) -> dict[str, np.ndarray]:
+        """抽取所有 indicators.compute_indicators 输出列为 numpy 数组缓存。"""
+        # 标准列名集合,与 indicators.STANDARD_* 同步;不在的列直接跳过
+        candidate_cols = (
+            "ma5",
+            "ma10",
+            "ma20",
+            "ma30",
+            "ema12",
+            "ema26",
+            "macd_dif",
+            "macd_dea",
+            "macd_hist",
+            "vol_ma5",
+            "vol_ma10",
+            "ret_1",
+            "vol_20d",
+        )
+        out: dict[str, np.ndarray] = {}
+        for col in candidate_cols:
+            if col in df.columns:
+                out[col] = df[col].to_numpy(dtype=float)
+        return out
+
     def _build_period_cache(self, period: str) -> None:
-        """聚合所有 symbol 的日线为 weekly/monthly,缓存升序。"""
-        if period == "daily":
+        """聚合所有 symbol 的日线为 weekly/monthly,缓存升序(测试 fallback 路径)。"""
+        if period == "daily" or period in self._period_cache:
             return
-        agg_period = period  # aggregate_kline 接受 "weekly" / "monthly"
+        agg_period = period
         cache: dict[str, pd.DataFrame] = {}
         for sym, df in self._period_cache["daily"].items():
             agg = aggregate_kline(df, period=agg_period)
-            cache[sym] = agg.sort_values("date").reset_index(drop=True)
+            agg = agg.sort_values("date").reset_index(drop=True)
+            cache[sym] = compute_indicators(agg)
         self._period_cache[period] = cache
-        # 同步缓存 numpy date 数组供 _resolve_idx 二分查找
         self._date_arrays[period] = {
             sym: df["date"].to_numpy() for sym, df in cache.items()
         }
-        # 同步缓存 OHLC numpy(供 get_bar_at 快速路径)
         self._ohlc_arrays[period] = {
             sym: self._extract_ohlc(df) for sym, df in cache.items()
+        }
+        self._indicator_arrays[period] = {
+            sym: self._extract_indicators(df) for sym, df in cache.items()
         }
 
     def _get_period_df(self, symbol: str, period: str) -> pd.DataFrame | None:
@@ -192,9 +254,6 @@ class MarketData:
         - daily:用 symbol 自身 DataFrame,按 ``dates[idx]`` 反查最大 ``date <= 目标``
           的行(允许个股停牌/交易日不齐)
         - weekly/monthly:在聚合后的 DataFrame 中查找最近一根「截止日 <= 目标」的周/月线
-
-        实现:date 列单调递增(YYYY-MM-DD 字符串字典序 == 时间序),
-        用 np.searchsorted(side="right") - 1 做 O(log N) 二分查找。
         """
         if idx < 0 or idx >= len(self.dates):
             return None, -1
@@ -205,7 +264,6 @@ class MarketData:
         if arr is None or len(arr) == 0:
             return df, -1
         target_date = self.dates[idx]
-        # searchsorted(side="right") 返回首个 > target 的位置,-1 即 <=target 的最后位置
         pos = int(np.searchsorted(arr, target_date, side="right")) - 1
         if pos < 0:
             return df, -1
@@ -226,18 +284,9 @@ class MarketData:
     def get_bar_at(
         self, symbol: str, idx: int, period: str = "daily", strict: bool = True
     ) -> dict | None:
-        """快速 OHLC 取值(engine._build_bar 热路径,9.6x 优于 get_price)。
-
-        - 直接读预缓存的 numpy 数组,不构造 Series / dict.iloc / to_dict
-        - ``strict=True``:仅当 idx 对应日期在 symbol 自身日历上**精确存在**时返回
-          (停牌/上市晚的当日跳过);engine 用此模式只对当日有 bar 的 symbol 建仓
-        - ``strict=False``:允许回退到 ≤ target 的最近一根(等价 get_price 语义)
-
-        返回 ``{"open", "high", "low", "close", "date"}`` dict 或 None。
-        """
+        """快速 OHLC 取值(engine._build_bar 热路径)。"""
         if idx < 0 or idx >= len(self.dates):
             return None
-        # 触发懒加载 weekly/monthly cache(若需要)
         if period not in self._period_cache:
             self._build_period_cache(period)
         arr = self._date_arrays.get(period, {}).get(symbol)
@@ -279,8 +328,6 @@ class MarketData:
         return df.iloc[start:end].to_dict(orient="records")
 
     def get_valuation(self, symbol: str, date: str) -> dict | None:
-        # 走预构建的 _StaticTable 走 searchsorted + 数组下标,
-        # 旧 pandas 路径单次 ~590µs → 新路径 ~10µs(cProfile 实测占用从 72% 降至 ~5%)
         table = self._valuation_cache.get(symbol)
         if table is None or table.n == 0:
             return None
@@ -297,15 +344,12 @@ class MarketData:
         return result
 
     def get_dividend(self, symbol: str, date: str) -> pd.DataFrame | None:
-        # 与旧 ScreenerContext 保持一致:返回完整 DataFrame(策略自行按 date 过滤)
         df = self._dividend.get(symbol)
         if df is None or df.empty:
             return None
         return df
 
     def get_financial(self, symbol: str, date: str) -> dict | None:
-        # 同 get_valuation 走预编译 _StaticTable;financial 不做 ffill,
-        # 保持与旧逻辑一致(NaN 直接返回 None,不向前回填)
         table = self._financial_cache.get(symbol)
         if table is None or table.n == 0:
             return None
@@ -320,12 +364,54 @@ class MarketData:
             result[col] = arr[pos]
         return result
 
+    # ---------- 指标查表(get_indicator)----------
+
+    def get_indicator(
+        self,
+        name: str,
+        symbol: str,
+        idx: int | None = None,
+        period: str = "daily",
+        **kwargs: Any,
+    ) -> float | None:
+        """O(1) 查预算指标。命中标准列返回 float / None,否则返回 None 让上层 fallback。
+
+        - name 解析:见 indicators.resolve_indicator_column
+        - 时间映射:与 _resolve_idx 一致(period 指定周期,idx 是 daily 轴上的位置)
+        - NaN(数据不足窗口期)返回 None,业务方按"无效"处理
+        """
+        if idx is None:
+            return None
+        col = resolve_indicator_column(name, **kwargs)
+        if col is None:
+            return None
+        # 触发 weekly/monthly 懒聚合(若需要)
+        if period not in self._period_cache:
+            self._build_period_cache(period)
+        period_arrs = self._indicator_arrays.get(period, {})
+        sym_arrs = period_arrs.get(symbol)
+        if sym_arrs is None:
+            return None
+        arr = sym_arrs.get(col)
+        if arr is None:
+            return None
+        # 把 daily idx 映射到 period 上的行号
+        date_arr = self._date_arrays.get(period, {}).get(symbol)
+        if date_arr is None or len(date_arr) == 0:
+            return None
+        if idx < 0 or idx >= len(self.dates):
+            return None
+        target = self.dates[idx]
+        pos = int(np.searchsorted(date_arr, target, side="right")) - 1
+        if pos < 0 or pos >= len(arr):
+            return None
+        v = arr[pos]
+        if isinstance(v, float) and math.isnan(v):
+            return None
+        return float(v)
+
     def indicator(
         self, name: str, symbol: str, idx: int | None = None, **kwargs: Any
     ) -> Any:
-        """指标计算入口(Phase 3.2 占位实现,Phase 4 接 DuckDB / 预算缓存)。
-
-        当前未启用预算缓存;调用方(Context)在 Phase 3 阶段尚未对此做硬依赖,
-        T3.3 Engine 与策略测试均通过 mock 替代。返回 None 以保持接口可调用。
-        """
-        return None
+        """旧接口别名 — 透传到 get_indicator,保持向后兼容。"""
+        return self.get_indicator(name, symbol, idx=idx, **kwargs)

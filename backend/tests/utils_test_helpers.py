@@ -49,6 +49,22 @@ class MockContext:
         # 下单记录(测试可断言)
         self.orders: list[tuple[str, int]] = []
 
+        # 因子记录(策略雷达使用):{symbol: {factor_name: value}}
+        self._factors: dict[str, dict[str, Any]] = {}
+
+    # ===== 因子记录 =====
+    def record_factor(self, symbol: str, name: str, value: Any) -> None:
+        self._factors.setdefault(symbol, {})[name] = value
+
+    def get_factors(self, symbol: str) -> dict[str, Any]:
+        return dict(self._factors.get(symbol, {}))
+
+    def get_all_factors(self) -> dict[str, dict[str, Any]]:
+        return self._factors
+
+    def reset_factors(self) -> None:
+        self._factors = {}
+
     # ===== 数据访问 =====
     def get_dividend(self, symbol: str):
         return self._dividend.get(symbol)

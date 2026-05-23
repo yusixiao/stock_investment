@@ -1,11 +1,15 @@
 """全市场回测数据缓存(方案 A:K 线 + 估值 + 分红 + 财务全部常驻内存)。
 
 设计:
-- 按 market("A"/"HK"/"US")组织 entry,每个 entry 含四份完整数据
+- 按 market("A"/"HK"/"US")组织 entry,每个 entry 含四份完整数据 +
+  预聚合 weekly/monthly + 预算标准指标(ma/ema/macd/vol_ma/ret_1/vol_20d)
 - HK/US 暂无估值/分红/财务数据,只缓存 K 线
 - 加载在后台线程执行,通过 _progress 暴露进度
-- backtest 时通过 get_market() 拿 bundle,按 start_date/end_date/symbols 切片
-- 数据更新后调用 invalidate(market) 失效缓存(暂不接 scheduler,手动触发)
+- backtest 时通过 get_market() 拿 bundle,按 symbols 切片(slice_bundle 返回
+  SlicedBundle:全历史 daily/weekly/monthly + iter_start/iter_end)。日期范围
+  仅用于决定迭代窗口,**不再裁剪 daily 数据**,这样月线 MA20 等长窗口指标
+  在 1y lookback 下仍然有效(2026-05-22 架构升级,见 AGENTS.md / 决策 #9)。
+- 数据更新后调用 invalidate(market) 失效缓存(scheduler 06:00 完成自动重建)
 
 线程安全:
 - _cache 写入用 _lock 保护
@@ -18,11 +22,13 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
+from services.backtest.indicators import compute_indicators
 from services.duckdb_store import get_store
+from services.stock_data import aggregate_kline
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +40,8 @@ SUPPORTED_MARKETS = ("A", "HK", "US")
 class MarketBundle:
     market: str
     stock_data: dict[str, pd.DataFrame]
+    weekly_data: dict[str, pd.DataFrame] = field(default_factory=dict)
+    monthly_data: dict[str, pd.DataFrame] = field(default_factory=dict)
     valuation_data: dict[str, pd.DataFrame] = field(default_factory=dict)
     dividend_data: dict[str, pd.DataFrame] = field(default_factory=dict)
     financial_data: dict[str, pd.DataFrame] = field(default_factory=dict)
@@ -42,6 +50,22 @@ class MarketBundle:
     @property
     def symbols_count(self) -> int:
         return len(self.stock_data)
+
+
+@dataclass
+class SlicedBundle:
+    """slice_bundle 的返回值。daily/weekly/monthly 均保留 symbols 子集的全历史,
+    iter_start_idx / iter_end_idx 限定回测主循环的迭代窗口(基于参考股 daily 日历)。
+    """
+
+    stock_data: dict[str, pd.DataFrame]
+    weekly_data: dict[str, pd.DataFrame]
+    monthly_data: dict[str, pd.DataFrame]
+    valuation_data: dict[str, pd.DataFrame]
+    dividend_data: dict[str, pd.DataFrame]
+    financial_data: dict[str, pd.DataFrame]
+    iter_start_idx: int
+    iter_end_idx: int  # inclusive
 
 
 @dataclass
@@ -70,9 +94,7 @@ def _load_stock_data_full(market: str) -> dict[str, pd.DataFrame]:
 
 
 def _load_valuation(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """估值序列(English schema:date / peTTM / pbMRQ / psTTM / pcfNcfTTM)。
-    源:DuckDB v_{market}_daily 的估值列(A 股 BaoStock 自带)。
-    """
+    """估值序列(English schema:date / peTTM / pbMRQ / psTTM / pcfNcfTTM)。"""
     try:
         out = get_store().query_valuation_bulk(market, symbols)
         logger.info(
@@ -85,9 +107,7 @@ def _load_valuation(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 
 def _load_dividend(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """分红事件(English schema:date / cash_dividend / stocks_ps / record_date / pay_date)。
-    源:DuckDB v_{market}_dividend(A 股 BaoStock,HK/US 从 cashflow.DIVIDENDS_PAID 派生)。
-    """
+    """分红事件(English schema:date / cash_dividend / stocks_ps / record_date / pay_date)。"""
     try:
         out = get_store().query_dividend_bulk(market, symbols)
         logger.info(
@@ -100,10 +120,47 @@ def _load_dividend(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 
 def _load_financial(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """财务指标(English schema:REPORT_DATE / ROEJQ / EPSJB / BPS / TOTAL_SHARE / ...)。
-    源:DuckDB v_{market}_indicator(EastMoney)。
-    """
+    """财务指标(English schema:REPORT_DATE / ROEJQ / EPSJB / BPS / TOTAL_SHARE / ...)。"""
     return get_store().query_financial_bulk(market, symbols, fin_type="indicator")
+
+
+def _aggregate_and_compute(
+    daily: dict[str, pd.DataFrame], progress: LoadProgress
+) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
+    """对每只股票预聚合 weekly/monthly 并预算指标。
+
+    daily 入参在调用前已经过 ``compute_indicators``;weekly/monthly 由 daily
+    经 ``aggregate_kline`` 聚合后再调一次 compute_indicators。
+    """
+    weekly: dict[str, pd.DataFrame] = {}
+    monthly: dict[str, pd.DataFrame] = {}
+    daily_with_indicators: dict[str, pd.DataFrame] = {}
+
+    total = len(daily)
+    progress.total = total
+    progress.current = 0
+    progress.phase = "预算指标(daily/weekly/monthly)..."
+
+    for sym, df in daily.items():
+        # daily:升序后追加指标列
+        d = df.sort_values("date").reset_index(drop=True)
+        daily_with_indicators[sym] = compute_indicators(d)
+
+        # weekly/monthly:从原始 daily(无指标列)聚合,再追加指标列。
+        # aggregate_kline 用 OHLCV 聚合,指标列对其无意义,所以用未加指标的 d。
+        w = aggregate_kline(d, period="weekly")
+        if w is not None and not w.empty:
+            w = w.sort_values("date").reset_index(drop=True)
+            weekly[sym] = compute_indicators(w)
+
+        m = aggregate_kline(d, period="monthly")
+        if m is not None and not m.empty:
+            m = m.sort_values("date").reset_index(drop=True)
+            monthly[sym] = compute_indicators(m)
+
+        progress.current += 1
+
+    return daily_with_indicators, weekly, monthly
 
 
 def _load_market_blocking(market: str) -> MarketBundle:
@@ -118,14 +175,20 @@ def _load_market_blocking(market: str) -> MarketBundle:
     p.total = 0
 
     try:
-        stock_data = _load_stock_data_full(market)
-        symbols = list(stock_data.keys())
+        stock_data_raw = _load_stock_data_full(market)
+        symbols = list(stock_data_raw.keys())
         p.current = len(symbols)
         p.total = len(symbols)
-        p.phase = f"K 线加载完成({len(symbols)} 只),加载估值/分红/财务..."
+        p.phase = f"K 线加载完成({len(symbols)} 只),聚合 weekly/monthly + 预算指标..."
 
+        # 预聚合 + 预算指标(daily/weekly/monthly 三套)— 是本架构升级的关键
+        # 一次性付出 30-60s 成本,后续回测/雷达全部 O(1) 查列
+        stock_data, weekly_data, monthly_data = _aggregate_and_compute(
+            stock_data_raw, p
+        )
+
+        p.phase = f"指标预算完成,加载估值/分红/财务({len(symbols)} 只)..."
         # DuckDB 单连接不支持并发查询(会触发 "result closed"),串行执行。
-        # 三个 bulk 查询合计 ~10-30s,影响可接受;视图缺失返回空 dict(防御)。
         valuation_data = _load_valuation(market, symbols)
         dividend_data = _load_dividend(market, symbols)
         financial_data = _load_financial(market, symbols)
@@ -133,6 +196,8 @@ def _load_market_blocking(market: str) -> MarketBundle:
         bundle = MarketBundle(
             market=market,
             stock_data=stock_data,
+            weekly_data=weekly_data,
+            monthly_data=monthly_data,
             valuation_data=valuation_data,
             dividend_data=dividend_data,
             financial_data=financial_data,
@@ -142,15 +207,18 @@ def _load_market_blocking(market: str) -> MarketBundle:
             _cache[market] = bundle
         p.status = "loaded"
         p.phase = (
-            f"完成:K 线 {len(stock_data)} 只 / 估值 {len(valuation_data)} / "
+            f"完成:K 线 {len(stock_data)} / 周 {len(weekly_data)} / "
+            f"月 {len(monthly_data)} / 估值 {len(valuation_data)} / "
             f"分红 {len(dividend_data)} / 财务 {len(financial_data)}"
         )
         p.finished_at = time.time()
         logger.info(
-            "data_cache: %s loaded in %.1fs (stocks=%d)",
+            "data_cache: %s loaded in %.1fs (stocks=%d, weekly=%d, monthly=%d)",
             market,
             p.finished_at - p.started_at,
             len(stock_data),
+            len(weekly_data),
+            len(monthly_data),
         )
         return bundle
     except Exception as e:
@@ -240,16 +308,16 @@ def slice_bundle(
     symbols: list[str] | None,
     start_date: str | None,
     end_date: str | None,
-) -> tuple[
-    dict[str, pd.DataFrame],
-    dict[str, pd.DataFrame],
-    dict[str, pd.DataFrame],
-    dict[str, pd.DataFrame],
-]:
-    """从 bundle 切出回测所需的子集(浅切片,不复制底层 buffer)。
+) -> SlicedBundle:
+    """从 bundle 切出 symbols 子集 + 决定迭代窗口。
 
-    - symbols=None → 全市场
-    - start/end=None → 不限日期
+    ⚠️ 关键变化(2026-05-22):**daily/weekly/monthly 数据始终保留全历史**,
+    start_date/end_date 仅用于计算 iter_start_idx/iter_end_idx。这样 1y lookback
+    回测 + 月线 MA20 长窗口指标也能正确运转(否则 daily 切到 1y 后聚合月线只剩 12 根)。
+
+    - symbols=None → 全市场子集
+    - start/end=None → iter window 默认覆盖参考股全历史
+    - 参考股 = 子集第一只(用作时间轴,与 MarketData.dates 一致)
     """
     target_syms = set(symbols) if symbols else None
 
@@ -259,23 +327,53 @@ def slice_bundle(
         return {s: d[s] for s in target_syms if s in d}
 
     stock = _subset(bundle.stock_data)
+    weekly = _subset(bundle.weekly_data)
+    monthly = _subset(bundle.monthly_data)
     val = _subset(bundle.valuation_data)
     div = _subset(bundle.dividend_data)
     fin = _subset(bundle.financial_data)
 
-    if start_date or end_date:
-        # 只切 K 线 — engine 用 stock_data 第一只股票的 date 列作为时间轴,
-        # 必须按 [start, end] 缩窄,否则回测会跑全历史。
-        # 估值/分红/财务都是 lookup 模式(按 current_date 取最近一根),全量更安全
-        # 也跟旧 router 行为一致(_load_valuation/dividend/financial 均不按日期过滤)。
-        def _slice_kline(df: pd.DataFrame) -> pd.DataFrame:
-            mask = pd.Series(True, index=df.index)
-            if start_date:
-                mask &= df["date"] >= start_date
-            if end_date:
-                mask &= df["date"] <= end_date
-            return df.loc[mask].reset_index(drop=True) if not mask.all() else df
+    if not stock:
+        return SlicedBundle(
+            stock_data={},
+            weekly_data={},
+            monthly_data={},
+            valuation_data=val,
+            dividend_data=div,
+            financial_data=fin,
+            iter_start_idx=0,
+            iter_end_idx=-1,
+        )
 
-        stock = {s: _slice_kline(df) for s, df in stock.items()}
+    # 用参考股的全历史 date 列作为迭代时间轴
+    ref_sym = next(iter(stock))
+    ref_dates = stock[ref_sym]["date"].to_numpy()
+    n = len(ref_dates)
 
-    return stock, val, div, fin
+    if n == 0:
+        iter_start = 0
+        iter_end = -1
+    else:
+        # start_date / end_date 都按 "≥/≤" 边界对齐到最近的存在日历日
+        if start_date:
+            iter_start = int(np.searchsorted(ref_dates, start_date, side="left"))
+            iter_start = min(iter_start, n - 1)
+        else:
+            iter_start = 0
+        if end_date:
+            # searchsorted right - 1 = 最大 ≤ end_date 的索引
+            iter_end = int(np.searchsorted(ref_dates, end_date, side="right")) - 1
+            iter_end = max(iter_end, 0)
+        else:
+            iter_end = n - 1
+
+    return SlicedBundle(
+        stock_data=stock,
+        weekly_data=weekly,
+        monthly_data=monthly,
+        valuation_data=val,
+        dividend_data=div,
+        financial_data=fin,
+        iter_start_idx=iter_start,
+        iter_end_idx=iter_end,
+    )

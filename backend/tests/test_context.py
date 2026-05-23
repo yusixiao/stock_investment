@@ -208,3 +208,43 @@ def test_order_target_percent_uses_equity(ctx):
     ctx._broker.portfolio.equity.assert_called_once_with("2024-03-29")
     kwargs = ctx._broker.submit_order.call_args.kwargs
     assert kwargs["shares"] == 10000
+
+
+# ===== 因子收集(策略雷达 / 选股回测) =====
+
+
+def test_record_factor_writes_and_reads(ctx):
+    ctx.record_factor("000001", "PE*PB", 18.5)
+    ctx.record_factor("000001", "ROE", 12.3)
+    ctx.record_factor("600519", "PE*PB", 32.1)
+    assert ctx.get_factors("000001") == {"PE*PB": 18.5, "ROE": 12.3}
+    assert ctx.get_factors("600519") == {"PE*PB": 32.1}
+    assert ctx.get_factors("999999") == {}
+
+
+def test_record_factor_overwrites_same_key(ctx):
+    ctx.record_factor("000001", "PE", 10)
+    ctx.record_factor("000001", "PE", 11)
+    assert ctx.get_factors("000001") == {"PE": 11}
+
+
+def test_get_factors_returns_copy(ctx):
+    ctx.record_factor("000001", "PE", 10)
+    snapshot = ctx.get_factors("000001")
+    snapshot["PE"] = 999
+    assert ctx.get_factors("000001") == {"PE": 10}
+
+
+def test_reset_factors_clears(ctx):
+    ctx.record_factor("000001", "PE", 10)
+    ctx.record_factor("600519", "ROE", 20)
+    ctx.reset_factors()
+    assert ctx.get_factors("000001") == {}
+    assert ctx.get_all_factors() == {}
+
+
+def test_get_all_factors_returns_internal_dict(ctx):
+    ctx.record_factor("A", "PE", 1)
+    ctx.record_factor("B", "PB", 2)
+    all_f = ctx.get_all_factors()
+    assert all_f == {"A": {"PE": 1}, "B": {"PB": 2}}

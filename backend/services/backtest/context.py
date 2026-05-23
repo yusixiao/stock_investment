@@ -28,6 +28,36 @@ class Context:
         self.new_symbols: list[str] = []
         self._remove_callback: Callable[[str], None] | None = None
 
+        # 因子收集(策略雷达 / 选股回测用):
+        # helper 在筛选时用 record_factor(s, name, value) 记录策略实际用到的判断
+        # 中间值,API 层在 hits 上读取 get_factors(s) 用于前端展示。
+        # 回测主路径不需要快照,Engine 选股回测分支才会在每个 bar screen() 后
+        # 把 hits 的 factors 拷贝出来,然后通过 reset_factors() 清空给下个 bar 用。
+        self._factors: dict[str, dict[str, Any]] = {}
+
+    # ===== 因子收集 =====
+    def record_factor(self, symbol: str, name: str, value: Any) -> None:
+        """记录某只股票在当前 bar 评估时的因子值(策略筛选用到的中间值)。
+        多次记录同一 (symbol, name) 后值覆盖前值。"""
+        bucket = self._factors.get(symbol)
+        if bucket is None:
+            bucket = {}
+            self._factors[symbol] = bucket
+        bucket[name] = value
+
+    def get_factors(self, symbol: str) -> dict[str, Any]:
+        """读当前 bar 已记录的因子。返回浅 copy 的 dict(策略雷达 engine
+        会进一步深拷贝快照,普通调用方拿到的是只读视图即可)。"""
+        return dict(self._factors.get(symbol, {}))
+
+    def get_all_factors(self) -> dict[str, dict[str, Any]]:
+        """读全部 symbol 的因子(Engine 选股回测分支批量取 hits 时使用)。"""
+        return self._factors
+
+    def reset_factors(self) -> None:
+        """清空因子收集(Engine 在每个 bar screen() 之前调用,避免跨 bar 残留)。"""
+        self._factors = {}
+
     # ===== 累计池 =====
     def set_pool(
         self,
@@ -65,6 +95,14 @@ class Context:
 
     def indicator(self, name: str, symbol: str, **kwargs):
         return self._market_data.indicator(name, symbol, idx=self.current_idx, **kwargs)
+
+    def get_indicator(
+        self, name: str, symbol: str, period: str = "daily", **kwargs
+    ) -> float | None:
+        """O(1) 查预算指标(不命中标准列时返回 None,helper 自行 fallback)。"""
+        return self._market_data.get_indicator(
+            name, symbol, idx=self.current_idx, period=period, **kwargs
+        )
 
     # ===== 持仓与下单(代理 broker) =====
     @property
@@ -144,18 +182,51 @@ class Context:
 
 
 class ScreenContext:
-    """选股阶段轻量 Context — 无 broker、无日志,只代理数据访问。
+    """选股阶段轻量 Context — 无 broker,可选写决策日志。
 
-    用于 /api/screener/run 这类一次性选股调用,不涉及下单/回测循环。
+    用于:
+    - /api/screener/run 这类一次性选股调用(不传 sink/strategy → 日志 no-op)
+    - Engine.run_scan() 雷达扫描(传入 strategy + log_sink → 日志正常落盘,
+      2026-05-22 修复 #ScreenContext-log-no-op-bug)
+
     与 Context 接口兼容(策略 .screen() 可直接复用)。
     """
 
-    def __init__(self, *, market_data, idx: int):
+    def __init__(
+        self,
+        *,
+        market_data,
+        idx: int,
+        strategy=None,
+        log_sink=None,
+    ):
         self._market_data = market_data
         self.current_idx = idx
         self.current_date = market_data.dates[idx] if market_data.dates else None
         self.target_symbols: set[str] = set()
         self.new_symbols: list[str] = []
+        # 决策日志:无 sink 时所有 log_* 静默,接近旧行为
+        self.strategy = strategy
+        self.log_sink = log_sink
+        # 因子收集 — 与 Context 同语义,helper 函数靠这个统一接口写入,
+        # 上层(/api/screener/run 或 scan-radar)读 get_factors / get_all_factors。
+        self._factors: dict[str, dict[str, Any]] = {}
+
+    def record_factor(self, symbol: str, name: str, value: Any) -> None:
+        bucket = self._factors.get(symbol)
+        if bucket is None:
+            bucket = {}
+            self._factors[symbol] = bucket
+        bucket[name] = value
+
+    def get_factors(self, symbol: str) -> dict[str, Any]:
+        return dict(self._factors.get(symbol, {}))
+
+    def get_all_factors(self) -> dict[str, dict[str, Any]]:
+        return self._factors
+
+    def reset_factors(self) -> None:
+        self._factors = {}
 
     def get_price(self, symbol: str, period: str = "daily"):
         return self._market_data.get_price(symbol, period=period, idx=self.current_idx)
@@ -177,15 +248,40 @@ class ScreenContext:
     def indicator(self, name: str, symbol: str, **kwargs):
         return self._market_data.indicator(name, symbol, idx=self.current_idx, **kwargs)
 
-    # 选股不写日志,接口兼容用
-    def log_pass(self, *args, **kwargs) -> None:
-        pass
+    def get_indicator(
+        self, name: str, symbol: str, period: str = "daily", **kwargs
+    ) -> float | None:
+        return self._market_data.get_indicator(
+            name, symbol, idx=self.current_idx, period=period, **kwargs
+        )
 
-    def log_reject(self, *args, **kwargs) -> None:
-        pass
+    # ===== 决策日志(可选)=====
+    # log_sink 为 None 时所有方法静默,保持与旧 ScreenContext 行为兼容
+    def _common_log_kwargs(self) -> dict[str, Any]:
+        return {
+            "idx": self.current_idx,
+            "ts": self.current_date,
+            "freq": getattr(self.strategy, "frequency", "") if self.strategy else "",
+        }
 
-    def log_flow(self, *args, **kwargs) -> None:
-        pass
+    def log_pass(self, symbol: str, stage: str, **values: Any) -> None:
+        if self.log_sink is None:
+            return
+        self.log_sink.log_pass(symbol, stage, **self._common_log_kwargs(), **values)
+
+    def log_reject(self, symbol: str, stage: str, reason: str, **values: Any) -> None:
+        if self.log_sink is None:
+            return
+        self.log_sink.log_reject(
+            symbol, stage, reason=reason, **self._common_log_kwargs(), **values
+        )
+
+    def log_flow(self, stage: str, **counts: Any) -> None:
+        if self.log_sink is None:
+            return
+        self.log_sink.log_flow(
+            stage, idx=self.current_idx, ts=self.current_date, **counts
+        )
 
     def remove_target(self, symbol: str) -> None:
         pass
