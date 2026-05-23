@@ -31,13 +31,20 @@
 - **AKShare 在本环境会超时** — 调用 API 的代码必须用 mock 测试
 - **`write` 工具对超大内容会中止** — 拆成多次小写
 - **前端端口**:3001(`vite.config.ts`),代理 `/api → 127.0.0.1:8000`
-- **策略频率**:`ScreenerStrategy.frequency = "daily"|"weekly"|"monthly"`。Engine 启动时预聚合周/月线缓存,Context 按频率自动选数据
-- **混频 pipeline**:按日粒度迭代,每个 screener 仅在自身周期切换时重算,否则复用缓存。匹配日期仅在 `any_executed=True`(至少一个 screener 实跑)时记录,避免重复
-- **Match date 频率语义**:`daily=YYYY-MM-DD`、`weekly=YYYY-Www`、`monthly=YYYY-MM`(季/半年/年保留)。`format_match_date()` + `date_belongs_to()` 处理跨频率匹配
-- **链式回测**:`POST /api/backtest/run` 接收可选 `source_task_id`,后端解析源任务 `screened_symbols`,只 load 这些 parquet,继承日期范围。`backtest_tasks` 表有 `source_task_id` 列
-- **Signal Table 模式**:当链路提供预算好的 `screened_symbols + match_dates` 时,Engine 跳过实时选股,Buyer 在信号日触发,Seller 每日评估
-- **BuySellEngine 调仓**:维护 `target_symbols` 累计池;Seller 每天跑、平仓时通过 `ctx.remove_target()` 移除;Buyer 仅在有新增时跑。执行顺序:**先 Seller 后 Buyer**,不允许透支(Broker 强制)。`TraderContext` 提供 `target_symbols / new_symbols / remove_target() / source_matches / get_match_dates(symbol)`
-- **策略组(StrategyGroup)**:把多 pipeline 串成可复用执行单元。SQLite:`strategy_groups(group_id, name, pipeline JSON, join_modes JSON)` + `group_runs(run_id, group_id, dates, execution_mode, status, steps_result, final_result, summary)`。两种执行模式:一键(自动顺序)/ 分步(每步暂停,用户确认)。`initial_capital` 在 run 级(默认 100 万)
+- **策略模型(2026-05 重构,Phase 6)**:**Pipeline + Screener/Buyer/Seller 三角拆分模型已废弃**。当前为**单一 Strategy 类**(`strategies/base.py::Strategy` / `ScreenerStrategy`),策略实现 `screen(ctx, symbols) -> List[str]` + 可选 `on_buy(ctx, symbol)` / `on_sell(ctx, symbol)` hooks。示例:`strategies/examples/ma_tangle_value_strategy.py`、`ma_close_strategy.py`
+- **API 兼容**:`/api/screener/run` 与 `/api/backtest/run` 仍接收 `pipeline: []` 数组,但**只取首元素**加载策略类(importlib),应用参数覆盖,执行 `screen` / 完整回测
+- **统一 Context**(`backend/services/backtest/context.py`):`Context` 类**取代旧 ScreenerContext / TraderContext**,集中管理市场数据访问、broker 下单、决策日志、symbol pool 注入(每根 bar 由 Engine 注入)、因子收集(`record_factor` / `get_factors` / `reset_factors`)。轻量版 `ScreenContext` 用于 `/api/screener/run` 与 scan-radar(无 broker、可选 `log_sink`)
+- **MarketData 适配器**(`backend/services/backtest/market_data.py`):BacktestEngine 数据层。预计算 numpy 缓存(daily OHLC 数组、日期数组、估值/财务表),日期索引用二分查找(O(log N))。**启动时预聚合周/月线**(`aggregate_kline`),其余频率懒加载。`get_bar_at` 比 `get_price` 快 ~9.6×。strict 模式仅在目标日期精确匹配 period 末日时返回 bar
+- **指标预计算**(`backend/services/backtest/indicators.py`,Phase 6 新增):数据加载阶段一次性计算 MA(5/10/20/30) + EMA + MACD + Volume MA + 1日收益 + 20日波动率,挂到 DataFrame 列上。Context 通过 `get_indicator(name, symbol)` O(1) 查找。MA/EMA 窗口决策:5/10/20/30(用户 2026-05 决定)
+- **BacktestEngine**(`backend/services/backtest/engine.py`):统一执行流,两种模式:
+  - `run()` — 完整回测:迭代窗口内每根 bar,定期调 `screen()`(按策略频率),累积 `target_symbols`,broker 撮合,触发 `on_buy/on_sell` hooks,输出 metrics/equity_curve/trades + 决策日志
+  - `run_scan()` — 雷达扫描模式:沿时间线每个频率周期跑一次 `screen()`,收集所有 hits + 因子值,服务于 `/api/backtest/scan-radar`
+- **迭代窗口**(2026-05):构造器接收 `iter_start / iter_end` + period 数据,允许长指标 lookback 从更早日期预热,但只在窗口内产生交易/扫描结果
+- **数据缓存层**(`backend/services/backtest/data_cache.py`):全市场 `MarketBundle`(symbol → DataFrame mapping + 估值/分红/财务字典),`slice_bundle()` 派生 `SlicedBundle`(可迭代,向后兼容),scheduler 市场更新后自动 invalidate + rebuild
+- **决策日志**(`DecisionLogSink`):每个回测/扫描任务产出独立日志目录,记录 screen 决策、买卖动作、因子值。雷达扫描默认开启
+- **链式回测**:`POST /api/backtest/run` 接收可选 `source_task_id`,继承源任务 `screened_symbols` + 日期范围。`backtest_tasks` 表有 `source_task_id` 列
+- **Signal Table 模式**:链路提供预算好的 `screened_symbols + match_dates` 时,Engine 跳过实时选股,在信号日按 hooks 执行
+- **策略雷达**(StrategyRadar):基于 `run_scan()`,前端组件支持 lookback(1m/3m/6m/1y/...)、参数对话框(createPortal)、结果导出 Excel、多 hits 单行+hit 数列、涨跌幅按信号日累计、因子值 pill 展示
 - **后端架构 DDD 三层**:`adapters/`(外部数据源)→ `repositories/`(parquet/DuckDB I/O)→ `services/`(领域服务)。`models/` 定义 Pydantic 实体,`domain/` 放领域常量
 - **测试**:550 个 case,`python -m pytest backend/tests/ -x -q`。AKShare 必须 mock(`test_adapters.py` 等)
 
@@ -45,15 +52,12 @@
 
 - ~~`data/kline/A/raw/`:不复权;`data/kline/A/qfq/`:前复权~~ 已废弃,现统一走 `data/market/A/daily/` + DuckDB `query_qfq_kline` ASOF JOIN 派生
 - Parquet 7 列(date 字符串、open/high/low/close/volume/amount float64),日期降序
-- 引擎三种执行路径:
-  - `run(mode="screen")` — **选股模式**:仅对最后一根 bar 评估,返回 `{"screened_symbols": [...]}`。供 `/api/screener/run`
-  - `run()` 无 trader — **选股回测**:全历史迭代+周期缓存,返回带 `match_dates` 的列表。供 `/api/backtest/run` 无 trader 时
-  - `run()` 带 trader — **完整回测**:返回 metrics / equity_curve / trades
-- 任务结果持久化到 SQLite `backtest_tasks` 表;进度仍存内存
-- **关键性能修复**:月线策略原本会引发 `N_days × N_stocks × monthly_aggregation`。修复:(1) Engine 启动时预聚合周/月线缓存;(2) `ScreenerContext._get_data_for_freq()` 按频率取数;(3) 回测循环按 `_period_key()` 缓存,周期未变跳过执行
-- **Match date 重复 bug**:月线策略复用缓存时每天都记录 → 用 `any_executed` 标志修复
-- `aggregate_kline()`(`services/stock_data.py`)处理 W-FRI / M 聚合
-- **BuySellEngine 设计**(2026-05-11):TraderContext 暴露 `target_symbols / new_symbols`,Seller 平仓后调 `remove_target()`
+- BacktestEngine 两种模式:
+  - **`run_scan()`** — 雷达扫描:每个频率周期触发一次 `strategy.screen()`,聚合 hits + 因子值,服务 `/api/backtest/scan-radar` 与 `/api/screener/run`(后者退化为只评估最后一根 bar)
+  - **`run()`** — 完整回测:窗口内逐 bar 迭代,frequency 切换时调 screen() 累积 target pool,触发 `on_buy/on_sell` hooks,输出 metrics/equity_curve/trades
+- 任务结果持久化到 SQLite `backtest_tasks` 表(`final_result` 列存完整 JSON);进度仍存内存
+- **性能优化**:`MarketData` 启动时预聚合周/月线 + 预计算所有指标列(`indicators.py`),`get_bar_at` 用 numpy 二分查找,比 `get_price` 快 ~9.6×。Context 的 `get_indicator(name, symbol)` 直接读 DataFrame 列,O(1)
+- `aggregate_kline()`(`services/stock_data.py`)处理 W-FRI / M 聚合,被 MarketData 启动时调用
 - **DuckDB 查询层**(`services/duckdb_store.py`):用 `read_parquet()` 注册视图(`v_a_daily / v_hk_daily / v_us_daily / v_*_adjust_factor / v_*_{income,balance,cashflow,indicator}`),不导入数据
 - **前端从 Vue 迁到 React**(2025 末):旧版备份保留在 `frontend/src_vue_backup/`
 - **回测页三 Tab 结构**:策略回测(BacktestAnalysis)/ 策略雷达(StrategyRadar)/ 市场监控(MarketMonitor)
