@@ -6,13 +6,29 @@ from __future__ import annotations
 from .protocol import Event
 
 
-def thinking(*, agent_id: str, agent_label: str, message: str) -> Event:
-    return {
-        "type": "thinking",
-        "agent_id": agent_id,
-        "agent_label": agent_label,
-        "message": message,
-    }
+def thinking(
+    *,
+    agent_id: str | None = None,
+    agent_label: str | None = None,
+    message: str | None = None,
+    payload: dict | None = None,
+) -> Event:
+    """thinking 事件:agent 启动或路由澄清提示。
+
+    - 普通用法: thinking(agent_id=..., agent_label=..., message=...)
+    - 路由澄清: thinking(agent_id=None, agent_label="路由助手",
+                          payload={"message": "...", "quick_replies": [...]})
+    """
+    ev: Event = {"type": "thinking"}
+    if agent_id is not None:
+        ev["agent_id"] = agent_id
+    if agent_label is not None:
+        ev["agent_label"] = agent_label
+    if message is not None:
+        ev["message"] = message
+    if payload:
+        ev.update(payload)  # type: ignore[arg-type]
+    return ev
 
 
 def tool_start(

@@ -1,9 +1,18 @@
 """Agent registry + routing 单元测试。"""
 
+import asyncio
+
 import pytest
 
 from services.agent_harness import registry, routing
 from services.agent_harness.protocol import AgentManifest
+
+
+def _resolve(**kw):
+    """T12.6 后 resolve_agent 是 async + 返回 RouteDecision;此 helper 折叠为元组以保留旧断言。"""
+    kw.setdefault("llm", None)
+    d = asyncio.run(routing.resolve_agent(**kw))
+    return d.agent_id, d.reason
 
 
 @pytest.fixture(autouse=True)
@@ -50,47 +59,42 @@ def test_list_only_enabled_filter():
 def test_routing_keyword_match():
     registry.register(_mk("cpa_conservative", ["保守分析", "保守"]), lambda: None)
     registry.register(_mk("tradingagents_astock", ["团队分析", "团队"]), lambda: None)
-    aid, reason = routing.resolve_agent(
+    assert _resolve(
         message="请用保守分析帮我看一下 002594",
         explicit_agent_id=None,
         default_agent_id="cpa_conservative",
-    )
-    assert (aid, reason) == ("cpa_conservative", "keyword")
-    aid, reason = routing.resolve_agent(
+    ) == ("cpa_conservative", "keyword")
+    assert _resolve(
         message="团队分析 600519",
         explicit_agent_id=None,
         default_agent_id="cpa_conservative",
-    )
-    assert (aid, reason) == ("tradingagents_astock", "keyword")
+    ) == ("tradingagents_astock", "keyword")
 
 
 def test_routing_explicit_overrides_keyword():
     registry.register(_mk("cpa_conservative", ["保守"]), lambda: None)
     registry.register(_mk("tradingagents_astock", ["团队"]), lambda: None)
-    aid, reason = routing.resolve_agent(
+    assert _resolve(
         message="保守分析 002594",
         explicit_agent_id="tradingagents_astock",
         default_agent_id="cpa_conservative",
-    )
-    assert (aid, reason) == ("tradingagents_astock", "explicit")
+    ) == ("tradingagents_astock", "explicit")
 
 
 def test_routing_default_when_no_match():
     registry.register(_mk("cpa_conservative", ["保守"]), lambda: None)
-    aid, reason = routing.resolve_agent(
-        message="002594 怎么样",
+    # 短消息 < 4 字符 → default 路径(skip LLM)
+    assert _resolve(
+        message="002",
         explicit_agent_id=None,
         default_agent_id="cpa_conservative",
-    )
-    assert (aid, reason) == ("cpa_conservative", "default")
+    ) == ("cpa_conservative", "default")
 
 
 def test_routing_default_missing_raises():
     registry.register(_mk("cpa_conservative", ["保守"]), lambda: None)
     with pytest.raises(RuntimeError):
-        routing.resolve_agent(
-            message="002594", explicit_agent_id=None, default_agent_id="ghost"
-        )
+        _resolve(message="002", explicit_agent_id=None, default_agent_id="ghost")
 
 
 def test_routing_disabled_agent_match_still_returned():
@@ -99,7 +103,7 @@ def test_routing_disabled_agent_match_still_returned():
         _mk("tradingagents_astock", ["团队分析"], enabled=False), lambda: None
     )
     registry.register(_mk("cpa_conservative", ["保守"]), lambda: None)
-    aid, _ = routing.resolve_agent(
+    aid, _ = _resolve(
         message="团队分析 002594",
         explicit_agent_id=None,
         default_agent_id="cpa_conservative",

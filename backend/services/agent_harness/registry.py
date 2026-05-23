@@ -42,6 +42,26 @@ def list_manifests(*, only_enabled: bool = False) -> list[AgentManifest]:
     return sorted(out, key=lambda m: m["id"])
 
 
+def list_enabled() -> list[AgentManifest]:
+    """`list_manifests(only_enabled=True)` 的语义别名。"""
+    return list_manifests(only_enabled=True)
+
+
+def match_alias(message: str) -> str | None:
+    """关键字匹配:遍历所有 agent 的 aliases,返回字典序最小的命中 id。"""
+    msg_lower = message.lower()
+    candidates: list[str] = []
+    for m in list_manifests():
+        for alias in m.get("aliases", []):
+            if alias and alias.lower() in msg_lower:
+                candidates.append(m["id"])
+                break
+    if not candidates:
+        return None
+    candidates.sort()
+    return candidates[0]
+
+
 def _clear() -> None:
     """test only"""
     _ENTRIES.clear()
