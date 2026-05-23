@@ -76,6 +76,14 @@ def init_stock_index() -> None:
     logger.info("股票索引总计: %d 条", len(_index))
 
 
+def get_name(code: str, market: str = "A") -> Optional[str]:
+    """根据 (code, market) 查名称。索引未命中返回 None。"""
+    for e in _index:
+        if e.code == code and e.market == market:
+            return e.name
+    return None
+
+
 def search_stocks(query: str, limit: int = 10) -> List[dict]:
     """前缀搜索：数字开头匹配A股/港股代码，字母开头匹配美股代码"""
     if not query:
