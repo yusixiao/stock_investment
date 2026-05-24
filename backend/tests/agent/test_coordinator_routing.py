@@ -95,7 +95,7 @@ async def test_chitchat_internal_error_path():
 
 
 async def test_routes_to_full_pipeline_when_stock_detected():
-    """识别到股票码时,走 full_pipeline 分支(此处由 NotImplementedError 触发)。"""
+    """识别到股票码时应走 full_pipeline 分支(发出 phase1_data_pack 的 tool_start)。"""
     sent: list[dict] = []
 
     async def sse_send(ev):
@@ -113,10 +113,11 @@ async def test_routes_to_full_pipeline_when_stock_detected():
         stock_index=si,
         llm_factory=lambda p: MagicMock(),
     )
-    # full_pipeline 在 T17 阶段尚未实现,异常会被 INTERNAL 兜底
+    # full_pipeline 已实现,此用例只验证路由到该分支(第一个事件来自 phase1_data_pack)
     await coord.run(session_id="s1", message="600519 怎么样", context=None)
-    err = [e for e in sent if e["type"] == "error"]
-    assert err and err[0]["error"] == "INTERNAL"
+    tool_starts = [e for e in sent if e["type"] == "tool_start"]
+    assert tool_starts, "应至少有一个 tool_start 事件(说明进入了 full_pipeline 分支)"
+    assert tool_starts[0]["tool"] == "phase1_data_pack"
 
 
 # ===== Task 19: qa_followup =====
