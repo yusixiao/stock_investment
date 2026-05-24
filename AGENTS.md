@@ -47,6 +47,7 @@
 - **策略雷达**(StrategyRadar):基于 `run_scan()`,前端组件支持 lookback(1m/3m/6m/1y/...)、参数对话框(createPortal)、结果导出 Excel、多 hits 单行+hit 数列、涨跌幅按信号日累计、因子值 pill 展示
 - **后端架构 DDD 三层**:`adapters/`(外部数据源)→ `repositories/`(parquet/DuckDB I/O)→ `services/`(领域服务)。`models/` 定义 Pydantic 实体,`domain/` 放领域常量
 - **测试**:550 个 case,`python -m pytest backend/tests/ -x -q`。AKShare 必须 mock(`test_adapters.py` 等)
+- **长任务后台执行**:任何预计运行超过 1 分钟的任务(回测、矩阵跑批、诊断脚本、全市场数据更新、批量数据迁移等)**必须**用 `nohup ... > log 2>&1 &` 后台执行,前台只查 PID/日志/进度,避免阻塞会话
 
 ## Discoveries
 
@@ -232,4 +233,19 @@ cd frontend && npm run lint                # ESLint
 
 - 重写 AGENTS.md 以反映实际状态:前端 React 重构、后端 DDD 三层、多市场数据层、DuckDB、Buy/Sell 引擎、策略组、财务/分红/估值子系统
 - 测试规模从 177 增至 550
+
+## Update (2026-05-23 night — Ask Stock Phase A+B 完成)
+
+- v1+v2+v3 价值策略全部跑完(8+8+8 变体)
+- v3 全期最佳:**P0 全期 2010-2026 = 2.96% 年化**;v2 中 V10 = **5.29% 年化(全市场最佳)**;**未达 10% 年化目标**
+- 问股进展:**Phase A(T1-T11)+ Phase B(T12-T19)全部完成**(共 19 个 task,8 个本轮新增)
+  - T12:`/api/v1/agent/*` 路由骨架(skills + sessions CRUD)
+  - T13-T15:LLMClient 抽象 + OpenAICompatibleClient + AnthropicClient + build_client 工厂
+  - T16:phase → channel 路由解析(`services/agent/llm_routing.py`)
+  - T17:Coordinator chitchat 分支 + 三路由判断 + 异常→error 兜底
+  - T18:`POST /chat/stream` SSE endpoint(chitchat 链路打通)
+  - T19:Coordinator qa_followup 分支(已有报告时基于报告答疑)
+- 测试规模 595 → **630**(+35,**0 回归**)
+- pytest-asyncio 1.3.0 已安装,`pytest.ini` 加 `asyncio_mode = auto`
+- 待续:T20+(Phase C 数据包 19 sections)、T24(full_pipeline 串接)、T27-T32(LLM 流水线 + cpa_conservative 填实)
 - 旧版 AGENTS.md 严重滞后(还在 Vue + 单一 A 股),已替换
