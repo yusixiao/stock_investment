@@ -89,7 +89,12 @@ class ChatStreamRequest(BaseModel):
 
 
 def _config_kv() -> dict:
-    path = Path(os.environ.get("DSA_CONFIG_PATH", "config/system_config.yaml"))
+    # 锚定项目根而非 cwd:uvicorn 启动 cwd 可能是 backend/,
+    # 直接 "config/..." 会解析到 backend/config/ 不存在的位置导致 kv 为空
+    from config import BASE_DIR
+
+    raw = os.environ.get("DSA_CONFIG_PATH")
+    path = Path(raw) if raw else BASE_DIR / "config" / "system_config.yaml"
     return ConfigStore(path).load()
 
 

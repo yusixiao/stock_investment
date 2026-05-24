@@ -43,12 +43,14 @@ _RE_HK_BARE = re.compile(r"^\d{5}$")
 _RE_US = re.compile(r"^[A-Za-z]{1,5}(\.US)?$", re.IGNORECASE)
 
 # -- extract 用正则:在消息中查找子串 ------------------------------------
-# A 股:6 位数字(必须前后无数字字母,避免 6000000 这种长串误中)
-_RE_INLINE_A = re.compile(r"(?<![\w\d])(\d{6})(?![\w\d])")
+# 注意:Python re 默认 Unicode,`\w` 包含中文(分析603939 中的"析"会被
+# `(?<!\w)` 误判为已有 word char),故 lookaround 必须用 ASCII 字符类。
+# A 股:6 位数字(前后必须不是 ASCII 数字/字母,避免 6000000 长串误中)
+_RE_INLINE_A = re.compile(r"(?<![0-9A-Za-z])(\d{6})(?![0-9A-Za-z])")
 # 港股:5 位数字
-_RE_INLINE_HK = re.compile(r"(?<![\w\d])(\d{5})(?![\w\d])")
+_RE_INLINE_HK = re.compile(r"(?<![0-9A-Za-z])(\d{5})(?![0-9A-Za-z])")
 # 美股:2-5 位大写字母(单字母 ticker 如 F/T 误识别风险高,放弃)
-_RE_INLINE_US = re.compile(r"(?<![\w])([A-Z]{2,5})(?![\w])")
+_RE_INLINE_US = re.compile(r"(?<![0-9A-Za-z])([A-Z]{2,5})(?![0-9A-Za-z])")
 
 
 def _market_of(code: str) -> Market:

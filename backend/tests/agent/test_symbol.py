@@ -82,3 +82,18 @@ class TestExtract:
         si.get_name.return_value = "宁德时代"
         ref = extract("300750", {}, stock_index=si)
         assert ref.code == "300750.SZ"
+
+    def test_chinese_adjacent_to_code(self):
+        """中文紧贴代码(无空格)也应识别 — \\w lookbehind 默认 Unicode 会误伤中文。"""
+        si = MagicMock()
+        si.get_name.return_value = "益丰药房"
+        ref = extract("分析603939", None, stock_index=si)
+        assert ref is not None
+        assert ref.code == "603939.SH"
+
+    def test_chinese_adjacent_hk_code(self):
+        si = MagicMock()
+        si.get_name.return_value = "腾讯控股"
+        ref = extract("看看00700怎么样", None, stock_index=si)
+        assert ref is not None
+        assert ref.code == "00700.HK"

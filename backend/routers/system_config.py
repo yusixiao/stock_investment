@@ -20,8 +20,12 @@ router = APIRouter(prefix="/api/v1/system/config", tags=["system_config"])
 
 
 def _store() -> ConfigStore:
-    p = os.environ.get("DSA_CONFIG_PATH", "config/system_config.yaml")
-    return ConfigStore(Path(p))
+    # 锚定项目根而非 cwd(uvicorn 从 backend/ 启动时 cwd 不是项目根)
+    from config import BASE_DIR
+
+    raw = os.environ.get("DSA_CONFIG_PATH")
+    path = Path(raw) if raw else BASE_DIR / "config" / "system_config.yaml"
+    return ConfigStore(path)
 
 
 class Item(BaseModel):
