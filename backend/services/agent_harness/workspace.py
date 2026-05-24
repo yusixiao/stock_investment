@@ -10,7 +10,7 @@ import secrets
 from datetime import datetime
 from pathlib import Path
 
-WORKSPACE_ROOT = Path("data/agent_runs")
+WORKSPACE_ROOT = Path("report/agent_runs")
 
 
 def create_workspace(*, session_id: str, agent_id: str) -> Path:

@@ -20,7 +20,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CACHE_DIR = Path("data") / "cache" / "tavily"
+DEFAULT_CACHE_DIR = Path("cache") / "tavily"
 
 
 class TavilyClient:

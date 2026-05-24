@@ -65,7 +65,7 @@ class TaskManager:
             json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
         )
         # log_dir 默认按 task_id 派生(可外部覆盖)
-        effective_log_dir = log_dir or f"data/logs/backtest/{task_id}/"
+        effective_log_dir = log_dir or f"logs/backtest/{task_id}/"
         conn = self._get_conn()
         try:
             conn.execute(

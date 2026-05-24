@@ -104,7 +104,7 @@ def build_client_for_phase(phase: str):
 
 
 def _workspace() -> Workspace:
-    return Workspace(Path(os.environ.get("DSA_AGENT_RUNS", "data/agent_runs")))
+    return Workspace(Path(os.environ.get("DSA_AGENT_RUNS", "report/agent_runs")))
 
 
 @router.post("/chat/stream")

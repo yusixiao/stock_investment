@@ -141,7 +141,7 @@ def test_create_task_writes_strategy_class_and_log_dir(tmp_path):
         "strategy_class": "RoeScreener",
         "params": {"min_roe": 12},
     }
-    assert res["log_dir"] == f"data/logs/backtest/{tid}/"
+    assert res["log_dir"] == f"logs/backtest/{tid}/"
 
 
 def test_init_backtest_tables_on_fresh_db_includes_new_columns(tmp_path):

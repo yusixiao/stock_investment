@@ -7,7 +7,7 @@ DATA_DIR = BASE_DIR / "data"
 META_DIR = DATA_DIR / "meta"
 MARKET_DIR = DATA_DIR / "market"
 STRATEGY_DIR = BASE_DIR / "strategies"
-LOG_DIR = DATA_DIR / "logs"
+LOG_DIR = BASE_DIR / "logs"
 PORTFOLIO_DB = DATA_DIR / "portfolio.db"
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)

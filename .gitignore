@@ -1,5 +1,8 @@
 data/kline/
 data/logs/
+logs/
+cache/
+report/
 node_modules/
 frontend/dist/
 __pycache__/
