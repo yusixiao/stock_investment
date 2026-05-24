@@ -15,6 +15,9 @@ from typing import Iterable
 from services.agent.pipeline.phase1_data_pack.sections import (
     s01_basic,
     s02_market,
+    s03_income,
+    s04_balance,
+    s05_cashflow,
     s07_holders_placeholder,
     s08_industry_placeholder,
     s10_esg_placeholder,
@@ -26,6 +29,9 @@ from services.agent.symbol import StockRef
 SECTION_REGISTRY: dict = {
     "s01": s01_basic.build,
     "s02": s02_market.build,
+    "s03": s03_income.build,
+    "s04": s04_balance.build,
+    "s05": s05_cashflow.build,
     "s07": s07_holders_placeholder.build,
     "s08": s08_industry_placeholder.build,
     "s10": s10_esg_placeholder.build,
