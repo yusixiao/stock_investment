@@ -18,13 +18,13 @@
 
 # ===== OpenRouter channel =====
 # OpenRouter 是聚合网关,一个 API key 可调多家模型(模型名带 vendor 前缀)
-# 免费模型示例:openai/gpt-oss-120b / google/gemini-2.0-flash-exp:free
+# 免费模型示例:openai/gpt-oss-120b:free / google/gemini-2.0-flash-exp:free
 # 收费便宜:deepseek/deepseek-chat / openai/gpt-4o-mini
 # 高质量:  anthropic/claude-sonnet-4.5 / openai/gpt-4o
 LLM_OPENROUTER_PROVIDER: openrouter
 LLM_OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
 LLM_OPENROUTER_API_KEY: sk-or-v1-REPLACE_ME
-LLM_OPENROUTER_MODEL: openai/gpt-oss-120b
+LLM_OPENROUTER_MODEL: openai/gpt-oss-120b:free
 LLM_OPENROUTER_MAX_TOKENS: 8000
 LLM_OPENROUTER_TEMPERATURE: 0.3
 LLM_OPENROUTER_TIMEOUT: 180
