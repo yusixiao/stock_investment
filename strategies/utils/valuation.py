@@ -42,6 +42,37 @@ def get_total_mv(ctx, symbol: str) -> float | None:
     return float(close) * float(total_share)
 
 
+def filter_by_pe(
+    ctx,
+    symbols: list[str],
+    *,
+    min_value: float = 0.0,
+    max_value: float = 30.0,
+) -> list[str]:
+    """筛选 PE(TTM) ∈ [min_value, max_value] 的股票。
+
+    stage = "valuation.pe"
+    reject reason: "no_data" | "below_min" | "above_max"
+    """
+    stage = "valuation.pe"
+    result: list[str] = []
+    for sym in symbols:
+        pe = get_pe(ctx, sym)
+        if pe is None:
+            ctx.log_reject(sym, stage, "no_data", min=min_value, max=max_value)
+            continue
+        ctx.record_factor(sym, "PE", pe)
+        if pe < min_value:
+            ctx.log_reject(sym, stage, "below_min", pe=pe, min=min_value, max=max_value)
+        elif pe > max_value:
+            ctx.log_reject(sym, stage, "above_max", pe=pe, min=min_value, max=max_value)
+        else:
+            ctx.log_pass(sym, stage, pe=pe, min=min_value, max=max_value)
+            result.append(sym)
+    ctx.log_flow(stage, input=len(symbols), passed=len(result))
+    return result
+
+
 def filter_by_pe_pb_product(
     ctx,
     symbols: list[str],

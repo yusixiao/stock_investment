@@ -15,8 +15,8 @@ def test_class_metadata():
 def test_default_params_via_p_accessor():
     s = MaTangleValueStrategy()
     assert s.p.min_dividend_years == 5
-    assert s.p.pe_pb_min == 0.0
-    assert s.p.pe_pb_max == 22.0
+    assert s.p.pe_min == 0.0
+    assert s.p.pe_max == 22.0
     assert s.p.min_roe == 10.0
     assert s.p.ma_fast == 5
     assert s.p.ma_mid == 10
@@ -33,12 +33,12 @@ def test_param_overrides():
     s = MaTangleValueStrategy(
         param_overrides={
             "min_dividend_years": 10,
-            "pe_pb_max": 15.0,
+            "pe_max": 15.0,
             "buy_weeks": 4,
         }
     )
     assert s.p.min_dividend_years == 10
-    assert s.p.pe_pb_max == 15.0
+    assert s.p.pe_max == 15.0
     assert s.p.buy_weeks == 4
 
 
@@ -65,11 +65,11 @@ def test_inherits_from_new_strategy_base():
 
 def _build_full_mock_context() -> MockContext:
     """构造覆盖三层过滤分支的 8 只股票场景:
-    A: 分红 8 / PE*PB=15 / ROE=12 / 月线缠绕命中  → 通过到 final
+    A: 分红 8 / PE=10 / ROE=12 / 月线缠绕命中     → 通过到 final
     B: 分红 3                                    → dividend 淘汰
-    C: 分红 8 / PE*PB=68(40*1.7,>22)             → valuation 淘汰
-    D: 分红 8 / PE*PB=15 / ROE=8                  → financial 淘汰
-    E: 分红 8 / PE*PB=15 / ROE=12 / 月线无缠绕    → kline 淘汰
+    C: 分红 8 / PE=40(>22)                       → valuation 淘汰
+    D: 分红 8 / PE=10 / ROE=8                     → financial 淘汰
+    E: 分红 8 / PE=10 / ROE=12 / 月线无缠绕       → kline 淘汰
     F-H: 同 A,通过到 final
     """
     ctx = MockContext()
@@ -130,7 +130,7 @@ def test_screen_short_circuits_on_dividend_filter(full_ctx):
     """B 在 dividend 阶段被拒,后续 valuation/financial 阶段不应再出现。"""
     s = MaTangleValueStrategy()
     s.screen(full_ctx, ["A", "B", "C", "D", "E", "F", "G", "H"])
-    rejected_in_valuation = full_ctx.rejected_symbols("valuation.pe_pb_product")
+    rejected_in_valuation = full_ctx.rejected_symbols("valuation.pe")
     rejected_in_financial = full_ctx.rejected_symbols("financial.roe")
     assert "B" not in rejected_in_valuation
     assert "B" not in rejected_in_financial
@@ -143,7 +143,7 @@ def test_screen_param_override_changes_output(monkeypatch):
         "detect_ma_tangle_breakout",
         make_tangle_breakout_stub(ctx),
     )
-    # 收紧 PE*PB 上限到 12,A 的 PE*PB=15 应被淘汰
-    s = MaTangleValueStrategy(param_overrides={"pe_pb_max": 12.0})
+    # 收紧 PE 上限到 8,A 的 PE=10 应被淘汰
+    s = MaTangleValueStrategy(param_overrides={"pe_max": 8.0})
     signals = s.screen(ctx, ["A", "F", "G", "H"])
     assert "A" not in signals
