@@ -58,3 +58,61 @@ def test_section_3_empty_emits_warning():
         indicators=MagicMock(),
     )
     assert "数据缺失" in out
+
+
+# ---- §3P 母公司利润表(Task 23) ----
+
+from services.agent.pipeline.phase1_data_pack.sections import s03p_parent_income  # noqa: E402
+
+
+def test_s03p_returns_none_for_hk():
+    ref = StockRef("00700.HK", "腾讯", "HK")
+    assert (
+        s03p_parent_income.build(
+            ref, store=MagicMock(), stock_index=MagicMock(), indicators=MagicMock()
+        )
+        is None
+    )
+
+
+def test_s03p_returns_none_for_us():
+    ref = StockRef("AAPL", "Apple", "US")
+    assert (
+        s03p_parent_income.build(
+            ref, store=MagicMock(), stock_index=MagicMock(), indicators=MagicMock()
+        )
+        is None
+    )
+
+
+def test_s03p_a_share_returns_table():
+    rows = [
+        {
+            "REPORT_DATE": "2025-12-31",
+            "TOTAL_OPERATE_INCOME": 1.0e10,
+            "PARENT_NETPROFIT": 2.0e9,
+            "NETPROFIT": 2.0e9,
+        }
+    ]
+    s = MagicMock()
+    s.query_financial.return_value = rows
+    out = s03p_parent_income.build(
+        StockRef("002594.SZ", "比亚迪", "A"),
+        store=s,
+        stock_index=MagicMock(),
+        indicators=MagicMock(),
+    )
+    assert out is not None
+    assert "§3P 母公司利润表" in out
+
+
+def test_s03p_a_share_no_parent_data_returns_warning():
+    s = MagicMock()
+    s.query_financial.return_value = []
+    out = s03p_parent_income.build(
+        StockRef("002594.SZ", "比亚迪", "A"),
+        store=s,
+        stock_index=MagicMock(),
+        indicators=MagicMock(),
+    )
+    assert "母公司数据缺失" in out
