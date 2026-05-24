@@ -88,7 +88,7 @@ class ChatStreamRequest(BaseModel):
 
 
 def _config_kv() -> dict:
-    path = Path(os.environ.get("DSA_CONFIG_PATH", "data/system_config.yaml"))
+    path = Path(os.environ.get("DSA_CONFIG_PATH", "config/system_config.yaml"))
     return ConfigStore(path).load()
 
 

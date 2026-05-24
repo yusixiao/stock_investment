@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/v1/system/config", tags=["system_config"])
 
 
 def _store() -> ConfigStore:
-    p = os.environ.get("DSA_CONFIG_PATH", "data/system_config.yaml")
+    p = os.environ.get("DSA_CONFIG_PATH", "config/system_config.yaml")
     return ConfigStore(Path(p))
 
 

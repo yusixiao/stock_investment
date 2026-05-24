@@ -1,0 +1,38 @@
+# 问股 / Agent LLM 系统配置(扁平 KV)
+#
+# 复制本文件为 config/system_config.yaml 并填入真实 API key。
+# 真实文件已加入 .gitignore,不会进版本库。
+#
+# 命名规则:
+#   LLM_<CHANNEL>_<FIELD>   — channel 字段(channel 名自定,大写下划线)
+#   LLM_DEFAULT_CHANNEL     — 全局默认 channel(必填)
+#   LLM_ROUTE_<PHASE>       — phase 路由覆盖(可选)
+#
+# Phase 列表(不配置则全部走 LLM_DEFAULT_CHANNEL):
+#   PHASE3_QUANT    — Phase 3.1 量化分析(穿透回报率 / 陷阱风险)
+#   PHASE3_VALUATION— Phase 3.2 估值与最终报告
+#   QA_FOLLOWUP     — 已有报告基础上的追问
+#   CHITCHAT        — 闲聊
+#
+# Provider 4 选 1: openai / anthropic / openrouter / deepseek
+
+# ===== OpenRouter channel =====
+# OpenRouter 是聚合网关,一个 API key 可调多家模型(模型名带 vendor 前缀)
+# 免费模型示例:openai/gpt-oss-120b / google/gemini-2.0-flash-exp:free
+# 收费便宜:deepseek/deepseek-chat / openai/gpt-4o-mini
+# 高质量:  anthropic/claude-sonnet-4.5 / openai/gpt-4o
+LLM_OPENROUTER_PROVIDER: openrouter
+LLM_OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+LLM_OPENROUTER_API_KEY: sk-or-v1-REPLACE_ME
+LLM_OPENROUTER_MODEL: openai/gpt-oss-120b
+LLM_OPENROUTER_MAX_TOKENS: 8000
+LLM_OPENROUTER_TEMPERATURE: 0.3
+LLM_OPENROUTER_TIMEOUT: 180
+
+# ===== 全局路由 =====
+LLM_DEFAULT_CHANNEL: OPENROUTER
+
+# Phase 路由(可选,留空全走 OPENROUTER)
+# 示例:量化报告用更强模型 → 建一个 OPENROUTER_SMART channel,然后:
+#   LLM_ROUTE_PHASE3_QUANT: OPENROUTER_SMART
+#   LLM_ROUTE_PHASE3_VALUATION: OPENROUTER_SMART

@@ -5,8 +5,8 @@
     tail -f /tmp/smoke_ask_stock.log
 
 前置:
-    - data/system_config.yaml 已配 LLM channel(至少含 LLM_DEFAULT_CHANNEL 或
-      显式 LLM_CHANNEL_FOR_PHASE3_QUANT / _VALUATION)
+    - config/system_config.yaml 已配 LLM channel(至少含 LLM_DEFAULT_CHANNEL 或
+      显式 LLM_ROUTE_PHASE3_QUANT / _VALUATION)
     - data/portfolio.db 已建表(import main 时自动)
     - DuckDB 视图就绪(data/market/{A,HK,US}/...)
 
@@ -43,7 +43,9 @@ async def main() -> int:
     # 注入环境
     os.environ.setdefault("DSA_AGENT_RUNS", args.out)
     os.environ.setdefault("DSA_PORTFOLIO_DB", str(ROOT / "data" / "portfolio.db"))
-    os.environ.setdefault("DSA_CONFIG_PATH", str(ROOT / "data" / "system_config.yaml"))
+    os.environ.setdefault(
+        "DSA_CONFIG_PATH", str(ROOT / "config" / "system_config.yaml")
+    )
 
     # 延迟 import:在 sys.path 设好之后
     from services import stock_index
