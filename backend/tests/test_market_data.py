@@ -291,6 +291,47 @@ def test_get_financial_none_when_missing(stock_data):
     assert md.get_financial("000001", date="2024-04-15") is None
 
 
+def test_get_financial_annual_filters_to_year_end_only(stock_data):
+    """get_financial_annual 应只返回 REPORT_DATE 以 -12-31 结尾的记录,
+    避免季度累计 ROE 在年中被误用。"""
+    fin_df = pd.DataFrame(
+        {
+            "REPORT_DATE": [
+                "2022-12-31",
+                "2023-03-31",
+                "2023-06-30",
+                "2023-09-30",
+                "2023-12-31",
+                "2024-03-31",
+            ],
+            "ROEJQ": [11.0, 2.5, 5.0, 7.5, 10.5, 2.8],
+        }
+    )
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", financial={"000001": fin_df}
+    )
+    # 2024-04-15 时,最新季报是 2024-Q1(2.8),但 annual 应回退到 2023 年报 10.5
+    row = md.get_financial_annual("000001", date="2024-04-15")
+    assert row is not None
+    assert row["REPORT_DATE"] == "2023-12-31"
+    assert row["ROEJQ"] == 10.5
+
+    # 2023-08-01 时,annual 应回退到 2022 年报(11.0),而不是 H1 累计的 5.0
+    row = md.get_financial_annual("000001", date="2023-08-01")
+    assert row is not None
+    assert row["REPORT_DATE"] == "2022-12-31"
+    assert row["ROEJQ"] == 11.0
+
+    # 早于第一份年报 → None
+    row = md.get_financial_annual("000001", date="2022-06-01")
+    assert row is None
+
+
+def test_get_financial_annual_missing_symbol(stock_data):
+    md = MarketData(stock_data=stock_data, frequency="daily")
+    assert md.get_financial_annual("000001", date="2024-04-15") is None
+
+
 # ============= _resolve_idx (searchsorted) 回归测试 =============
 # 这些测试针对 _resolve_idx 由 O(N) pandas mask → O(log N) np.searchsorted 的优化,
 # 重点覆盖 sparse 个股(停牌/上市晚)、target 早于首日、精确匹配等边界。

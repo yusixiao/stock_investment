@@ -106,6 +106,19 @@ class MarketData:
             sym: _build_static_table(df, date_col="REPORT_DATE", ffill=False)
             for sym, df in self._financial.items()
         }
+        # 仅含年报(REPORT_DATE 以 -12-31 结尾)的子表 → get_financial_annual 用
+        # 银行股等季报累计 ROE 不年化、年中拉低 ROE,需要单独走年报口径
+        self._financial_annual_cache: dict[str, _StaticTable] = {}
+        for sym, df in self._financial.items():
+            if df is None or df.empty or "REPORT_DATE" not in df.columns:
+                continue
+            mask = df["REPORT_DATE"].astype(str).str.endswith("-12-31")
+            sub = df[mask]
+            if sub.empty:
+                continue
+            self._financial_annual_cache[sym] = _build_static_table(
+                sub, date_col="REPORT_DATE", ffill=False
+            )
 
         # 按 symbol 缓存升序 daily DataFrame(stock_data 入参允许降序,统一规整)
         # 检测是否已带预算指标列(ma5 出现即视为预算路径,避免重复 compute)
@@ -350,7 +363,20 @@ class MarketData:
         return df
 
     def get_financial(self, symbol: str, date: str) -> dict | None:
-        table = self._financial_cache.get(symbol)
+        return self._lookup_financial_table(self._financial_cache, symbol, date)
+
+    def get_financial_annual(self, symbol: str, date: str) -> dict | None:
+        """仅返回 REPORT_DATE 以 -12-31 结尾的最近一份年报。
+
+        语义:截至 ``date``,回滚到 <= date 的最新年报。年中查询会回退到上一年报。
+        ``filter_by_roe`` 等基于「年化 ROE」的策略 helper 应走此入口,避免季度累计值。
+        """
+        return self._lookup_financial_table(self._financial_annual_cache, symbol, date)
+
+    def _lookup_financial_table(
+        self, cache: dict[str, _StaticTable], symbol: str, date: str
+    ) -> dict | None:
+        table = cache.get(symbol)
         if table is None or table.n == 0:
             return None
         pos = int(np.searchsorted(table.dates, date, side="right")) - 1

@@ -93,6 +93,11 @@ class Context:
     def get_financial(self, symbol: str):
         return self._market_data.get_financial(symbol, date=self.current_date)
 
+    def get_financial_annual(self, symbol: str):
+        """仅取年报口径(REPORT_DATE = -12-31)。
+        用于 ROE 等需要年化口径的指标,避免季报累计值在年中拉低门槛。"""
+        return self._market_data.get_financial_annual(symbol, date=self.current_date)
+
     def indicator(self, name: str, symbol: str, **kwargs):
         return self._market_data.indicator(name, symbol, idx=self.current_idx, **kwargs)
 
@@ -244,6 +249,11 @@ class ScreenContext:
 
     def get_financial(self, symbol: str):
         return self._market_data.get_financial(symbol, date=self.current_date)
+
+    def get_financial_annual(self, symbol: str):
+        """仅取年报口径(REPORT_DATE = -12-31)。
+        用于 ROE 等需要年化口径的指标,避免季报累计值。"""
+        return self._market_data.get_financial_annual(symbol, date=self.current_date)
 
     def indicator(self, name: str, symbol: str, **kwargs):
         return self._market_data.indicator(name, symbol, idx=self.current_idx, **kwargs)

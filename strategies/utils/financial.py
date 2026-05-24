@@ -11,9 +11,25 @@ def _get_field(ctx, symbol: str, field: str):
     return fin.get(field)
 
 
+def _get_field_annual(ctx, symbol: str, field: str):
+    """从年报(REPORT_DATE = -12-31)取字段。年中查询会回退到上一年报,
+    避免季报累计值(如 ROEJQ Q1 = 全年 1/4)误用为年化指标。"""
+    if not hasattr(ctx, "get_financial_annual"):
+        # 兼容旧 ScreenContext;退化到 get_financial
+        return _get_field(ctx, symbol, field)
+    fin = ctx.get_financial_annual(symbol)
+    if fin is None:
+        return None
+    return fin.get(field)
+
+
 def get_roe(ctx, symbol: str) -> float | None:
-    """净资产收益率(%)。English schema:ROEJQ(EastMoney indicator)。"""
-    return _get_field(ctx, symbol, "ROEJQ")
+    """年化 ROE(%)。English schema:ROEJQ(EastMoney indicator),仅取年报口径。
+
+    银行股等季报累计 ROE 不年化(Q1 = 2%、H1 = 4.5%、年报 = 9%),若直接走最近
+    报告期会被「假低」筛掉。这里强制走年报。
+    """
+    return _get_field_annual(ctx, symbol, "ROEJQ")
 
 
 def get_eps(ctx, symbol: str) -> float | None:
