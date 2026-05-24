@@ -51,7 +51,6 @@ class MaTangleValueStrategy(Strategy):
         "tangle_months": {"default": 2, "type": "int", "label": "缠绕月数"},
         "spread_months": {"default": 6, "type": "int", "label": "发散月数"},
         "spread_threshold": {"default": 0.01, "type": "float", "label": "发散阈值"},
-        "macd_red_bars": {"default": 4, "type": "int", "label": "MACD 连续红柱根数"},
         # ===== 仓位 / 买入参数 =====
         "buy_weeks": {"default": 8, "type": "int", "label": "分批周数"},
         "max_holdings": {"default": 20, "type": "int", "label": "最大持仓只数"},
@@ -122,7 +121,7 @@ class MaTangleValueStrategy(Strategy):
                 tangle_months=self.p.tangle_months,
                 spread_months=self.p.spread_months,
                 spread_threshold=self.p.spread_threshold,
-                macd_red_bars=self.p.macd_red_bars,
+                macd_red_bars=0,  # 选股不考虑 MACD 连续红柱闸门(2026-05-24)
                 freq="monthly",
             ):
                 signals.append(sym)
