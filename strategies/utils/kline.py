@@ -377,34 +377,23 @@ def _check_spread_bar(
     return row[col_f] > row[col_m] > row[col_s]
 
 
-def _macd_hist_on_closes(
-    closes: list[float],
-    *,
-    fast: int = 12,
-    slow: int = 26,
-    signal: int = 9,
-) -> list[float]:
-    """对一段 closes 计算完整 MACD hist 序列(等长于 closes)。
+def _has_red_run(rows, min_run: int) -> bool:
+    """rows 中存在 min_run 长度的连续阳线段(close > open,严格)。
 
-    hist = 2 × (DIF - DEA),与 ``get_macd`` / ``get_macd_hist_series`` 一致。
-    数据不足(< slow)→ 返回空列表。
+    注:用 ``>`` 而非 ``>=`` 是为了排除停牌期 BaoStock 填充 bar(OHLC 全等于
+    上一根 close,doji)被错误识别为"连续阳线"。真实交易日的 doji 极少,
+    且不应作为"价升量增"的信号。
     """
-    if len(closes) < slow:
-        return []
-    ema_fast = _ema(closes, fast)
-    ema_slow = _ema(closes, slow)
-    if not ema_fast or not ema_slow:
-        return []
-    aligned_len = min(len(ema_fast), len(ema_slow))
-    dif = [
-        ema_fast[-aligned_len + i] - ema_slow[-aligned_len + i]
-        for i in range(aligned_len)
-    ]
-    dea = _ema(dif, signal)
-    if not dea:
-        return []
-    aligned = min(len(dif), len(dea))
-    return [2.0 * (dif[-aligned + i] - dea[-aligned + i]) for i in range(aligned)]
+    cur = 0
+    for i in range(len(rows)):
+        r = rows.iloc[i]
+        if r["close"] > r["open"]:
+            cur += 1
+            if cur >= min_run:
+                return True
+        else:
+            cur = 0
+    return False
 
 
 def detect_ma_tangle_breakout(
@@ -418,17 +407,15 @@ def detect_ma_tangle_breakout(
     tangle_months: int = 2,
     spread_months: int = 6,
     spread_threshold: float = 0.01,
-    macd_red_bars: int = 4,
+    vol_red_bars: int = 4,
     freq: str = "monthly",
 ) -> bool:
-    """月线均线缠绕→发散→末尾 MACD 连续 N 根红柱 突破检测。
+    """月线均线缠绕→发散→连续阳线 突破检测(迁移自 MaTangleBreakoutScreener)。
 
-    返回 True 当且仅当 history 末尾存在某次「缠绕(N根)→发散(M根)」事件
-    覆盖到最后一根 bar,**且**最后 ``macd_red_bars`` 根 K 线 MACD hist > 0
-    (红柱,动能确认向上)。``macd_red_bars <= 0`` 时跳过该闸门。
+    返回 True 当且仅当 history 末尾存在某次「缠绕(N根)→发散(M根)→其中含
+    vol_red_bars 连续阳线」事件,且该事件的发散窗口覆盖到最后一根 bar。
 
-    数据需求:历史 bar 数 >= slow + tangle_months + spread_months;若启用
-    MACD 闸门,还需 >= 26 + 9 + macd_red_bars 根用以算 hist 序列。
+    数据需求:历史 bar 数 >= slow + tangle_months + spread_months
     stage = "kline.ma_tangle"
     """
     stage = "kline.ma_tangle"
@@ -487,20 +474,14 @@ def detect_ma_tangle_breakout(
                 continue
         else:
             spread_window_end = spread_start + 1
+            spread_rows = df.iloc[spread_start:spread_window_end]
 
-        # MACD 闸门只在「发散窗口覆盖到最后一根 bar」时才有意义,
-        # 且统一基于 df["close"] 计算 MACD hist。
+        red_ok = (vol_red_bars <= 0) or _has_red_run(spread_rows, vol_red_bars)
+        if not red_ok:
+            continue
+
+        # 命中:仅当发散窗口覆盖到最后一根 bar 时返回 True
         if spread_window_end - 1 >= last_idx:
-            if macd_red_bars > 0:
-                # 用原始 bars 的 closes(未经 MA dropna),保证有足够长度
-                # 计算 MACD(slow=26 + signal=9)。bars[-1] 即 df.iloc[-1],
-                # 所以 hist[-1] 对应当前 last_idx 的 MACD hist。
-                hist = _macd_hist_on_closes([b["close"] for b in bars])
-                if len(hist) < macd_red_bars or not all(
-                    h > 0 for h in hist[-macd_red_bars:]
-                ):
-                    skip_until = spread_window_end - 1
-                    continue
             matched = True
         skip_until = spread_window_end - 1
 
