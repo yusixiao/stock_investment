@@ -47,6 +47,16 @@ def _market_update_job():
         logger.error(f"Scheduled market update failed: {e}")
         return
 
+    # 刷新流通股快照(依赖 v_a_indicator 财务指标视图,需在市场更新之后)
+    # data_pack §2 市值/流通市值 + EV/EBITDA 等衍生指标依赖此 parquet
+    try:
+        from services.circulating_shares import update_circulating_shares
+
+        result = update_circulating_shares()
+        logger.info(f"circulating_shares refreshed: {result}")
+    except Exception as e:
+        logger.error(f"circulating_shares refresh failed: {e}")
+
     # 数据更新完成 → 失效 data_cache 各市场 → 后台异步重建(含预算指标)
     try:
         from services.backtest import data_cache

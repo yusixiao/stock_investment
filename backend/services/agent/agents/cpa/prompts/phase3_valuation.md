@@ -184,7 +184,7 @@ PP = 10年最高价（日期）
 | 总股本 | {值} 百万股 |
 | Rf | {值}% |
 | 上市结构 | {类型}，渠道 {渠道}，税率 {Q}% |
-| 数据来源 | Tushare Pro + PDF年报（若有）+ 定性分析报告（/business-analysis） |
+| 数据来源 | EastMoney F10（财务/估值/股东）+ Baostock（K 线）+ Tavily（行业/ESG 检索） |
 | Warnings | {摘要} |
 
 ---
