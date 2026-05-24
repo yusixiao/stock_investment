@@ -61,15 +61,22 @@ export const agentApi = {
     return response.data;
   },
   async getChatSessions(limit = 50): Promise<ChatSessionItem[]> {
-    const response = await apiClient.get<{ sessions: ChatSessionItem[] }>('/api/v1/agent/chat/sessions', { params: { limit } });
-    return response.data.sessions;
+    // 后端字段 msg_count,前端历史用 message_count;在 API 层做兼容映射
+    const response = await apiClient.get<{ items: Array<Record<string, unknown>> }>('/api/v1/agent/sessions', { params: { limit } });
+    return (response.data.items || []).map((row) => ({
+      session_id: String(row.session_id ?? ''),
+      title: String(row.title ?? ''),
+      message_count: Number(row.msg_count ?? row.message_count ?? 0),
+      created_at: (row.created_at as string | null) ?? null,
+      last_active: (row.last_active as string | null) ?? null,
+    }));
   },
   async getChatSessionMessages(sessionId: string): Promise<ChatSessionMessage[]> {
-    const response = await apiClient.get<{ messages: ChatSessionMessage[] }>(`/api/v1/agent/chat/sessions/${sessionId}`);
-    return response.data.messages;
+    const response = await apiClient.get<{ items: ChatSessionMessage[] }>(`/api/v1/agent/sessions/${sessionId}/messages`);
+    return response.data.items;
   },
   async deleteChatSession(sessionId: string): Promise<void> {
-    await apiClient.delete(`/api/v1/agent/chat/sessions/${sessionId}`);
+    await apiClient.delete(`/api/v1/agent/sessions/${sessionId}`);
   },
   async sendChat(content: string): Promise<{ success: boolean }> {
     const response = await apiClient.post<{
