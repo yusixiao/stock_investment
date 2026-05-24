@@ -64,7 +64,7 @@ def test_detect_ma_tangle_breakout_flat_then_uptrend_signal():
             tangle_months=2,
             spread_months=4,
             spread_threshold=0.01,
-            vol_red_bars=4,
+            macd_red_bars=4,
             freq="monthly",
         )
         is True

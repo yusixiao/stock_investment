@@ -25,7 +25,7 @@ def test_default_params_via_p_accessor():
     assert s.p.tangle_months == 2
     assert s.p.spread_months == 6
     assert s.p.spread_threshold == 0.01
-    assert s.p.vol_red_bars == 4
+    assert s.p.macd_red_bars == 4
     assert s.p.buy_weeks == 8
 
 
