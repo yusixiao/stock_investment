@@ -95,8 +95,36 @@ class Coordinator:
     async def _run_qa_followup(
         self, session_id: str, message: str, output_dir: Path
     ) -> None:
-        # 在 Task 19 实现完整报告答疑逻辑
-        raise NotImplementedError("qa_followup 在 Task 19 实现")
+        await self.sse_send(sse.thinking("加载已有分析报告作上下文..."))
+        # 取 output_dir 下唯一的 *_分析报告.md
+        reports = list(output_dir.glob("*_分析报告.md"))
+        report_text = reports[0].read_text(encoding="utf-8") if reports else ""
+        # 取最近 10 条历史(避免上下文超长)
+        history = (self.repo.list_messages(session_id) or [])[-10:]
+        msgs: list[Message] = [
+            Message(
+                "system",
+                "你是一名投资研究助理,基于以下投资分析报告回答用户的追问。"
+                "请在报告范围内引用,避免编造数据。\n\n<<报告>>\n"
+                + report_text
+                + "\n<<报告结束>>",
+            ),
+        ]
+        for h in history:
+            if h.get("role") in ("user", "assistant"):
+                msgs.append(Message(h["role"], h["content"]))
+        msgs.append(Message("user", message))
+
+        client = self.llm_factory("qa_followup")
+        result = await client.complete(msgs)
+        self.repo.append_message(
+            session_id,
+            role="assistant",
+            content=result.text,
+            tokens_in=result.tokens_in,
+            tokens_out=result.tokens_out,
+        )
+        await self.sse_send(sse.done(result.text, artifacts=[]))
 
     async def _run_full_pipeline(self, session_id: str, ref: StockRef) -> None:
         # 在 Task 24 串接三阶段流水线

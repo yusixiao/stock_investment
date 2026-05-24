@@ -1,4 +1,4 @@
-"""问股期 1 — Task 17:Coordinator chitchat 分支与异常路径。"""
+"""问股期 1 — Task 17/19:Coordinator chitchat / qa_followup 分支测试。"""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -117,3 +117,108 @@ async def test_routes_to_full_pipeline_when_stock_detected():
     await coord.run(session_id="s1", message="600519 怎么样", context=None)
     err = [e for e in sent if e["type"] == "error"]
     assert err and err[0]["error"] == "INTERNAL"
+
+
+# ===== Task 19: qa_followup =====
+
+
+async def test_qa_followup_uses_existing_report(tmp_path):
+    sent: list[dict] = []
+
+    async def sse_send(ev):
+        sent.append(ev)
+
+    output_dir = tmp_path / "002594.SZ_比亚迪"
+    output_dir.mkdir()
+    (output_dir / "比亚迪_002594.SZ_分析报告.md").write_text(
+        "# 报告\n\nROIC=15%", encoding="utf-8"
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.complete = AsyncMock(
+        return_value=CompletionResult(text="第 5 段...", tokens_in=10, tokens_out=4)
+    )
+
+    repo = MagicMock()
+    repo.get.return_value = {
+        "session_id": "s1",
+        "output_dir": str(output_dir),
+        "status": "done",
+    }
+    repo.list_messages.return_value = []
+
+    workspace = MagicMock()
+    workspace.read_meta.return_value = {
+        "phases": {"phase3_valuation": {"status": "done"}}
+    }
+
+    coord = Coordinator(
+        sse_send=sse_send,
+        repo=repo,
+        workspace=workspace,
+        stock_index=MagicMock(),
+        llm_factory=lambda p: fake_llm,
+    )
+    await coord.run(
+        session_id="s1",
+        message="第 5 段那个 G 系数怎么算的?",
+        context=None,
+    )
+
+    types = [e["type"] for e in sent]
+    assert types[0] == "thinking"
+    assert types[-1] == "done"
+    sent_msgs = fake_llm.complete.call_args[0][0]
+    assert any("ROIC=15%" in m.content for m in sent_msgs)
+    assert any(m.role == "user" and "第 5 段" in m.content for m in sent_msgs)
+
+
+async def test_qa_followup_includes_recent_history():
+    sent: list[dict] = []
+
+    async def sse_send(ev):
+        sent.append(ev)
+
+    import tempfile
+    from pathlib import Path
+
+    tmp = Path(tempfile.mkdtemp())
+    (tmp / "x_分析报告.md").write_text("R", encoding="utf-8")
+
+    fake_llm = MagicMock()
+    fake_llm.complete = AsyncMock(
+        return_value=CompletionResult(text="ok", tokens_in=1, tokens_out=1)
+    )
+
+    repo = MagicMock()
+    repo.get.return_value = {
+        "session_id": "s1",
+        "output_dir": str(tmp),
+        "status": "done",
+    }
+    # 12 条历史 — 应只取最后 10
+    repo.list_messages.return_value = [
+        {"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"}
+        for i in range(12)
+    ]
+
+    workspace = MagicMock()
+    workspace.read_meta.return_value = {
+        "phases": {"phase3_valuation": {"status": "done"}}
+    }
+
+    coord = Coordinator(
+        sse_send=sse_send,
+        repo=repo,
+        workspace=workspace,
+        stock_index=MagicMock(),
+        llm_factory=lambda p: fake_llm,
+    )
+    await coord.run(session_id="s1", message="续问", context=None)
+
+    sent_msgs = fake_llm.complete.call_args[0][0]
+    contents = [m.content for m in sent_msgs]
+    # m0/m1 应被截断,m2..m11 应在 prompt 中
+    assert "m0" not in contents
+    assert "m1" not in contents
+    assert "m11" in contents
