@@ -41,5 +41,6 @@ export function mapPayloadToResultData(
         price: t.price,
         shares: t.shares,
       })),
+    endPrices: payload.end_prices || {},
   };
 }

@@ -77,6 +77,8 @@ export interface BacktestResultPayload {
     amount?: number;
   }[];
   screened_symbols?: unknown[];
+  // 每个交易过的 symbol 在回测结束日的收盘价 → 前端汇总「当前价」与未实现盈亏
+  end_prices?: Record<string, number>;
 }
 
 export interface TaskPipelineInfo {

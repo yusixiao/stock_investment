@@ -3,6 +3,8 @@ import { useRef, useState } from 'react';
 import { cn } from '../../utils/cn';
 import { Badge, Button } from '../common';
 import { buildTradesFilename, exportTradesToXlsx } from '../../utils/exportTradesXlsx';
+import { buildMergedTradeRows } from '../../utils/buildMergedTradeRows';
+import { buildPositionSummary } from '../../utils/buildPositionSummary';
 import type { BacktestTask } from './BacktestAnalysis';
 
 interface Props {
@@ -137,106 +139,174 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
         </div>
       )}
 
-      {/* Buy Detail Table */}
-      {result.rawBuys && result.rawBuys.length > 0 && (
-        <div className="rounded-2xl border border-border/40 bg-card/50 p-4">
-          <h4 className="mb-3 text-sm font-medium text-secondary-text">
-            买入明细 <span className="text-muted-text">({result.rawBuys.length}笔)</span>
-          </h4>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border/30 text-left text-secondary-text">
-                  <th className="px-2 py-2">买入时间</th>
-                  <th className="px-2 py-2">股票</th>
-                  <th className="px-2 py-2 text-right">买入价格</th>
-                  <th className="px-2 py-2 text-right">股数</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.rawBuys.map((b, idx) => (
-                  <tr key={idx} className="border-b border-border/20 hover:bg-hover/30">
-                    <td className="px-2 py-2 tabular-nums">{b.date}</td>
-                    <td className="px-2 py-2 font-mono">{b.symbol}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{b.price.toFixed(3)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{b.shares.toLocaleString()}</td>
+      {/* Merged Buy/Sell Detail Table */}
+      {(() => {
+        const mergedRows = buildMergedTradeRows(result.rawBuys || [], result.trades || []);
+        if (mergedRows.length === 0) return null;
+        const buyCount = mergedRows.filter((r) => r.side === 'buy').length;
+        const sellCount = mergedRows.length - buyCount;
+        return (
+          <div className="rounded-2xl border border-border/40 bg-card/50 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-sm font-medium text-secondary-text">
+                交易明细 <span className="text-muted-text">(买 {buyCount} 笔 / 卖 {sellCount} 笔)</span>
+              </h4>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  exportTradesToXlsx(
+                    mergedRows,
+                    buildTradesFilename({
+                      strategyName: task.strategyName,
+                      symbol: task.symbol,
+                      market: task.market,
+                      startDate: task.startDate,
+                      endDate: task.endDate,
+                    }),
+                  )
+                }
+                aria-label="导出交易明细到 Excel"
+              >
+                导出 Excel
+              </Button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border/30 text-left text-secondary-text">
+                    <th className="px-2 py-2">股票</th>
+                    <th className="px-2 py-2">方向</th>
+                    <th className="px-2 py-2">日期</th>
+                    <th className="px-2 py-2 text-right">价格</th>
+                    <th className="px-2 py-2 text-right">数量</th>
+                    <th className="px-2 py-2 text-right">盈亏</th>
+                    <th className="px-2 py-2 text-right">收益率</th>
+                    <th className="px-2 py-2 text-right">持仓天数</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {mergedRows.map((r, idx) => (
+                    <tr key={idx} className="border-b border-border/20 hover:bg-hover/30">
+                      <td className="px-2 py-2 font-mono">{r.symbol}</td>
+                      <td className="px-2 py-2">
+                        <Badge variant={r.side === 'buy' ? 'default' : 'success'}>
+                          {r.side === 'buy' ? '买' : '卖'}
+                        </Badge>
+                      </td>
+                      <td className="px-2 py-2 tabular-nums">{r.date}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{r.price.toFixed(3)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{r.shares.toLocaleString()}</td>
+                      <td
+                        className={cn(
+                          'px-2 py-2 text-right tabular-nums',
+                          r.pnl == null ? 'text-muted-text' : r.pnl >= 0 ? 'text-success' : 'text-danger',
+                        )}
+                      >
+                        {r.pnl == null ? '-' : `${r.pnl >= 0 ? '+' : ''}${r.pnl.toFixed(2)}`}
+                      </td>
+                      <td
+                        className={cn(
+                          'px-2 py-2 text-right tabular-nums',
+                          r.pnlPct == null ? 'text-muted-text' : r.pnlPct >= 0 ? 'text-success' : 'text-danger',
+                        )}
+                      >
+                        {r.pnlPct == null ? '-' : `${r.pnlPct >= 0 ? '+' : ''}${(r.pnlPct * 100).toFixed(2)}%`}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {r.holdDays == null ? '-' : r.holdDays.toFixed(0)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {/* Trade Table */}
-      {result.trades.length > 0 && (
-        <div className="rounded-2xl border border-border/40 bg-card/50 p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h4 className="text-sm font-medium text-secondary-text">
-              交易明细 <span className="text-muted-text">({result.trades.length}笔)</span>
+      {/* Position Summary (per-symbol) */}
+      {(() => {
+        const summary = buildPositionSummary(
+          result.rawBuys || [],
+          result.trades || [],
+          result.endPrices || {},
+        );
+        if (summary.length === 0) return null;
+        return (
+          <div className="rounded-2xl border border-border/40 bg-card/50 p-4">
+            <h4 className="mb-3 text-sm font-medium text-secondary-text">
+              持仓汇总 <span className="text-muted-text">({summary.length} 只)</span>
             </h4>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                exportTradesToXlsx(
-                  result.trades,
-                  buildTradesFilename({
-                    strategyName: task.strategyName,
-                    symbol: task.symbol,
-                    market: task.market,
-                    startDate: task.startDate,
-                    endDate: task.endDate,
-                  }),
-                )
-              }
-              aria-label="导出交易明细到 Excel"
-            >
-              导出 Excel
-            </Button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border/30 text-left text-secondary-text">
-                  <th className="px-2 py-2">股票</th>
-                  <th className="px-2 py-2">方向</th>
-                  <th className="px-2 py-2">买入日期</th>
-                  <th className="px-2 py-2">卖出日期</th>
-                  <th className="px-2 py-2 text-right">买入价</th>
-                  <th className="px-2 py-2 text-right">卖出价</th>
-                  <th className="px-2 py-2 text-right">盈亏</th>
-                  <th className="px-2 py-2 text-right">收益率</th>
-                  <th className="px-2 py-2 text-right">持仓天数</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.trades.map((trade, idx) => (
-                  <tr key={idx} className="border-b border-border/20 hover:bg-hover/30">
-                    <td className="px-2 py-2 font-mono">{trade.symbol}</td>
-                    <td className="px-2 py-2">
-                      <Badge variant={trade.direction === 'long' ? 'success' : 'danger'}>
-                        {trade.direction === 'long' ? '做多' : '做空'}
-                      </Badge>
-                    </td>
-                    <td className="px-2 py-2 tabular-nums">{trade.entryDate}</td>
-                    <td className="px-2 py-2 tabular-nums">{trade.exitDate}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{trade.entryPrice.toFixed(2)}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{trade.exitPrice.toFixed(2)}</td>
-                    <td className={cn('px-2 py-2 text-right tabular-nums', trade.pnl >= 0 ? 'text-success' : 'text-danger')}>
-                      {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(2)}
-                    </td>
-                    <td className={cn('px-2 py-2 text-right tabular-nums', trade.pnlPct >= 0 ? 'text-success' : 'text-danger')}>
-                      {trade.pnlPct >= 0 ? '+' : ''}{(trade.pnlPct * 100).toFixed(2)}%
-                    </td>
-                    <td className="px-2 py-2 text-right tabular-nums">{trade.holdDays}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border/30 text-left text-secondary-text">
+                    <th className="px-2 py-2">股票</th>
+                    <th className="px-2 py-2 text-right">持仓</th>
+                    <th className="px-2 py-2 text-right">成本</th>
+                    <th className="px-2 py-2 text-right">当前价</th>
+                    <th className="px-2 py-2 text-right">已实现盈亏</th>
+                    <th className="px-2 py-2 text-right">未实现盈亏</th>
+                    <th className="px-2 py-2 text-right">总盈亏</th>
+                    <th className="px-2 py-2 text-right">总收益率</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {summary.map((s, idx) => (
+                    <tr key={idx} className="border-b border-border/20 hover:bg-hover/30">
+                      <td className="px-2 py-2 font-mono">{s.symbol}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {s.shares > 0 ? s.shares.toLocaleString() : <span className="text-muted-text">0</span>}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {s.shares > 0 ? s.avgCost.toFixed(3) : <span className="text-muted-text">-</span>}
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums">
+                        {s.currentPrice == null ? <span className="text-muted-text">-</span> : s.currentPrice.toFixed(3)}
+                      </td>
+                      <td
+                        className={cn(
+                          'px-2 py-2 text-right tabular-nums',
+                          s.realizedPnl === 0 ? '' : s.realizedPnl > 0 ? 'text-success' : 'text-danger',
+                        )}
+                      >
+                        {s.realizedPnl > 0 ? '+' : ''}{s.realizedPnl.toFixed(2)}
+                      </td>
+                      <td
+                        className={cn(
+                          'px-2 py-2 text-right tabular-nums',
+                          s.unrealizedPnl === 0 ? 'text-muted-text' : s.unrealizedPnl > 0 ? 'text-success' : 'text-danger',
+                        )}
+                      >
+                        {s.shares > 0
+                          ? `${s.unrealizedPnl > 0 ? '+' : ''}${s.unrealizedPnl.toFixed(2)}`
+                          : '0.00'}
+                      </td>
+                      <td
+                        className={cn(
+                          'px-2 py-2 text-right tabular-nums font-medium',
+                          s.totalPnl === 0 ? '' : s.totalPnl > 0 ? 'text-success' : 'text-danger',
+                        )}
+                      >
+                        {s.totalPnl > 0 ? '+' : ''}{s.totalPnl.toFixed(2)}
+                      </td>
+                      <td
+                        className={cn(
+                          'px-2 py-2 text-right tabular-nums',
+                          s.totalReturn === 0 ? '' : s.totalReturn > 0 ? 'text-success' : 'text-danger',
+                        )}
+                      >
+                        {s.totalReturn > 0 ? '+' : ''}{(s.totalReturn * 100).toFixed(2)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

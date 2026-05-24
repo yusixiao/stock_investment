@@ -46,6 +46,7 @@ export interface BacktestResultData {
   equityCurve: { date: string; value: number }[];
   trades: TradeRecord[];
   rawBuys: BuyRecord[];
+  endPrices: Record<string, number>;
 }
 
 export interface BuyRecord {
