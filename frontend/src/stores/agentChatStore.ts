@@ -161,6 +161,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
                 id: m.id,
                 role: m.role,
                 content: m.content,
+                artifacts: m.artifacts,
               })),
             });
           }
@@ -196,6 +197,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
           id: m.id,
           role: m.role,
           content: m.content,
+          artifacts: m.artifacts,
         })),
       });
     } catch {

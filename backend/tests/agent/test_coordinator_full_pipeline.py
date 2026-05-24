@@ -171,6 +171,43 @@ async def test_full_pipeline_phase3_quant_failure_emits_error(
     assert meta["phases"]["phase3_quant"]["status"] == "failed"
 
 
+async def test_full_pipeline_persists_assistant_message_with_artifacts(
+    tmp_path, patched_builder
+):
+    """完整流水线完成后应把助手消息(含报告 artifacts)写入 session repo,
+    否则用户切回历史会话时只剩用户消息,丢失报告卡片。"""
+    sent: list[dict] = []
+    quant_llm = _FakeStreamLLM(QUANT_REPORT)
+    val_llm = _FakeStreamLLM(VALUATION_REPORT)
+    coord, ws = _make_coord(
+        tmp_path, quant_llm=quant_llm, valuation_llm=val_llm, sent=sent
+    )
+
+    ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
+    await coord.run(session_id="s1", message=ref.code, context=None)
+
+    # 必须调用 append_message 写助手消息
+    repo = coord.repo
+    appended_assistant = [
+        c
+        for c in repo.append_message.call_args_list
+        if c.kwargs.get("role") == "assistant"
+    ]
+    assert appended_assistant, "完整流水线结束后必须持久化助手消息"
+
+    call = appended_assistant[-1]
+    # session_id 必须是当前会话
+    assert call.kwargs.get("session_id") == "s1" or call.args[0] == "s1"
+    # content 应是最终报告文本(VALUATION_REPORT 的内容)
+    content = call.kwargs.get("content", "")
+    assert "投资分析报告" in content
+    # artifacts 必须包含报告路径
+    artifacts = call.kwargs.get("artifacts") or []
+    assert artifacts, "助手消息必须带 artifacts"
+    reports = list(ws.resolve_dir(ref).glob("*_分析报告.md"))
+    assert any(reports[0].name in str(a) for a in artifacts)
+
+
 async def test_full_pipeline_session_output_dir_persisted(tmp_path, patched_builder):
     """session 应被更新 output_dir 以便后续 qa_followup 命中。"""
     sent: list[dict] = []

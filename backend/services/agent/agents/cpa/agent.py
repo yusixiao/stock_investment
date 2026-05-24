@@ -130,17 +130,24 @@ class CpaAgent:
             text = report_path.read_text(encoding="utf-8")
         except Exception:
             text = ""
-        await self.sse_send(
-            sse.done(
-                text,
-                artifacts=[
-                    {
-                        "path": self.workspace.relpath_for_artifact(d, report_path),
-                        "name": report_path.name,
-                    }
-                ],
+        artifacts = [
+            {
+                "path": self.workspace.relpath_for_artifact(d, report_path),
+                "name": report_path.name,
+            }
+        ]
+        # 持久化助手消息(含报告 artifacts),否则切回历史会话只剩用户消息、报告卡片丢失
+        try:
+            self.repo.append_message(
+                session_id,
+                role="assistant",
+                content=text,
+                artifacts=artifacts,
             )
-        )
+        except Exception:
+            # MagicMock 或自定义 repo 异常不影响 SSE 完成事件
+            pass
+        await self.sse_send(sse.done(text, artifacts=artifacts))
 
     # ===== 内部辅助 =====
 

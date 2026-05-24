@@ -42,11 +42,18 @@ export interface ChatSessionItem {
   last_active: string | null;
 }
 
+export interface ChatSessionArtifact {
+  path: string;
+  name: string;
+}
+
 export interface ChatSessionMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   created_at: string | null;
+  artifacts?: ChatSessionArtifact[];
+  thinking?: unknown;
 }
 
 export const agentApi = {
