@@ -109,7 +109,13 @@ def build_client_for_phase(phase: str):
 
 
 def _workspace() -> Workspace:
-    return Workspace(Path(os.environ.get("DSA_AGENT_RUNS", "report/agent_runs")))
+    # 锚定项目根而非 cwd:uvicorn 启动 cwd 可能是 backend/,
+    # 直接 "report/agent_runs" 会解析到 backend/report/agent_runs/(错位)
+    from config import BASE_DIR
+
+    raw = os.environ.get("DSA_AGENT_RUNS")
+    path = Path(raw) if raw else BASE_DIR / "report" / "agent_runs"
+    return Workspace(path)
 
 
 @router.post("/chat/stream")

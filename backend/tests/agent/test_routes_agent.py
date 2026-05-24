@@ -18,6 +18,28 @@ def _client(tmp_path, monkeypatch):
     return TestClient(app)
 
 
+def test_workspace_and_config_paths_anchored_to_project_root(monkeypatch):
+    """关键回归:_workspace / _config_kv 不指定 env 时必须锚定项目根。
+
+    uvicorn 从 backend/ 启动时 cwd != 项目根,以前用相对路径
+    "report/agent_runs" / "config/system_config.yaml" 会解析到
+    backend/report/agent_runs/ 和 backend/config/...(不存在)。
+    """
+    # 清掉 env override,确保走默认锚根分支
+    monkeypatch.delenv("DSA_AGENT_RUNS", raising=False)
+    monkeypatch.delenv("DSA_CONFIG_PATH", raising=False)
+
+    from config import BASE_DIR
+    from routers.agent import _config_kv, _workspace
+
+    ws = _workspace()
+    assert ws.root == BASE_DIR / "report" / "agent_runs"
+    assert ws.root.is_absolute()
+    # _config_kv 应能找到真实配置(项目根的 config/system_config.yaml)
+    kv = _config_kv()
+    assert isinstance(kv, dict)
+
+
 def test_skills_returns_empty_array(tmp_path, monkeypatch):
     c = _client(tmp_path, monkeypatch)
     r = c.get("/api/v1/agent/skills")

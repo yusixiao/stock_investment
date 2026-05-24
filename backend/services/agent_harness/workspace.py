@@ -10,7 +10,10 @@ import secrets
 from datetime import datetime
 from pathlib import Path
 
-WORKSPACE_ROOT = Path("report/agent_runs")
+from config import BASE_DIR
+
+# 锚定项目根 — uvicorn 从 backend/ 启动时 cwd 不是项目根
+WORKSPACE_ROOT = BASE_DIR / "report" / "agent_runs"
 
 
 def create_workspace(*, session_id: str, agent_id: str) -> Path:
