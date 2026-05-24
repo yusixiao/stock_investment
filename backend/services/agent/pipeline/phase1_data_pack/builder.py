@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Iterable
 
 from services.agent.pipeline.phase1_data_pack.sections import (
+    s01_basic,
+    s02_market,
     s07_holders_placeholder,
     s08_industry_placeholder,
     s10_esg_placeholder,
@@ -22,6 +24,8 @@ from services.agent.pipeline.phase1_data_pack.sections import (
 from services.agent.symbol import StockRef
 
 SECTION_REGISTRY: dict = {
+    "s01": s01_basic.build,
+    "s02": s02_market.build,
     "s07": s07_holders_placeholder.build,
     "s08": s08_industry_placeholder.build,
     "s10": s10_esg_placeholder.build,
