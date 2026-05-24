@@ -22,13 +22,33 @@ class MarketCapWeightedBatchBuyer:
         self._buy_plans: dict[str, dict] = {}
         self._allocated_symbols: set[str] = set()
 
-    def step(self, ctx) -> None:
-        """每个 on_buy 调用一次。"""
+    def step(self, ctx, max_holdings: int | None = None) -> None:
+        """每个 on_buy 调用一次。
+
+        max_holdings:持仓上限。已持仓 + 计划中(_buy_plans 中未完成的)≥ 上限时,
+        新命中股票不再分配新计划(已分配中的继续执行剩余周次)。
+        """
         new_symbols = ctx.new_symbols
         current_date = ctx.current_date
 
         if new_symbols:
-            self._create_buy_plans(ctx, new_symbols, current_date)
+            # 计算「占用槽位数」:已持仓 + 仍在分批中的计划 symbol 集合
+            current_held = (
+                len(ctx.get_positions()) if hasattr(ctx, "get_positions") else 0
+            )
+            in_progress = len(self._buy_plans)
+            slots_used = max(current_held, in_progress)
+            if max_holdings is not None and slots_used >= max_holdings:
+                filtered: list[str] = []
+            elif max_holdings is not None:
+                # 还能新建 N 个计划
+                quota = max_holdings - slots_used
+                filtered = list(new_symbols[:quota])
+            else:
+                filtered = list(new_symbols)
+
+            if filtered:
+                self._create_buy_plans(ctx, filtered, current_date)
 
         self._execute_weekly_buys(ctx, current_date)
 

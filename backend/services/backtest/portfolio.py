@@ -19,6 +19,12 @@ class Portfolio:
         # 当前等价于 cash;预留 T+1 冻结资金语义(未来可减去待结算金额)
         return self.cash
 
+    @property
+    def positions(self) -> dict[str, PositionInfo]:
+        # 暴露内部持仓字典(供策略 on_sell 遍历持仓);只读语义,
+        # 调用方不应直接修改,买卖统一走 buy/sell 接口。
+        return self._positions
+
     def buy(self, symbol: str, shares: int, price: float, commission: float, date: str):
         total_cost = shares * price + commission
         self.cash -= total_cost

@@ -104,7 +104,9 @@ def pair_round_trips(trades: list[dict]) -> list[dict]:
     pnl 为净盈亏(扣手续费/印花税),pnl_pct 为相对买入成本的小数收益率。
     """
     # 按 symbol 维护各自的买入队列(FIFO)
+    # consumed 用本地 dict 跟踪,key=id(buy),不污染入参 trades(否则二次调用会得到 0 round-trips)
     open_buys: dict[str, list[dict]] = {}
+    consumed: dict[int, int] = {}
     rts: list[dict] = []
     for t in trades:
         sym = t.get("symbol", "")
@@ -116,11 +118,11 @@ def pair_round_trips(trades: list[dict]) -> list[dict]:
             sell_price = float(t["price"])
             sell_date = t.get("date", "")
             sell_comm = float(t.get("commission", 0)) + float(t.get("tax", 0))
-            # 卖出 fee 按本笔 sell 在多个 buy 间按 share 数比例分摊
             total_sell_shares = remaining
             while remaining > 0 and queue:
                 buy = queue[0]
-                avail = int(buy["shares"]) - int(buy.get("_consumed", 0))
+                buy_id = id(buy)
+                avail = int(buy["shares"]) - consumed.get(buy_id, 0)
                 take = min(avail, remaining)
                 buy_price = float(buy["price"])
                 buy_comm_full = float(buy.get("commission", 0))
@@ -149,8 +151,8 @@ def pair_round_trips(trades: list[dict]) -> list[dict]:
                         "hold_days": hold_days,
                     }
                 )
-                buy["_consumed"] = int(buy.get("_consumed", 0)) + take
-                if buy["_consumed"] >= int(buy["shares"]):
+                consumed[buy_id] = consumed.get(buy_id, 0) + take
+                if consumed[buy_id] >= int(buy["shares"]):
                     queue.pop(0)
                 remaining -= take
             # 卖出剩余(无对应买入,异常情况)忽略
