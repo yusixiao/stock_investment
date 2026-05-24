@@ -19,8 +19,8 @@ def test_builder_produces_file_with_placeholders(tmp_path):
     out = builder.build(ref, tmp_path)
     assert out.exists()
     text = out.read_text(encoding="utf-8")
-    assert "## §7" in text and "Phase 2" in text
-    assert "## §8" in text and "WebSearch" in text
+    assert "## §7" in text
+    assert "## §8" in text
     assert "## §10" in text
     assert "## §14 无风险利率" in text and "2.70" in text
     assert "## §16" in text

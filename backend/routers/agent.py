@@ -27,6 +27,7 @@ from services.agent.coordinator import Coordinator
 from services.duckdb_store import get_store as get_duckdb_store
 from services.agent.core.llm_routing import resolve_channel_name
 from services.agent.core.session_repo import SessionRepo
+from services.agent.core.tavily_client import TavilyClient
 from services.agent.core.workspace import Workspace
 from services.db_schema import init_chat_tables
 from services.system_config.channels import get_channel
@@ -136,6 +137,7 @@ async def chat_stream(payload: ChatStreamRequest = Body(...)):
         llm_factory=build_client_for_phase,
         store=store,
         indicators=None,
+        tavily=TavilyClient(),
     )
 
     async def runner() -> None:

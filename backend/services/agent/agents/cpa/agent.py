@@ -36,6 +36,7 @@ class CpaAgent:
         llm_factory: Callable[[str], LLMClient],
         store=None,
         indicators=None,
+        tavily=None,
     ):
         self.sse_send = sse_send
         self.repo = repo
@@ -45,6 +46,8 @@ class CpaAgent:
         # full_pipeline 阶段需要的真实数据依赖(单测可不传)
         self.store = store
         self.indicators = indicators
+        # 可选 Tavily web search(§8 行业 / §10 ESG);无 key 自动降级
+        self.tavily = tavily
 
     async def run(self, session_id: str, ref: StockRef) -> None:
         """完整流水线:Phase 1 数据包 → Phase 3.1 量化 → Phase 3.2 估值。"""
@@ -147,6 +150,7 @@ class CpaAgent:
             store=self.store,
             stock_index=self.stock_index,
             indicators=self.indicators,
+            tavily=self.tavily,
         )
         builder.build(ref, output_dir)
 

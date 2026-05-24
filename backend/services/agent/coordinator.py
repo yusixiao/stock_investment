@@ -39,6 +39,7 @@ class Coordinator:
         llm_factory: Callable[[str], LLMClient],
         store=None,
         indicators=None,
+        tavily=None,
     ):
         self.sse_send = sse_send
         self.repo = repo
@@ -48,6 +49,8 @@ class Coordinator:
         # 透传给 agent 的真实数据依赖(单测可不传)
         self.store = store
         self.indicators = indicators
+        # 可选 Tavily web search(§8 行业 / §10 ESG);无 key 自动降级
+        self.tavily = tavily
 
     async def run(
         self,
@@ -84,6 +87,7 @@ class Coordinator:
                 llm_factory=self.llm_factory,
                 store=self.store,
                 indicators=self.indicators,
+                tavily=self.tavily,
             )
             return await agent.run(session_id, ref)
         except LLMError as e:

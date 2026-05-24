@@ -22,9 +22,9 @@ from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import (
     s05_cashflow,
     s06_dividend,
     s07_holders,
-    s08_industry_placeholder,
+    s08_industry,
     s09_segments,
-    s10_esg_placeholder,
+    s10_esg,
     s11_weekly_kline,
     s12_ratios,
     s13_warnings,
@@ -45,9 +45,9 @@ SECTION_REGISTRY: dict = {
     "s05": s05_cashflow.build,
     "s06": s06_dividend.build,
     "s07": s07_holders.build,
-    "s08": s08_industry_placeholder.build,
+    "s08": s08_industry.build,
     "s09": s09_segments.build,
-    "s10": s10_esg_placeholder.build,
+    "s10": s10_esg.build,
     "s11": s11_weekly_kline.build,
     "s12": s12_ratios.build,
     "s13": s13_warnings.build,
@@ -89,25 +89,34 @@ class DataPackBuilder:
         store,
         stock_index,
         indicators,
+        tavily=None,
         include: Iterable[str] = DEFAULT_INCLUDE,
     ):
         self.store = store
         self.stock_index = stock_index
         self.indicators = indicators
+        # 可选 web search 客户端(§8 行业 / §10 ESG 用);无注入 → section 自动降级
+        self.tavily = tavily
         self.include = tuple(include)
 
     def build(self, ref: StockRef, output_dir: Path) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
         parts: list[str] = [f"# 数据包 — {ref.name}({ref.code})\n"]
-        deps = dict(
+        # 基础 deps:所有 section 共用;tavily 只注入需要的 section,避免老 section
+        # 改签名(它们没有 **kw catchall)
+        base_deps = dict(
             store=self.store,
             stock_index=self.stock_index,
             indicators=self.indicators,
         )
+        tavily_sections = {"s08", "s10"}
         for key in self.include:
             fn = SECTION_REGISTRY.get(key)
             if fn is None:
                 continue
+            deps = dict(base_deps)
+            if key in tavily_sections:
+                deps["tavily"] = self.tavily
             chunk = fn(ref, **deps)
             if chunk is None:
                 continue
