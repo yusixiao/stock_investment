@@ -299,6 +299,48 @@ class DuckDBStore:
 
         return self._conn.execute(sql, params).fetchdf()
 
+    # ==================================================================
+    # 冷热分层 hot-path:bundle 已加载时优先返回,业务代码无需感知
+    # ------------------------------------------------------------------
+    # 设计:
+    # - 每个 _try_bundle_* helper 返回 Optional 结果,None 代表 miss → 走 DuckDB
+    # - bundle 未加载 / market 未支持 / symbol miss → 一律降级 DuckDB
+    # - 仅 4 个高频问股/K 线接口接入(K 线、周 K、分红、indicator)
+    # - income/balance/cashflow/raw K 线/复权因子保持 DuckDB(bundle 暂未加载这些)
+    # ==================================================================
+
+    @staticmethod
+    def _get_bundle(market: str):
+        """惰性查 MarketBundle。循环 import 风险用 local import 规避。"""
+        try:
+            from services.backtest.data_cache import get_market
+
+            return get_market(market)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _try_bundle_qfq_kline(
+        self,
+        market: str,
+        symbol: str,
+        start: Optional[str],
+        end: Optional[str],
+    ) -> Optional[pd.DataFrame]:
+        bundle = self._get_bundle(market)
+        if bundle is None or symbol not in bundle.stock_data:
+            return None
+        df = bundle.stock_data[symbol]
+        if df.empty:
+            return None
+        # 只保留 7 列,丢弃 bundle 预算的指标列
+        cols = ["date", "open", "high", "low", "close", "volume", "amount"]
+        out = df[cols].copy()
+        if start:
+            out = out[out["date"] >= start]
+        if end:
+            out = out[out["date"] <= end]
+        return out.reset_index(drop=True)
+
     def query_qfq_kline(
         self,
         market: str,
@@ -317,6 +359,11 @@ class DuckDBStore:
 
         返回 7 列：date / open / high / low / close / volume / amount，date 升序。
         """
+        # hot-path:bundle 已加载且含此 symbol → 内存切片
+        hot = self._try_bundle_qfq_kline(market, symbol, start, end)
+        if hot is not None:
+            return hot
+
         daily_view = f"v_{market.lower()}_daily"
         adj_view = f"v_{market.lower()}_adjust_factor"
 
@@ -604,6 +651,43 @@ class DuckDBStore:
         ),
     }
 
+    def _try_bundle_financial_indicator_section(
+        self, code: str, years: int
+    ) -> Optional[list[dict]]:
+        """问股 indicator 表 hot-path。bundle.financial_data 是 EastMoney 原 schema,
+        在此处映射成 query_financial_for_section 期望的 SELECT AS 别名。"""
+        market = self._market_of_code(code)
+        bundle = self._get_bundle(market)
+        if bundle is None or code not in bundle.financial_data:
+            return None
+        df = bundle.financial_data[code]
+        if df.empty:
+            return None
+        if "REPORT_DATE" not in df.columns:
+            return None
+        # 只看年报
+        annual = df[df["REPORT_DATE"].astype(str).str.endswith("-12-31")].copy()
+        if annual.empty:
+            return []
+        annual = annual.sort_values("REPORT_DATE", ascending=False).head(int(years))
+        # 字段映射(对齐 _FIN_SELECT["indicator"])
+        out = []
+        for _, row in annual.iterrows():
+            out.append(
+                {
+                    "REPORT_DATE": row.get("REPORT_DATE"),
+                    "ROEJQ": row.get("ROEJQ"),
+                    "ROAJQ": row.get("ZZCJLL"),
+                    "GROSSPROFIT_MARGIN": row.get("XSMLL"),
+                    "NETPROFIT_MARGIN": row.get("XSJLL"),
+                    "DEBT_ASSET_RATIO": row.get("ZCFZL"),
+                    "CURRENT_RATIO": row.get("LD"),
+                    "BPS": row.get("BPS"),
+                    "EPSJB": row.get("EPSJB"),
+                }
+            )
+        return out
+
     def query_financial_for_section(
         self, code: str, table: str, years: int = 5
     ) -> list[dict]:
@@ -613,12 +697,19 @@ class DuckDBStore:
         - 取年报(REPORT_DATE 以 -12-31 结尾),REPORT_DATE 倒序最近 `years` 行
         - 字段经 SELECT AS 重命名/派生,sections 直接 .get(英文字段名) 即可
         - 视图缺失或异常 → 返回 [],sections 显示「数据缺失」
+        - hot-path:table=='indicator' 且 bundle 已加载 → 内存返回(其余 table 走 DuckDB)
         """
         # 母公司表项目当前数据源未提供,直接返回空让 section 走 fallback 文案
         if table in ("income_parent", "balance_parent"):
             return []
         if table not in self._FIN_SELECT:
             return []
+
+        # hot-path:仅 indicator 表(bundle 当前只缓存这张)
+        if table == "indicator":
+            hot = self._try_bundle_financial_indicator_section(code, years)
+            if hot is not None:
+                return hot
 
         market = self._market_of_code(code)
         view = f"v_{market.lower()}_{table}"
@@ -682,6 +773,7 @@ class DuckDBStore:
         - years:回溯年限,自动算出 start 日期;None 则不限
         - limit + order='desc':取最近 N 根(用于 §2 取最新一根)
         - 字段:date / open / high / low / close / volume / amount(全 dict 化)
+        - hot-path:bundle 已加载时,日线走 stock_data,周线走 weekly_data(已预聚合)
         """
         market = self._market_of_code(code)
         # 算 start
@@ -690,6 +782,30 @@ class DuckDBStore:
             from datetime import date, timedelta
 
             start = (date.today() - timedelta(days=int(years) * 366)).isoformat()
+
+        # hot-path:周线直接读 weekly_data(bundle 启动时预聚合 W-FRI),
+        # 日线走 query_qfq_kline 内部 hot-path
+        bundle = self._get_bundle(market)
+        if bundle is not None and freq.upper() == "W" and code in bundle.weekly_data:
+            wdf = bundle.weekly_data[code]
+            if not wdf.empty:
+                cols = [
+                    "date",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "amount",
+                ]
+                df = wdf[cols].copy()
+                if start:
+                    df = df[df["date"] >= start]
+                if order.lower() == "desc":
+                    df = df.iloc[::-1].reset_index(drop=True)
+                if limit:
+                    df = df.head(int(limit))
+                return df.to_dict("records")
 
         try:
             df = self.query_qfq_kline(market, code, start=start)
@@ -732,8 +848,27 @@ class DuckDBStore:
 
         视图 v_{market}_dividend 按事件日存(date / cash_dividend),adapter 按
         EXTRACT(YEAR) 聚合到年并 SUM(cash_dividend) 作为 DPS。返回最近 `years` 年。
+        - hot-path:bundle.dividend_data 已加载时,内存按年 groupby/sum
         """
         market = self._market_of_code(code)
+        bundle = self._get_bundle(market)
+        if bundle is not None and code in bundle.dividend_data:
+            ddf = bundle.dividend_data[code]
+            if (
+                not ddf.empty
+                and "date" in ddf.columns
+                and "cash_dividend" in ddf.columns
+            ):
+                tmp = ddf[["date", "cash_dividend"]].copy()
+                tmp["year"] = pd.to_datetime(tmp["date"]).dt.year.astype(int)
+                grouped = (
+                    tmp.groupby("year", as_index=False)["cash_dividend"]
+                    .sum()
+                    .rename(columns={"cash_dividend": "dps"})
+                    .sort_values("year", ascending=False)
+                    .head(int(years))
+                )
+                return grouped.to_dict("records")
         view = f"v_{market.lower()}_dividend"
         if not self._view_exists(view):
             return []
