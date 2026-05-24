@@ -66,6 +66,15 @@ async def lifespan(app: FastAPI):
     # 触发 agent 注册(导入即注册到 agent_harness.registry)
     import services.agents  # noqa: F401
 
+    # 启动后异步预加载 A 股 MarketBundle(回测/雷达依赖,不阻塞 lifespan)
+    try:
+        from services.backtest import data_cache
+
+        data_cache.load_market_async("A")
+        logging.getLogger(__name__).info("A 股 MarketBundle 预加载已在后台启动")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"MarketBundle 预加载启动失败(忽略): {e}")
+
     start_scheduler()
     yield
     shutdown_scheduler()

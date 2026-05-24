@@ -121,7 +121,15 @@ def _load_dividend(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 def _load_financial(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
     """财务指标(English schema:REPORT_DATE / ROEJQ / EPSJB / BPS / TOTAL_SHARE / ...)。"""
-    return get_store().query_financial_bulk(market, symbols, fin_type="indicator")
+    try:
+        out = get_store().query_financial_bulk(market, symbols, fin_type="indicator")
+        logger.info(
+            "_load_financial: market=%s in=%d out=%d", market, len(symbols), len(out)
+        )
+        return out
+    except Exception as e:
+        logger.exception("_load_financial failed: %s", e)
+        return {}
 
 
 def _aggregate_and_compute(
@@ -173,25 +181,52 @@ def _load_market_blocking(market: str) -> MarketBundle:
     p.phase = "加载 K 线..."
     p.current = 0
     p.total = 0
+    logger.info("data_cache: 开始加载 market=%s 全市场数据...", market)
 
     try:
+        t0 = time.time()
         stock_data_raw = _load_stock_data_full(market)
         symbols = list(stock_data_raw.keys())
         p.current = len(symbols)
         p.total = len(symbols)
         p.phase = f"K 线加载完成({len(symbols)} 只),聚合 weekly/monthly + 预算指标..."
+        logger.info(
+            "data_cache: [%s] K 线加载完成 — symbols=%d, 耗时 %.1fs",
+            market,
+            len(symbols),
+            time.time() - t0,
+        )
 
         # 预聚合 + 预算指标(daily/weekly/monthly 三套)— 是本架构升级的关键
         # 一次性付出 30-60s 成本,后续回测/雷达全部 O(1) 查列
+        t1 = time.time()
         stock_data, weekly_data, monthly_data = _aggregate_and_compute(
             stock_data_raw, p
+        )
+        logger.info(
+            "data_cache: [%s] 指标预算完成 — daily=%d / weekly=%d / monthly=%d, 耗时 %.1fs",
+            market,
+            len(stock_data),
+            len(weekly_data),
+            len(monthly_data),
+            time.time() - t1,
         )
 
         p.phase = f"指标预算完成,加载估值/分红/财务({len(symbols)} 只)..."
         # DuckDB 单连接不支持并发查询(会触发 "result closed"),串行执行。
+        t2 = time.time()
         valuation_data = _load_valuation(market, symbols)
         dividend_data = _load_dividend(market, symbols)
         financial_data = _load_financial(market, symbols)
+        logger.info(
+            "data_cache: [%s] 估值/分红/财务加载完成 — "
+            "valuation=%d / dividend=%d / financial=%d, 耗时 %.1fs",
+            market,
+            len(valuation_data),
+            len(dividend_data),
+            len(financial_data),
+            time.time() - t2,
+        )
 
         bundle = MarketBundle(
             market=market,
