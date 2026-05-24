@@ -9,17 +9,10 @@ from backend.adapters.baostock_adapter import (
     _to_baostock_code,
     _to_standard_code,
 )
-from backend.adapters.akshare_adapter import AKShareAdapter, _to_akshare_symbol
 from backend.adapters.data_source import DataSource, create_default_data_source
 from backend.models.market import DailyKlineRecord, AdjustFactorRecord
 from backend.models.basic import StockBasicInfo
 from backend.models.event import DividendRecord
-from backend.models.financial import (
-    IncomeStatement,
-    BalanceSheet,
-    CashFlow,
-    FinancialIndicator,
-)
 
 
 class TestCodeConversion:
@@ -30,10 +23,6 @@ class TestCodeConversion:
     def test_to_standard_code(self):
         assert _to_standard_code("sz.000001") == "000001.SZ"
         assert _to_standard_code("sh.600000") == "600000.SH"
-
-    def test_to_akshare_symbol(self):
-        assert _to_akshare_symbol("000001.SZ") == "SZ000001"
-        assert _to_akshare_symbol("600000.SH") == "SH600000"
 
 
 def _make_bs_result(fields, rows):
@@ -340,127 +329,6 @@ class TestBaoStockAdapterDividends:
         assert records[0].code == "600000.SH"
         assert records[0].dividOperateDate == "2025-06-02"
         assert records[0].dividCashPsBeforeTax == 0.5
-
-
-class TestAKShareAdapter:
-    @patch("backend.adapters.akshare_adapter.ak")
-    def test_fetch_income_success(self, mock_ak):
-        df = pd.DataFrame(
-            {
-                "REPORT_DATE": ["2025-12-31", "2025-09-30"],
-                "REPORT_TYPE": ["年报", "三季报"],
-                "NOTICE_DATE": ["2026-03-20", "2025-10-30"],
-                "OPERATE_INCOME": [100000000.0, 75000000.0],
-                "NETPROFIT": [20000000.0, 15000000.0],
-                "PARENT_NETPROFIT": [18000000.0, 13000000.0],
-                "BASIC_EPS": [1.5, 1.1],
-            }
-        )
-        mock_ak.stock_profit_sheet_by_report_em.return_value = df
-
-        adapter = AKShareAdapter()
-        records = adapter.fetch_income("600000.SH")
-
-        assert len(records) == 2
-        assert isinstance(records[0], IncomeStatement)
-        assert records[0].REPORT_DATE == "2025-12-31"
-        assert records[0].OPERATE_INCOME == 100000000.0
-        assert records[0].BASIC_EPS == 1.5
-
-    @patch("backend.adapters.akshare_adapter.ak")
-    def test_fetch_income_empty(self, mock_ak):
-        mock_ak.stock_profit_sheet_by_report_em.return_value = pd.DataFrame()
-
-        adapter = AKShareAdapter()
-        records = adapter.fetch_income("600000.SH")
-        assert records == []
-
-    @patch("backend.adapters.akshare_adapter.ak")
-    def test_fetch_income_exception(self, mock_ak):
-        mock_ak.stock_profit_sheet_by_report_em.side_effect = Exception("timeout")
-
-        adapter = AKShareAdapter()
-        records = adapter.fetch_income("600000.SH")
-        assert records == []
-
-    @patch("backend.adapters.akshare_adapter.ak")
-    def test_fetch_balance_success(self, mock_ak):
-        df = pd.DataFrame(
-            {
-                "REPORT_DATE": ["2025-12-31"],
-                "TOTAL_ASSETS": [5000000000.0],
-                "TOTAL_LIABILITIES": [4000000000.0],
-                "TOTAL_EQUITY": [1000000000.0],
-            }
-        )
-        mock_ak.stock_balance_sheet_by_report_em.return_value = df
-
-        adapter = AKShareAdapter()
-        records = adapter.fetch_balance("600000.SH")
-
-        assert len(records) == 1
-        assert isinstance(records[0], BalanceSheet)
-        assert records[0].TOTAL_ASSETS == 5000000000.0
-
-    @patch("backend.adapters.akshare_adapter.ak")
-    def test_fetch_cashflow_success(self, mock_ak):
-        df = pd.DataFrame(
-            {
-                "REPORT_DATE": ["2025-12-31"],
-                "NETCASH_OPERATE": [300000000.0],
-                "NETCASH_INVEST": [-200000000.0],
-                "NETCASH_FINANCE": [-50000000.0],
-            }
-        )
-        mock_ak.stock_cash_flow_sheet_by_report_em.return_value = df
-
-        adapter = AKShareAdapter()
-        records = adapter.fetch_cashflow("600000.SH")
-
-        assert len(records) == 1
-        assert isinstance(records[0], CashFlow)
-        assert records[0].NETCASH_OPERATE == 300000000.0
-
-    @patch("backend.adapters.akshare_adapter.ak")
-    def test_fetch_indicator_success(self, mock_ak):
-        df = pd.DataFrame(
-            {
-                "REPORT_DATE": ["2025-12-31"],
-                "EPSJB": [1.5],
-                "ROEJQ": [12.5],
-                "XSMLL": [35.0],
-                "ZCFZL": [80.0],
-            }
-        )
-        mock_ak.stock_financial_analysis_indicator_em.return_value = df
-
-        adapter = AKShareAdapter()
-        records = adapter.fetch_indicator("600000.SH")
-
-        assert len(records) == 1
-        assert isinstance(records[0], FinancialIndicator)
-        assert records[0].ROEJQ == 12.5
-
-    @patch("backend.adapters.akshare_adapter.ak")
-    def test_fetch_income_with_extra_columns(self, mock_ak):
-        """验证 extra='allow' 模型可以接收未显式定义的列"""
-        df = pd.DataFrame(
-            {
-                "REPORT_DATE": ["2025-12-31"],
-                "OPERATE_INCOME": [100000000.0],
-                "SOME_UNKNOWN_COLUMN": [999.0],
-                "ANOTHER_COL": ["text_value"],
-            }
-        )
-        mock_ak.stock_profit_sheet_by_report_em.return_value = df
-
-        adapter = AKShareAdapter()
-        records = adapter.fetch_income("600000.SH")
-
-        assert len(records) == 1
-        assert records[0].REPORT_DATE == "2025-12-31"
-        assert records[0].model_extra["SOME_UNKNOWN_COLUMN"] == 999.0
-        assert records[0].model_extra["ANOTHER_COL"] == "text_value"
 
 
 class TestDataSource:

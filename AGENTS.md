@@ -10,7 +10,8 @@
 - **技术栈**:
   - 后端 Python:FastAPI + APScheduler + DuckDB(查询层)+ pandas/parquet(存储)+ SQLite(业务库)
   - 前端 React 19 + TypeScript + Vite 7 + Tailwind v4 + zustand + react-router 7 + lightweight-charts(K 线)+ recharts(回测曲线)+ react-markdown
-- **数据源**:多 adapter 架构 — `AKShareAdapter`(A 股)、`BaoStockAdapter`、`EastMoneyAdapter`(财务/估值默认)、`YFinanceAdapter`(港股/美股)。`adapters/data_source.py::create_default_data_source()` 统一装配
+- **数据源**:多 adapter 架构 — `BaoStockAdapter`(A 股 K 线/基础)、`EastMoneyAdapter`(财务/估值/股本默认)、`YFinanceAdapter`(港股/美股)。`adapters/data_source.py::create_default_data_source()` 统一装配
+- **🚨 数据源铁律(2026-05-24)**:**禁止使用 akshare**(在本环境不稳定/经常超时)。所有新代码与现有改动必须用 **baostock / eastmoney / yfinance**;旧依赖 akshare 的代码逐步迁移至 DuckDB 视图(已有完整 EastMoney 财务/指标数据)或 baostock。`backend/adapters/akshare_adapter.py` 已删除;`scripts/migrate_financial_akshare.py` 等历史一次性迁移脚本保留供归档,不再调用
 - **数据存储**:
   - **🚨 铁律(2026-05-21):所有业务数据来源**必须**是 `data/market/`,绝对禁止读取 `data/{kline,financial,dividend,valuation,indicators}/...` 等任何旧路径**。新增数据(分红、估值等当前缺失类目)也**必须落到 `data/market/{A,HK,US}/<category>/`** 下,按市场分区组织,统一英文 schema(对齐 EastMoney/YFinance 原始字段)
   - **唯一业务数据源 = DuckDB**(2026-05-18 决策):所有业务代码(回测、选股、K 线展示、财务/估值/分红查询)**必须**经 `services/duckdb_store.py` 访问数据,**禁止**直接 `glob` parquet 或读旧路径文件。新增数据访问 API 必须先在 `DuckDBStore` 上加方法/视图
@@ -28,7 +29,7 @@
 - **回测数据**:使用 `qfq/`(前复权);K 线显示支持 raw/qfq 切换
 - **年化收益率**:`(1 + total_return) ^ (1 / years) - 1`,`years = natural_days / 365.25`
 - **持仓估值**:用 parquet 最新收盘价(非实时 API)。**持仓本身不入库**,由 trades 在内存推导
-- **AKShare 在本环境会超时** — 调用 API 的代码必须用 mock 测试
+- **akshare 已禁用**(见上方数据源铁律) — 历史 mock 测试仅作迁移期保留
 - **`write` 工具对超大内容会中止** — 拆成多次小写
 - **前端端口**:3001(`vite.config.ts`),代理 `/api → 127.0.0.1:8000`
 - **策略模型(2026-05 重构,Phase 6)**:**Pipeline + Screener/Buyer/Seller 三角拆分模型已废弃**。当前为**单一 Strategy 类**(`strategies/base.py::Strategy` / `ScreenerStrategy`),策略实现 `screen(ctx, symbols) -> List[str]` + 可选 `on_buy(ctx, symbol)` / `on_sell(ctx, symbol)` hooks。示例:`strategies/examples/ma_tangle_value_strategy.py`、`ma_close_strategy.py`
@@ -46,7 +47,7 @@
 - **Signal Table 模式**:链路提供预算好的 `screened_symbols + match_dates` 时,Engine 跳过实时选股,在信号日按 hooks 执行
 - **策略雷达**(StrategyRadar):基于 `run_scan()`,前端组件支持 lookback(1m/3m/6m/1y/...)、参数对话框(createPortal)、结果导出 Excel、多 hits 单行+hit 数列、涨跌幅按信号日累计、因子值 pill 展示
 - **后端架构 DDD 三层**:`adapters/`(外部数据源)→ `repositories/`(parquet/DuckDB I/O)→ `services/`(领域服务)。`models/` 定义 Pydantic 实体,`domain/` 放领域常量
-- **测试**:550 个 case,`python -m pytest backend/tests/ -x -q`。AKShare 必须 mock(`test_adapters.py` 等)
+- **测试**:550+ case,`python -m pytest backend/tests/ -x -q`。adapter 测试用 mock(`test_adapters.py` 等)
 - **长任务后台执行**:任何预计运行超过 1 分钟的任务(回测、矩阵跑批、诊断脚本、全市场数据更新、批量数据迁移等)**必须**用 `nohup ... > log 2>&1 &` 后台执行,前台只查 PID/日志/进度,避免阻塞会话
 
 ## Discoveries
@@ -72,7 +73,7 @@
 
 ### 多市场数据层(2025 末-2026 初)
 
-- `adapters/`:base / akshare / baostock / eastmoney / yfinance + `data_source.py` 装配器
+- `adapters/`:base / baostock / eastmoney / yfinance + `data_source.py` 装配器
 - `models/`:basic / market / financial / event 四大 Pydantic 实体
 - `repositories/`:base / basic_repo / market_repo / financial_repo / event_repo,封装 parquet I/O(读/写/append/排序去重)
 - `services/market_updater.py`:A/HK/US 并行增量更新(K 线 + 复权因子)
@@ -146,7 +147,7 @@ stock_investment/
 │   ├── main.py                         # FastAPI app, lifespan: init_db + init_duckdb + init_stock_index + scheduler
 │   ├── config.py                       # 全部数据路径常量
 │   ├── scheduler.py                    # 06:00 market update / 15:30 snapshot / 周日 03:00 backup
-│   ├── adapters/                       # base, akshare, baostock, eastmoney, yfinance, data_source
+│   ├── adapters/                       # base, baostock, eastmoney, yfinance, data_source
 │   ├── domain/                         # stock 领域常量
 │   ├── models/                         # basic / market / financial / event Pydantic
 │   ├── repositories/                   # base / basic_repo / market_repo / financial_repo / event_repo
@@ -250,7 +251,9 @@ cd frontend && npm run lint                # ESLint
 - T20-T26:`DataPackBuilder` + 14 个真实 section
   - §1 基础 / §2 市值股价 / §3·§3P 利润表 / §4·§4P 资产负债 / §5 现金流 / §6 股息
   - §9 主营 / §11 周线 / §12 比率 / §13 warnings / §15 行业估值 / §17 衍生
-  - §7/§8/§10/§14/§16 占位(后续填)
+  - §14 Rf:常量快照(akshare 已移除,手动维护 RF_CHINA_10Y)
+  - §16 同行对比:已是真实实现(行业内 ROE/毛利率/净利率/资产负债率)
+  - §7/§8/§10 占位(后续填,**禁止用 akshare**)
 - 端到端集成测试用 002594.SZ 跑通 19 sections 拼装
 
 ### LLM 流水线(Phase 3)
@@ -278,7 +281,7 @@ cd frontend && npm run lint                # ESLint
 5. Workspace 按 `<code>_<name>/` 隔离,`_meta.json` 阶段状态原子写
 
 ### Phase 1 待办(下一阶段非阻塞)
-- §7 股东 / §8 行业 / §10 ESG / §14 RF / §16 同行对比 — 当前是占位,数据源接好后补
+- §7 股东 / §8 行业 / §10 ESG — 当前是纯文字占位,数据源(baostock/eastmoney/WebSearch,**禁止 akshare**)接好后补
 - 真实 LLM smoke 跑通后再决定是否要做 prompt 调优 / 多模型对比
 - 前端 ChatPage UI 已有,但 full_pipeline 的进度条/artifact 下载链路需端到端联调
 

@@ -1,9 +1,8 @@
 """问股期 1 — Task 20:DataPackBuilder 骨架测试。"""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from services.agent.pipeline.phase1_data_pack.builder import DataPackBuilder
-from services.agent.pipeline.phase1_data_pack.sections import s14_rf
 from services.agent.symbol import StockRef
 
 
@@ -16,9 +15,8 @@ def test_builder_produces_file_with_placeholders(tmp_path):
         indicators=MagicMock(),
         include=("s07", "s08", "s10", "s14", "s16"),
     )
-    # §14 mock akshare 失败,走常量降级路径,避免测试触网
-    with patch.object(s14_rf, "_fetch_china_10y_yield", return_value=None):
-        out = builder.build(ref, tmp_path)
+    # §14 现已为常量快照,无需 mock(2026-05-24 移除 akshare 依赖)
+    out = builder.build(ref, tmp_path)
     assert out.exists()
     text = out.read_text(encoding="utf-8")
     assert "## §7" in text and "Phase 2" in text
