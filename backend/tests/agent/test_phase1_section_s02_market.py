@@ -9,8 +9,8 @@ from services.agent.symbol import StockRef
 def test_normal_with_price_and_shares():
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
     store = MagicMock()
-    store.query_qfq_kline.return_value = [{"date": "2026-05-23", "close": 250.0}]
-    store.query_circulating_shares.return_value = 1_000_000_000
+    store.query_qfq_kline_for_section.return_value = [{"date": "2026-05-23", "close": 250.0}]
+    store.query_circulating_shares_for_section.return_value = 1_000_000_000
     out = s02_market.build(
         ref, store=store, stock_index=MagicMock(), indicators=MagicMock()
     )
@@ -25,7 +25,7 @@ def test_normal_with_price_and_shares():
 def test_empty_kline_returns_missing():
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
     store = MagicMock()
-    store.query_qfq_kline.return_value = []
+    store.query_qfq_kline_for_section.return_value = []
     out = s02_market.build(
         ref, store=store, stock_index=MagicMock(), indicators=MagicMock()
     )
@@ -36,8 +36,8 @@ def test_empty_kline_returns_missing():
 def test_kline_but_no_shares():
     ref = StockRef(code="00700.HK", name="腾讯控股", market="HK")
     store = MagicMock()
-    store.query_qfq_kline.return_value = [{"date": "2026-05-23", "close": 380.5}]
-    store.query_circulating_shares.return_value = 0
+    store.query_qfq_kline_for_section.return_value = [{"date": "2026-05-23", "close": 380.5}]
+    store.query_circulating_shares_for_section.return_value = 0
     out = s02_market.build(
         ref, store=store, stock_index=MagicMock(), indicators=MagicMock()
     )
@@ -49,7 +49,7 @@ def test_kline_but_no_shares():
 def test_store_exception_falls_back_to_missing():
     ref = StockRef(code="AAPL", name="Apple Inc", market="US")
     store = MagicMock()
-    store.query_qfq_kline.side_effect = RuntimeError("boom")
+    store.query_qfq_kline_for_section.side_effect = RuntimeError("boom")
     out = s02_market.build(
         ref, store=store, stock_index=MagicMock(), indicators=MagicMock()
     )

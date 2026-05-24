@@ -556,6 +556,232 @@ class DuckDBStore:
         """执行自定义筛选 SQL（跨股票）"""
         return self.query(sql, params)
 
+    # ==================================================================
+    # 问股 Phase 1 数据包专用 adapter(sections 调用入口)
+    # ------------------------------------------------------------------
+    # 设计原则:
+    #   1. 入参只要 code(带 .SH/.SZ/.HK 后缀或裸字母),market 由后缀自动推断
+    #   2. SQL 内部完成字段别名 + 派生(GROSS_PROFIT / 拼音指标 → 英文别名)
+    #      保持 sections 现有英文字段引用不变
+    #   3. 所有 adapter 失败/视图缺失/symbol 不存在 → 返回 [] 或 None,不抛
+    # ==================================================================
+
+    @staticmethod
+    def _market_of_code(code: str) -> str:
+        """从 code 后缀推断市场。.SH/.SZ→A,.HK→HK,其余(纯字母)→US。"""
+        upper = (code or "").upper()
+        if upper.endswith((".SH", ".SZ")):
+            return "A"
+        if upper.endswith(".HK"):
+            return "HK"
+        return "US"
+
+    # 各财务表的字段映射 SQL(SELECT 子句),保留 REPORT_DATE 排序键
+    # NULL AS xxx 占位字段:视图实际无此列,sections 查 .get(key) 得 None 优雅降级
+    _FIN_SELECT = {
+        "income": (
+            "REPORT_DATE, NETPROFIT, PARENT_NETPROFIT, DEDUCT_PARENT_NETPROFIT, "
+            "BASIC_EPS, OPERATE_PROFIT, OPERATE_COST, TOTAL_OPERATE_INCOME, "
+            "(TOTAL_OPERATE_INCOME - TOTAL_OPERATE_COST) AS GROSS_PROFIT"
+        ),
+        "balance": (
+            "b.REPORT_DATE, b.TOTAL_ASSETS, b.TOTAL_LIABILITIES, b.TOTAL_EQUITY, "
+            "b.MONETARYFUNDS AS MONETARY_FUND, b.INVENTORY AS INVENTORIES, "
+            "b.FIXED_ASSET AS FIXED_ASSETS, b.INTANGIBLE_ASSET AS INTANGIBLE_ASSETS, "
+            "b.GOODWILL, b.DEBT_ASSET_RATIO, "
+            "NULL::DOUBLE AS TOTAL_CURRENT_ASSETS, NULL::DOUBLE AS TOTAL_CURRENT_LIAB, "
+            "i.BPS"
+        ),
+        "cashflow": (
+            "REPORT_DATE, NETCASH_OPERATE, NETCASH_INVEST, NETCASH_FINANCE, "
+            "END_CCE AS END_CASH, CONSTRUCT_LONG_ASSET, "
+            "NULL::DOUBLE AS DEPRECIATION_FA"
+        ),
+        "indicator": (
+            "REPORT_DATE, ROEJQ, ZZCJLL AS ROAJQ, "
+            "XSMLL AS GROSSPROFIT_MARGIN, XSJLL AS NETPROFIT_MARGIN, "
+            "ZCFZL AS DEBT_ASSET_RATIO, LD AS CURRENT_RATIO, BPS, EPSJB"
+        ),
+    }
+
+    def query_financial_for_section(
+        self, code: str, table: str, years: int = 5
+    ) -> list[dict]:
+        """问股 §3/§4/§5/§12/§13/§16 财务数据 adapter。
+
+        - table ∈ {income, balance, cashflow, indicator, income_parent, balance_parent}
+        - 取年报(REPORT_DATE 以 -12-31 结尾),REPORT_DATE 倒序最近 `years` 行
+        - 字段经 SELECT AS 重命名/派生,sections 直接 .get(英文字段名) 即可
+        - 视图缺失或异常 → 返回 [],sections 显示「数据缺失」
+        """
+        # 母公司表项目当前数据源未提供,直接返回空让 section 走 fallback 文案
+        if table in ("income_parent", "balance_parent"):
+            return []
+        if table not in self._FIN_SELECT:
+            return []
+
+        market = self._market_of_code(code)
+        view = f"v_{market.lower()}_{table}"
+        if not self._view_exists(view):
+            return []
+
+        try:
+            if table == "balance":
+                # balance 需 LEFT JOIN indicator 取 BPS
+                ind_view = f"v_{market.lower()}_indicator"
+                ind_join = (
+                    f"LEFT JOIN {ind_view} i "
+                    f"ON i._symbol = b._symbol AND i.REPORT_DATE = b.REPORT_DATE"
+                    if self._view_exists(ind_view)
+                    else ""
+                )
+                # 无 indicator 视图时 BPS 改 NULL
+                select_sql = self._FIN_SELECT[table]
+                if not ind_join:
+                    select_sql = select_sql.replace("i.BPS", "NULL::DOUBLE AS BPS")
+                sql = f"""
+                    SELECT {select_sql}
+                    FROM {view} b
+                    {ind_join}
+                    WHERE b._symbol = ?
+                      AND b.REPORT_DATE LIKE '%-12-31'
+                    ORDER BY b.REPORT_DATE DESC
+                    LIMIT {int(years)}
+                """
+            else:
+                sql = f"""
+                    SELECT {self._FIN_SELECT[table]}
+                    FROM {view}
+                    WHERE _symbol = ?
+                      AND REPORT_DATE LIKE '%-12-31'
+                    ORDER BY REPORT_DATE DESC
+                    LIMIT {int(years)}
+                """
+            df = self._conn.execute(sql, [code]).fetchdf()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "query_financial_for_section(%s, %s) failed: %s", code, table, e
+            )
+            return []
+        if df.empty:
+            return []
+        return df.to_dict("records")
+
+    def query_qfq_kline_for_section(
+        self,
+        code: str,
+        *,
+        freq: str = "D",
+        years: Optional[int] = None,
+        limit: Optional[int] = None,
+        order: str = "asc",
+    ) -> list[dict]:
+        """问股 §2/§11 K 线 adapter。
+
+        - freq='D'(日)或 'W'(按 ISO 周聚合,周五为周末观察日)
+        - years:回溯年限,自动算出 start 日期;None 则不限
+        - limit + order='desc':取最近 N 根(用于 §2 取最新一根)
+        - 字段:date / open / high / low / close / volume / amount(全 dict 化)
+        """
+        market = self._market_of_code(code)
+        # 算 start
+        start: Optional[str] = None
+        if years:
+            from datetime import date, timedelta
+
+            start = (date.today() - timedelta(days=int(years) * 366)).isoformat()
+
+        try:
+            df = self.query_qfq_kline(market, code, start=start)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("query_qfq_kline_for_section(%s) failed: %s", code, e)
+            return []
+        if df.empty:
+            return []
+
+        # 周聚合:每周取首日 open / 末日 close / max high / min low / sum volume,amount
+        if freq.upper() == "W":
+            df = df.copy()
+            df["date"] = pd.to_datetime(df["date"])
+            df = (
+                df.set_index("date")
+                .resample("W-FRI")
+                .agg(
+                    {
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "volume": "sum",
+                        "amount": "sum",
+                    }
+                )
+                .dropna(subset=["close"])
+                .reset_index()
+            )
+            df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+
+        if order.lower() == "desc":
+            df = df.iloc[::-1].reset_index(drop=True)
+        if limit:
+            df = df.head(int(limit))
+        return df.to_dict("records")
+
+    def query_dividend_for_section(self, code: str, years: int = 5) -> list[dict]:
+        """问股 §6 每股股息 adapter。
+
+        视图 v_{market}_dividend 按事件日存(date / cash_dividend),adapter 按
+        EXTRACT(YEAR) 聚合到年并 SUM(cash_dividend) 作为 DPS。返回最近 `years` 年。
+        """
+        market = self._market_of_code(code)
+        view = f"v_{market.lower()}_dividend"
+        if not self._view_exists(view):
+            return []
+        try:
+            df = self._conn.execute(
+                f"""
+                SELECT EXTRACT(YEAR FROM CAST(date AS DATE))::INT AS year,
+                       SUM(cash_dividend) AS dps
+                FROM {view}
+                WHERE _symbol = ?
+                GROUP BY 1
+                ORDER BY 1 DESC
+                LIMIT {int(years)}
+                """,
+                [code],
+            ).fetchdf()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("query_dividend_for_section(%s) failed: %s", code, e)
+            return []
+        if df.empty:
+            return []
+        return df.to_dict("records")
+
+    def query_circulating_shares_for_section(self, code: str) -> Optional[int]:
+        """问股 §2 流通股数 adapter — 读 meta/circulating_shares.parquet。
+
+        symbol 字段是裸 6 位数字(无后缀),A 股 code 截前 6 位匹配;HK/US 暂无数据。
+        文件不存在或 symbol 不匹配 → None。
+        """
+        try:
+            from services.circulating_shares import get_circulating_shares
+
+            df = get_circulating_shares()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("get_circulating_shares failed: %s", e)
+            return None
+        if df is None or df.empty:
+            return None
+        # A 股 code = '002594.SZ' → '002594'
+        bare = code.split(".")[0]
+        hit = df[df["symbol"] == bare]
+        if hit.empty:
+            return None
+        try:
+            return int(hit.iloc[0]["circulating_shares"])
+        except Exception:  # noqa: BLE001
+            return None
+
     def close(self):
         self._conn.close()
 

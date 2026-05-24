@@ -10,7 +10,7 @@ def _fmt_million(v: float) -> str:
 def build(ref, *, store, stock_index, indicators) -> str:
     rows = []
     try:
-        rows = store.query_qfq_kline(ref.code, limit=1, order="desc") or []
+        rows = store.query_qfq_kline_for_section(ref.code, limit=1, order="desc") or []
     except Exception:  # noqa: BLE001
         rows = []
     if not rows:
@@ -22,7 +22,9 @@ def build(ref, *, store, stock_index, indicators) -> str:
 
     shares = None
     try:
-        shares = float(store.query_circulating_shares(ref.code) or 0) or None
+        shares = (
+            float(store.query_circulating_shares_for_section(ref.code) or 0) or None
+        )
     except Exception:  # noqa: BLE001
         shares = None
     market_cap = price * shares if shares else None

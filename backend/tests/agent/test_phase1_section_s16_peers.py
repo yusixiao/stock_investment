@@ -97,7 +97,7 @@ def test_section_16_renders_peers_table():
         return []
 
     store = MagicMock()
-    store.query_financial.side_effect = _query
+    store.query_financial_for_section.side_effect = _query
 
     out = s16.build(_Ref(), store=store, stock_index=si, indicators=None)
     assert "## §16 同业可比公司" in out
@@ -117,7 +117,7 @@ def test_section_16_handles_store_exception_gracefully():
     si.get_industry.return_value = "C36汽车制造业"
     si.get_peers_by_industry.return_value = [_peer("000625.SZ", "长安汽车")]
     store = MagicMock()
-    store.query_financial.side_effect = RuntimeError("duckdb boom")
+    store.query_financial_for_section.side_effect = RuntimeError("duckdb boom")
 
     out = s16.build(_Ref(), store=store, stock_index=si, indicators=None)
     assert "## §16 同业可比公司" in out

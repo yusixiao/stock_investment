@@ -16,7 +16,7 @@ def test_section_13_no_warnings_when_healthy():
         }
     ]
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     out = s13_warnings.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -37,7 +37,7 @@ def test_section_13_high_leverage_warning():
         }
     ]
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     out = s13_warnings.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -58,7 +58,7 @@ def test_section_13_goodwill_impairment_warning():
         }
     ]
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     out = s13_warnings.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -79,7 +79,7 @@ def test_section_13_both_warnings_listed():
         }
     ]
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     out = s13_warnings.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -93,7 +93,7 @@ def test_section_13_both_warnings_listed():
 
 def test_section_13_no_data_no_crash():
     s = MagicMock()
-    s.query_financial.return_value = []
+    s.query_financial_for_section.return_value = []
     out = s13_warnings.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -106,7 +106,7 @@ def test_section_13_no_data_no_crash():
 
 def test_section_13_store_raises_no_crash():
     s = MagicMock()
-    s.query_financial.side_effect = RuntimeError("store error")
+    s.query_financial_for_section.side_effect = RuntimeError("store error")
     out = s13_warnings.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,

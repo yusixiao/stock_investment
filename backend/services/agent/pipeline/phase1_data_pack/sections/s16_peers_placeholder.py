@@ -26,7 +26,7 @@ PEER_RATIO_FIELDS = [
 def _latest_indicator(store, code: str) -> Optional[dict]:
     """取最近一期 indicator;失败返回 None,不抛。"""
     try:
-        rows = store.query_financial(code, table="indicator", years=1)
+        rows = store.query_financial_for_section(code, table="indicator", years=1)
     except Exception:  # noqa: BLE001
         return None
     if not isinstance(rows, list) or not rows:

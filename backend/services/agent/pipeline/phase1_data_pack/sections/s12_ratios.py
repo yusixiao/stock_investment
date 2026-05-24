@@ -19,7 +19,10 @@ RATIO_FIELDS = [
 
 def build(ref, *, store, stock_index, indicators) -> str:
     try:
-        rows = store.query_financial(ref.code, table="indicator", years=5) or []
+        rows = (
+            store.query_financial_for_section(ref.code, table="indicator", years=5)
+            or []
+        )
     except Exception:  # noqa: BLE001
         rows = []
     if not rows:

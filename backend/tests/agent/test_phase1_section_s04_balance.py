@@ -24,7 +24,7 @@ def test_section_4_basic():
         }
     ]
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     out = s04_balance.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -39,7 +39,7 @@ def test_section_4_basic():
 
 def test_section_4_empty_emits_warning():
     s = MagicMock()
-    s.query_financial.return_value = []
+    s.query_financial_for_section.return_value = []
     out = s04_balance.build(
         StockRef("X", "x", "A"),
         store=s,
@@ -94,7 +94,7 @@ def test_s04p_a_share_returns_table():
         },
     ]
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     out = s04p_parent_balance.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -109,7 +109,7 @@ def test_s04p_a_share_returns_table():
 
 def test_s04p_a_share_no_parent_data_returns_warning():
     s = MagicMock()
-    s.query_financial.return_value = []
+    s.query_financial_for_section.return_value = []
     out = s04p_parent_balance.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -133,7 +133,7 @@ def test_s04p_a_share_truncates_to_5_years():
         for y in [2025, 2024, 2023, 2022, 2021, 2020]
     ]
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     out = s04p_parent_balance.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,

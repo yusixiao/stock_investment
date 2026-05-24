@@ -28,7 +28,7 @@ def test_section_12_ratios_basic():
         },
     ]
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     out = s12_ratios.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -42,7 +42,7 @@ def test_section_12_ratios_basic():
 
 def test_section_12_empty():
     s = MagicMock()
-    s.query_financial.return_value = []
+    s.query_financial_for_section.return_value = []
     out = s12_ratios.build(
         StockRef("X", "x", "A"),
         store=s,

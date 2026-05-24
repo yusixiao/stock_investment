@@ -19,7 +19,7 @@ def test_section_5_basic():
         }
     ]
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     out = s05_cashflow.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -33,7 +33,7 @@ def test_section_5_basic():
 
 def test_section_5_empty_emits_warning():
     s = MagicMock()
-    s.query_financial.return_value = []
+    s.query_financial_for_section.return_value = []
     out = s05_cashflow.build(
         StockRef("X", "x", "A"),
         store=s,

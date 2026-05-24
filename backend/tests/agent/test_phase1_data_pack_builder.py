@@ -87,9 +87,9 @@ def test_full_pipeline_a_share_002594(tmp_path):
             for m in range(1, 5)
         ]
 
-    store.query_qfq_kline.side_effect = _kline
-    store.query_circulating_shares.return_value = 2.91e9
-    store.query_financial.side_effect = lambda code, table, years: {
+    store.query_qfq_kline_for_section.side_effect = _kline
+    store.query_circulating_shares_for_section.return_value = 2.91e9
+    store.query_financial_for_section.side_effect = lambda code, table, years: {
         "income": [
             {
                 "REPORT_DATE": "2025-12-31",
@@ -152,7 +152,7 @@ def test_full_pipeline_a_share_002594(tmp_path):
             }
         ],
     }.get(table, [])
-    store.query_dividend_bulk.return_value = [
+    store.query_dividend_for_section.return_value = [
         {"year": "2025", "dps": 2.05},
         {"year": "2024", "dps": 1.10},
     ]

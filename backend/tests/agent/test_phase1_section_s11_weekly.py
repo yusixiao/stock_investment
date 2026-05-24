@@ -18,7 +18,7 @@ def test_section_11_basic():
         for m in range(1, 6)
     ]
     s = MagicMock()
-    s.query_qfq_kline.return_value = rows
+    s.query_qfq_kline_for_section.return_value = rows
     out = s11_weekly_kline.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -33,7 +33,7 @@ def test_section_11_basic():
 
 def test_section_11_empty():
     s = MagicMock()
-    s.query_qfq_kline.return_value = []
+    s.query_qfq_kline_for_section.return_value = []
     out = s11_weekly_kline.build(
         StockRef("X", "x", "A"),
         store=s,

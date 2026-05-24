@@ -6,7 +6,9 @@ from __future__ import annotations
 def build(ref, *, store, stock_index, indicators) -> str:
     warnings: list[str] = []
     try:
-        rows = store.query_financial(ref.code, table="balance", years=1) or []
+        rows = (
+            store.query_financial_for_section(ref.code, table="balance", years=1) or []
+        )
         last = rows[0] if rows else {}
         debt_ratio = last.get("DEBT_ASSET_RATIO") or 0
         if debt_ratio > 80:

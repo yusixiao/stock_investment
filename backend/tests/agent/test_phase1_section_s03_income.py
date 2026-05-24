@@ -8,7 +8,7 @@ from services.agent.symbol import StockRef
 
 def _store(rows):
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     return s
 
 
@@ -95,7 +95,7 @@ def test_s03p_a_share_returns_table():
         }
     ]
     s = MagicMock()
-    s.query_financial.return_value = rows
+    s.query_financial_for_section.return_value = rows
     out = s03p_parent_income.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,
@@ -108,7 +108,7 @@ def test_s03p_a_share_returns_table():
 
 def test_s03p_a_share_no_parent_data_returns_warning():
     s = MagicMock()
-    s.query_financial.return_value = []
+    s.query_financial_for_section.return_value = []
     out = s03p_parent_income.build(
         StockRef("002594.SZ", "比亚迪", "A"),
         store=s,

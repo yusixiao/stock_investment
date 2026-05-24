@@ -10,7 +10,7 @@ from services.agent.pipeline.phase1_data_pack.sections._table import (
 
 def build(ref, *, store, stock_index, indicators) -> str:
     try:
-        rows = store.query_dividend_bulk(ref.code, years=5) or []
+        rows = store.query_dividend_for_section(ref.code, years=5) or []
     except Exception:  # noqa: BLE001
         rows = []
     if not rows:

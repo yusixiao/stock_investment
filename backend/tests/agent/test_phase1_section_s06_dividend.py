@@ -8,7 +8,7 @@ from services.agent.symbol import StockRef
 
 def test_section_6_dps_5_years():
     s = MagicMock()
-    s.query_dividend_bulk.return_value = [
+    s.query_dividend_for_section.return_value = [
         {"year": "2025", "dps": 2.05},
         {"year": "2024", "dps": 1.10},
         {"year": "2023", "dps": 0.49},
@@ -27,7 +27,7 @@ def test_section_6_dps_5_years():
 
 def test_section_6_empty():
     s = MagicMock()
-    s.query_dividend_bulk.return_value = []
+    s.query_dividend_for_section.return_value = []
     out = s06_dividend.build(
         StockRef("X", "x", "A"),
         store=s,
