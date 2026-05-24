@@ -8,6 +8,7 @@ import { ApiErrorAlert, Badge, Button, ConfirmDialog, EmptyState, InlineAlert, S
 import { getParsedApiError } from '../api/error';
 import type { SkillInfo } from '../api/agent';
 import { DashboardStateBlock } from '../components/dashboard';
+import PhaseProgressCard from '../components/PhaseProgressCard';
 import {
   useAgentChatStore,
   type Message,
@@ -847,6 +848,9 @@ const ChatPage: React.FC = () => {
                         </Badge>
                       </div>
                     )}
+                    {msg.role === 'assistant' && msg.thinkingSteps && msg.thinkingSteps.length > 0 && (
+                      <PhaseProgressCard steps={msg.thinkingSteps} compact className="mb-3" />
+                    )}
                     {msg.role === 'assistant' && renderThinkingBlock(msg)}
                     {msg.role === 'assistant' &&
                       expandedThinking.has(msg.id) &&
@@ -877,6 +881,37 @@ const ChatPage: React.FC = () => {
                             {msg.content}
                           </Markdown>
                         </div>
+                        {msg.artifacts && msg.artifacts.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-border/30 space-y-1">
+                            <div className="text-[11px] uppercase tracking-wider text-muted-text/70 mb-1">
+                              产出文件
+                            </div>
+                            {msg.artifacts.map((a, i) => (
+                              <div
+                                key={i}
+                                className="flex items-center gap-2 text-xs text-secondary-text"
+                              >
+                                <svg
+                                  className="w-3.5 h-3.5 flex-shrink-0 text-muted-text"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                  />
+                                </svg>
+                                <span className="font-medium">{a.name}</span>
+                                <code className="text-[11px] text-muted-text/80 font-mono truncate">
+                                  {a.path}
+                                </code>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       msg.content
@@ -901,7 +936,7 @@ const ChatPage: React.FC = () => {
                 <div className="w-8 h-8 rounded-full bg-elevated text-foreground flex items-center justify-center flex-shrink-0 text-xs font-bold">
                   AI
                 </div>
-                <div className="min-w-[200px] max-w-[min(100%,48rem)] overflow-hidden rounded-2xl rounded-tl-sm border border-white/6 bg-card/72 px-5 py-4">
+                <div className="min-w-[260px] max-w-[min(100%,48rem)] overflow-hidden rounded-2xl rounded-tl-sm border border-white/6 bg-card/72 px-5 py-4 space-y-3">
                   <div className="flex items-center gap-2.5 text-sm text-secondary-text">
                     <div className="relative w-4 h-4 flex-shrink-0">
                       <div className="absolute inset-0 rounded-full border-2 border-cyan/20" />
@@ -911,6 +946,7 @@ const ChatPage: React.FC = () => {
                       {getCurrentStage(progressSteps)}
                     </span>
                   </div>
+                  <PhaseProgressCard steps={progressSteps} compact />
                 </div>
               </div>
             )}

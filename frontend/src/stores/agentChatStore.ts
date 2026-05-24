@@ -22,6 +22,11 @@ export interface ProgressStep {
   content?: string;
 }
 
+export interface ChatArtifact {
+  path: string;
+  name: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -31,6 +36,7 @@ export interface Message {
   skillNames?: string[];
   skillName?: string;
   thinkingSteps?: ProgressStep[];
+  artifacts?: ChatArtifact[];
 }
 
 export interface StreamMeta {
@@ -261,17 +267,27 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       const decoder = new TextDecoder();
       let buf = '';
       let finalContent: string | null = null;
+      let finalArtifacts: ChatArtifact[] | null = null;
       const currentProgressSteps: ProgressStep[] = [];
         const processLine = (line: string) => {
           if (!line.startsWith('data: ')) return;
 
           const event = JSON.parse(line.slice(6)) as ProgressStep;
           if (event.type === 'done') {
-            const doneEvent = event as unknown as StreamFailureEvent;
+            const doneEvent = event as unknown as StreamFailureEvent & {
+              artifacts?: ChatArtifact[];
+            };
             if (doneEvent.success === false) {
               throw getStreamFailureError(doneEvent, '大模型调用出错，请检查 API Key 配置');
             }
             finalContent = doneEvent.content ?? '';
+            // 后端 done 事件携带 artifacts: [{path, name}],提取并附在 assistant 消息上
+            if (Array.isArray(doneEvent.artifacts) && doneEvent.artifacts.length > 0) {
+              finalArtifacts = doneEvent.artifacts.filter(
+                (a): a is ChatArtifact =>
+                  !!a && typeof a.path === 'string' && typeof a.name === 'string',
+              );
+            }
             return;
           }
 
@@ -328,6 +344,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
               skillNames,
               skillName,
               thinkingSteps: [...currentProgressSteps],
+              artifacts: finalArtifacts ?? undefined,
             },
           ],
         }));
