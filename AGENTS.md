@@ -282,7 +282,7 @@ cd frontend && npm run lint                # ESLint
 
 ### Phase 1 待办(下一阶段非阻塞)
 - ✅ §7 股东 — EastMoney F10 三表已接入(2026-05-24,commit 845e4e3)
-- ✅ §8 行业 / §10 ESG — Tavily search API 已接入(2026-05-24,7 天文件缓存),环境变量 `TAVILY_API_KEY` 未设时优雅降级为「数据待补」
+- ✅ §8 行业 / §10 ESG — Tavily search API 已接入(2026-05-24,7 天文件缓存),`config/system_config.yaml` 中配 `TAVILY_API_KEY: tvly-xxx`,未配置时优雅降级为「数据待补」
 - ⬜ §7 质押 / 高管增减持 — 单独 issue 跟进
 - 真实 LLM smoke 跑通后再决定是否要做 prompt 调优 / 多模型对比
 - 前端 ChatPage UI 已有,但 full_pipeline 的进度条/artifact 下载链路需端到端联调

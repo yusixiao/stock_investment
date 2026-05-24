@@ -137,7 +137,7 @@ async def chat_stream(payload: ChatStreamRequest = Body(...)):
         llm_factory=build_client_for_phase,
         store=store,
         indicators=None,
-        tavily=TavilyClient(),
+        tavily=TavilyClient(api_key=_config_kv().get("TAVILY_API_KEY") or None),
     )
 
     async def runner() -> None:

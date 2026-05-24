@@ -36,3 +36,8 @@ LLM_DEFAULT_CHANNEL: OPENROUTER
 # 示例:量化报告用更强模型 → 建一个 OPENROUTER_SMART channel,然后:
 #   LLM_ROUTE_PHASE3_QUANT: OPENROUTER_SMART
 #   LLM_ROUTE_PHASE3_VALUATION: OPENROUTER_SMART
+
+# ===== Tavily 搜索 API(§8 行业 / §10 ESG)=====
+# 申请地址:https://tavily.com/  免费额度 1000 次/月
+# 留空或不配置 → §8/§10 自动降级为「数据待补」文案,LLM 自行谨慎判断
+# TAVILY_API_KEY: tvly-REPLACE_ME
