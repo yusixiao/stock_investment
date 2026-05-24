@@ -21,7 +21,7 @@ import {
   SettingsSectionCard,
 } from '../components/settings';
 import { WEB_BUILD_INFO } from '../utils/constants';
-import { getCategoryDescriptionZh } from '../utils/systemConfigI18n';
+import { getCategoryDescriptionZh, getCategoryTitleZh } from '../utils/systemConfigI18n';
 import type { SystemConfigCategory } from '../types/systemConfig';
 
 type DesktopWindow = Window & {
@@ -753,7 +753,7 @@ const SettingsPage: React.FC = () => {
             ) : null}
             {activeItems.length ? (
               <SettingsSectionCard
-                title="当前分类配置项"
+                title={`${getCategoryTitleZh(activeCategory as SystemConfigCategory)}配置项`}
                 description={getCategoryDescriptionZh(activeCategory as SystemConfigCategory, '') || '使用统一字段卡片维护当前分类的系统配置。'}
               >
                 {activeItems.map((item) => (
