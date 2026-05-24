@@ -116,6 +116,7 @@ def test_stage1_first_trigger_sells_15pct_and_records_pref():
         positions={"X": 1000},
         current_date="2024-12-06",
         history={"X__weekly": _bars_hist_falling()},
+        valuation={"X": {"peTTM": 25.0}},
     )
     s = MaTangleValueStrategy()
     s.on_sell(ctx)
@@ -134,6 +135,7 @@ def test_stage1_weekly_cadence_same_week_no_double():
         positions={"X": 1000},
         current_date="2024-12-06",
         history={"X__weekly": _bars_hist_falling()},
+        valuation={"X": {"peTTM": 25.0}},
     )
     s = MaTangleValueStrategy()
     s.on_sell(ctx)
@@ -173,6 +175,51 @@ def test_stage1_no_weekly_data_skipped():
     s = MaTangleValueStrategy()
     s.on_sell(ctx)
     assert ctx.orders == []
+
+
+# ===== 2b. Stage 1 PE 闸门(2026-05-24 新增)=====
+
+
+def test_stage1_blocked_when_pe_below_min():
+    """MACD 触发但 PE=15 ≤ 20 → 不卖(估值不够高)。"""
+    ctx = _SellCtx(
+        positions={"X": 1000},
+        current_date="2024-12-06",
+        history={"X__weekly": _bars_hist_falling()},
+        valuation={"X": {"peTTM": 15.0}},
+    )
+    s = MaTangleValueStrategy()
+    s.on_sell(ctx)
+    assert ctx.orders == []
+    assert "X" not in s._sell_state
+
+
+def test_stage1_blocked_when_pe_missing():
+    """MACD 触发但 valuation 缺失/无 peTTM → 保守不卖。"""
+    ctx = _SellCtx(
+        positions={"X": 1000},
+        current_date="2024-12-06",
+        history={"X__weekly": _bars_hist_falling()},
+        # 不传 valuation
+    )
+    s = MaTangleValueStrategy()
+    s.on_sell(ctx)
+    assert ctx.orders == []
+    assert "X" not in s._sell_state
+
+
+def test_stage1_pe_min_overridable():
+    """参数覆盖 macd_sell_pe_min=10 → PE=15 也能触发。"""
+    ctx = _SellCtx(
+        positions={"X": 1000},
+        current_date="2024-12-06",
+        history={"X__weekly": _bars_hist_falling()},
+        valuation={"X": {"peTTM": 15.0}},
+    )
+    s = MaTangleValueStrategy(param_overrides={"macd_sell_pe_min": 10.0})
+    s.on_sell(ctx)
+    assert ctx.orders == [("X", -150)]
+    assert s._sell_state["X"]["stage"] == 1
 
 
 # ===== 3. Stage 2:Stage 1 之后,daily close > P_ref * 1.05 → 卖 20% =====
@@ -255,6 +302,7 @@ def test_full_lifecycle_stage1_then_stage2():
         history={"X__weekly": _bars_hist_falling()},
         # daily close 一开始低于 P_ref*1.05,后来突破
         price={"X": {"daily": {"close": 159.5}}},
+        valuation={"X": {"peTTM": 25.0}},
     )
     s = MaTangleValueStrategy()
 

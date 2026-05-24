@@ -10,6 +10,8 @@
 卖出策略(2026-05-24 两阶段重构):
 - Stage 1(每周一次,周线 cadence):
     - 条件:本周 weekly macd_hist < 上周 weekly macd_hist(动能减弱)
+            **且** 当前 PE(TTM)> macd_sell_pe_min(默认 20,估值偏高)
+            (PE 缺失视为不满足,保守不卖)
     - 操作:卖出**初始持仓的 15%**
     - 记录参考价 P_ref = 当周 weekly bar 的 (high + low) / 2
 - Stage 2(每日,Stage 1 之后):
@@ -87,6 +89,11 @@ class MaTangleValueStrategy(Strategy):
             "default": 0.05,
             "type": "float",
             "label": "Stage 2 突破阈值(P_ref 之上)",
+        },
+        "macd_sell_pe_min": {
+            "default": 20.0,
+            "type": "float",
+            "label": "Stage 1 PE 下限(PE 高于此值才卖)",
         },
     }
 
@@ -178,6 +185,12 @@ class MaTangleValueStrategy(Strategy):
         prev_hist, cur_hist = series[-2], series[-1]
         # 动能减弱:本周 hist < 上周 hist
         if not (cur_hist < prev_hist):
+            return
+
+        # PE 闸门:仅当 PE > 下限时才卖出(估值偏高 + 动能减弱才退出);
+        # PE 缺失视为不满足(保守:数据缺失不卖)
+        pe = valuation.get_pe(ctx, sym)
+        if pe is None or pe <= float(self.p.macd_sell_pe_min):
             return
 
         # 取当周 weekly bar 的 (high+low)/2 作为 P_ref
