@@ -214,13 +214,15 @@ def _build_valuation_subsection(store, code: str) -> str:
         f"- 归母净利润:{_fmt_yi(netprofit)} | 经营利润:{_fmt_yi(operate_profit)}\n"
         f"- 经营现金流:{_fmt_yi(netcash_op)} | 资本开支:{_fmt_yi(capex)} | "
         f"自由现金流:{_fmt_yi(fcf)}\n"
-        "\n**估值倍数(EBITDA 缺 D&A,以 EBIT 代理):**\n\n"
-        f"- 扣除现金 PE:{_fmt_num(cash_adj_pe)}x\n"
-        f"- FCF Yield:{_fmt_pct(fcf_yield)}\n"
-        f"- 净负债 / 股东权益:{_fmt_pct(net_debt_to_equity)}\n"
-        f"- EV / EBIT(代理):{_fmt_num(ev_to_ebit)}x\n"
-        "\n_注:EV/EBITDA 需 D&A 字段,当前 EastMoney cashflow 视图未抽取 "
-        "DEPRECIATION_FA,以 EV/EBIT 代理。_\n"
+        "\n**估值倍数(请按字段名原样引用,不要重命名):**\n\n"
+        f"- 扣除现金 PE(Cash-Adjusted PE):{_fmt_num(cash_adj_pe)}x\n"
+        f"- FCF Yield(自由现金流收益率):{_fmt_pct(fcf_yield)}\n"
+        f"- 净负债权益比(Net Debt / Equity,**不是** Net Debt / EBITDA):"
+        f"{_fmt_pct(net_debt_to_equity)}\n"
+        f"- EV / EBIT(**EBITDA 代理值,EBITDA 当前不可计算**):"
+        f"{_fmt_num(ev_to_ebit)}x\n"
+        "\n_注:标准 EV/EBITDA 需折旧摊销(D&A)字段,当前 EastMoney cashflow "
+        '视图未抽取 DEPRECIATION_FA,故以 EV/EBIT 代理;若引用请明确标注"代理值"。_\n'
     )
 
 

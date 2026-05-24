@@ -133,11 +133,14 @@ def test_section_17_8_full_data_renders_metrics():
     # FCF Yield = (1500-900) / 25528 = 2.35%
     assert "FCF Yield" in out
     assert "2.35%" in out
-    # 净负债 / 股东权益 = (4000-1000) / 2000 = 150%
-    assert "净负债 / 股东权益" in out
+    # 净负债权益比 = (4000-1000) / 2000 = 150%
+    assert "净负债权益比" in out
+    assert "Net Debt / Equity" in out
+    assert "不是" in out  # 显式提示不是 EBITDA
     assert "150.00%" in out
     # EV / EBIT = (25528 + 4000 - 1000) / 500 = 57.06x
     assert "EV / EBIT" in out
+    assert "EBITDA 代理值" in out
     assert "57.06x" in out
 
 
@@ -153,7 +156,7 @@ def test_section_17_8_missing_price_degrades():
     # 没价格 → 总市值 — , 扣现金 PE / FCF Yield / EV/EBIT 全 —
     assert "§17.8" in out
     assert "总市值:—" in out
-    assert "扣除现金 PE:—x" in out
+    assert "扣除现金 PE(Cash-Adjusted PE):—x" in out
 
 
 def test_section_17_8_missing_total_share_degrades():
@@ -232,5 +235,5 @@ def test_section_17_8_zero_netprofit_safe_div():
         indicators=MagicMock(get_indicator_snapshot=lambda c: None),
     )
     # 0 分母不应崩,降级到 —
-    assert "扣除现金 PE:—x" in out
-    assert "EV / EBIT(代理):—x" in out
+    assert "扣除现金 PE(Cash-Adjusted PE):—x" in out
+    assert "EV / EBIT" in out and "—x" in out
