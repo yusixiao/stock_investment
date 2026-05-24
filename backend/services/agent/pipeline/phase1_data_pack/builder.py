@@ -20,10 +20,13 @@ from services.agent.pipeline.phase1_data_pack.sections import (
     s04_balance,
     s04p_parent_balance,
     s05_cashflow,
+    s06_dividend,
     s07_holders_placeholder,
     s08_industry_placeholder,
     s10_esg_placeholder,
+    s11_weekly_kline,
     s14_rf,
+    s15_industry_valuation,
     s16_peers_placeholder,
 )
 from services.agent.symbol import StockRef
@@ -36,10 +39,13 @@ SECTION_REGISTRY: dict = {
     "s04": s04_balance.build,
     "s04p": s04p_parent_balance.build,
     "s05": s05_cashflow.build,
+    "s06": s06_dividend.build,
     "s07": s07_holders_placeholder.build,
     "s08": s08_industry_placeholder.build,
     "s10": s10_esg_placeholder.build,
+    "s11": s11_weekly_kline.build,
     "s14": s14_rf.build,
+    "s15": s15_industry_valuation.build,
     "s16": s16_peers_placeholder.build,
 }
 
