@@ -218,6 +218,16 @@ class BacktestEngine:
         # trades 输出为 round-trip(buy/sell 配对),前端按此 schema 渲染。
         # 单边事件保留在 raw_trades,便于审计与回放。
         round_trips = pair_round_trips(self._broker.all_trades)
+        # end_prices:每个交易过的 symbol 在 iter_end 当天的收盘价(strict=False
+        # 允许非交易日回退到最近一个交易日)。前端用来计算未实现盈亏 / 当前价。
+        traded_symbols = {t["symbol"] for t in self._broker.all_trades}
+        end_prices: dict[str, float] = {}
+        for sym in traded_symbols:
+            bar = self._market_data.get_bar_at(
+                sym, self._iter_end, period="daily", strict=False
+            )
+            if bar is not None:
+                end_prices[sym] = float(bar["close"])
         return {
             "metrics": compute_metrics(
                 equity_curve, self._broker.all_trades, self._initial_capital
@@ -225,6 +235,7 @@ class BacktestEngine:
             "equity_curve": equity_curve,
             "trades": round_trips,
             "raw_trades": self._broker.all_trades,
+            "end_prices": end_prices,
             "log_dir": str(self._log_sink.log_dir) if self._log_sink.enabled else None,
         }
 

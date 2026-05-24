@@ -360,6 +360,12 @@ def test_engine_order_shares_fills_next_bar(stock_data, daily_dates):
     assert trade["shares"] == 100
     # T+1:bar 0 提交,bar 1 成交,所以成交日 == daily_dates[1]
     assert trade["date"] == daily_dates[1]
+    # end_prices 含交易过的 symbol → 回测结束日的收盘价(strict=False,允许非交易日回退到上一交易日)
+    end_prices = result["end_prices"]
+    assert "000001" in end_prices
+    assert isinstance(end_prices["000001"], float)
+    # 未交易过的 symbol 不在 end_prices 里(节省 payload)
+    assert "000002" not in end_prices
 
 
 # ============= 进度回调 =============
