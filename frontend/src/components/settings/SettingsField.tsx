@@ -114,7 +114,6 @@ function renderFieldControl(
               <div className="flex-1">
                 <Input
                   type="password"
-                  allowTogglePassword
                   iconType={iconType}
                   id={index === 0 ? controlId : `${controlId}-${index}`}
                   readOnly={!isPasswordEditable}
@@ -163,7 +162,6 @@ function renderFieldControl(
     return (
       <Input
         type="password"
-        allowTogglePassword
         iconType={iconType}
         id={controlId}
         readOnly={!isPasswordEditable}
@@ -254,7 +252,7 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
 
       {schema?.isSensitive ? (
         <p className="mt-3 text-[11px] leading-5 text-secondary-text">
-          敏感内容默认隐藏，可点击眼睛图标查看明文。
+          出于安全考虑，已保存的敏感值不会回传到浏览器；保持 ****** 直接保存即不修改原值，清空再保存可重置，输入新值则覆盖。
           {isMultiValue ? ' 支持添加多个输入框进行增删。' : ''}
         </p>
       ) : null}

@@ -8,7 +8,11 @@ import {
   AuthSettingsCard,
   ChangePasswordCard,
   IntelligentImport,
-  LLMChannelEditor,
+  // LLMChannelEditor 暂时停用 — 与后端 channels.py SSOT 字段命名不一致
+  // (editor: PROTOCOL/MODELS;backend: PROVIDER/MODEL),且会污染 5 个旧
+  // litellm 死字段(LITELLM_MODEL/AGENT_LITELLM_MODEL/...)。8 个 LLM 字段
+  // 由下方通用卡片以普通表单展示。需要恢复时把 import 与下方渲染同时打开。
+  // LLMChannelEditor,
   NotificationTestPanel,
   SettingsCategoryNav,
   SettingsAlert,
@@ -734,22 +738,9 @@ const SettingsPage: React.FC = () => {
                 />
               </SettingsSectionCard>
             ) : null}
-            {activeCategory === 'ai_model' ? (
-              <SettingsSectionCard
-                title="AI 模型接入"
-                description="统一管理模型渠道、基础地址、API Key、主模型与备选模型。"
-              >
-                <LLMChannelEditor
-                  items={rawActiveItems}
-                  configVersion={configVersion}
-                  maskToken={maskToken}
-                  onSaved={async (updatedItems) => {
-                    await refreshAfterExternalSave(updatedItems.map((item) => item.key));
-                  }}
-                  disabled={isSaving || isLoading}
-                />
-              </SettingsSectionCard>
-            ) : null}
+            {/* AI 模型接入卡片(LLMChannelEditor)暂时隐藏 — 字段约定与后端
+                channels.py SSOT 不一致,合并需先做 editor 重构。9 个 LLM 字段由
+                下方通用卡片展示。恢复请把 import 与本段一起取消注释。 */}
             {activeCategory === 'system' && passwordChangeable ? (
               <ChangePasswordCard />
             ) : null}

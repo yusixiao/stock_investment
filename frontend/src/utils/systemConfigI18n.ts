@@ -23,6 +23,17 @@ const categoryDescriptionMap: Partial<Record<SystemConfigCategory, string>> = {
 };
 
 const fieldTitleMap: Record<string, string> = {
+  // ---- system_config.yaml 当前真实字段(2026-05-24) ----
+  LLM_DEFAULT_CHANNEL: '默认 LLM 渠道',
+  LLM_OPENROUTER_PROVIDER: 'OpenRouter Provider',
+  LLM_OPENROUTER_BASE_URL: 'OpenRouter Base URL',
+  LLM_OPENROUTER_API_KEY: 'OpenRouter API Key',
+  LLM_OPENROUTER_MODEL: 'OpenRouter 模型',
+  LLM_OPENROUTER_MAX_TOKENS: 'OpenRouter Max Tokens',
+  LLM_OPENROUTER_TEMPERATURE: 'OpenRouter 采样温度',
+  LLM_OPENROUTER_TIMEOUT: 'OpenRouter 超时（秒）',
+  TAVILY_API_KEY: 'Tavily API Key',
+  // ---- 旧字段(daily_stock_analysis 沿用) ----
   STOCK_LIST: '自选股列表',
   TUSHARE_TOKEN: 'Tushare Token',
   BOCHA_API_KEYS: 'Bocha API Keys',
@@ -94,6 +105,17 @@ const fieldTitleMap: Record<string, string> = {
 };
 
 const fieldDescriptionMap: Record<string, string> = {
+  // ---- system_config.yaml 当前真实字段(2026-05-24) ----
+  LLM_DEFAULT_CHANNEL: '默认走哪个 LLM 渠道，值需对应已声明的 channel 名(例如 OPENROUTER、DEEPSEEK)。',
+  LLM_OPENROUTER_PROVIDER: 'OpenRouter 渠道的协议适配器，固定填 openrouter。',
+  LLM_OPENROUTER_BASE_URL: 'OpenRouter API 网关地址，例如 https://openrouter.ai/api/v1。',
+  LLM_OPENROUTER_API_KEY: 'OpenRouter 平台密钥(sk-or-...),保留为 ****** 表示不修改原值。',
+  LLM_OPENROUTER_MODEL: '默认调用的模型 ID,例如 anthropic/claude-3.5-sonnet 或 openai/gpt-4o-mini。',
+  LLM_OPENROUTER_MAX_TOKENS: '单次响应最大 token 数,常用 4096~16384。',
+  LLM_OPENROUTER_TEMPERATURE: '采样温度,0 为确定性,2 为最大随机,推荐 0.3~0.7。',
+  LLM_OPENROUTER_TIMEOUT: '请求超时秒数,流式长输出建议 ≥120。',
+  TAVILY_API_KEY: 'Tavily 搜索 API 密钥(tvly-...),用于 §8 行业、§10 ESG 等新闻检索;未配置时优雅降级为「数据待补」。',
+  // ---- 旧字段 ----
   STOCK_LIST: '使用逗号分隔股票代码，例如：600519,300750。',
   TUSHARE_TOKEN: '用于接入 Tushare Pro 数据服务的凭据。',
   BOCHA_API_KEYS: '用于新闻检索的 Bocha 密钥，支持逗号分隔多个（最高优先级）。',
