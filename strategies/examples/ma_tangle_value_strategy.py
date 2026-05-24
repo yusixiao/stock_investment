@@ -1,17 +1,21 @@
 """月线均线缠绕价值策略(MaTangleValueStrategy)。
 
-合并 5 个原策略 + MACD 周线分批卖出退出(2026-05-24 更新):
+合并 5 个原策略 + MACD 周线两阶段卖出退出(2026-05-24 重构):
 - DividendYearsScreener     → utils.dividend.filter_by_dividend_years
 - PePbProductScreener       → utils.valuation.filter_by_pe_pb_product
 - RoeScreener               → utils.financial.filter_by_roe
 - MaTangleBreakoutScreener  → utils.kline.detect_ma_tangle_breakout
 - MarketCapWeightedBuyer    → utils.composite.MarketCapWeightedBatchBuyer
 
-卖出策略(2026-05-24,替代原 PE*PB / 月线 MA 跌破清仓):
-- 每周检查:本周 macd_hist > 上周 macd_hist 即视为反转信号
-- 每次卖出原始持仓的 25%(按首次触发时的持仓份额计),共 4 批
-- 条件持续命中则连续 4 周各卖一批;某周不命中则暂停,下周再判
-- 第 4 批一次性卖出全部余量,清仓后从 target pool 移除
+卖出策略(2026-05-24 两阶段重构):
+- Stage 1(每周一次,周线 cadence):
+    - 条件:本周 weekly macd_hist < 上周 weekly macd_hist(动能减弱)
+    - 操作:卖出**初始持仓的 15%**
+    - 记录参考价 P_ref = 当周 weekly bar 的 (high + low) / 2
+- Stage 2(每日,Stage 1 之后):
+    - 条件:当日 daily close > P_ref * (1 + breakout_pct)(默认 5%)
+    - 操作:卖出**初始持仓的 20%**(剩余 65% 持仓)
+    - 触发后 stage=2 不再判定,并 remove_target 防止再次选入
 
 持仓上限 max_holdings:已持仓达上限时跳过新分批买入。
 """
@@ -40,7 +44,8 @@ class MaTangleValueStrategy(Strategy):
     name = "月线均线缠绕价值策略"
     description = (
         "基本面池(连续分红 + PE*PB 区间 + ROE 达标)与月线均线缠绕突破信号交集,"
-        "命中后按市值加权 8 周分批买入;持仓在周线 MACD 柱反转时分 4 批 25% 退出。"
+        "命中后按市值加权 8 周分批买入;持仓在周线 MACD 柱减弱时分两阶段退出"
+        "(Stage 1 卖 15% + 记录参考价,Stage 2 突破 5% 时再卖 20%)。"
     )
     frequency = "monthly"
     frequency_overridable = False
@@ -62,16 +67,26 @@ class MaTangleValueStrategy(Strategy):
         # ===== 仓位 / 买入参数 =====
         "buy_weeks": {"default": 8, "type": "int", "label": "分批周数"},
         "max_holdings": {"default": 20, "type": "int", "label": "最大持仓只数"},
-        # ===== MACD 周线分批卖出参数(2026-05-24)=====
+        # ===== MACD 周线两阶段卖出参数(2026-05-24)=====
         "macd_sell_enabled": {
             "default": True,
             "type": "bool",
-            "label": "启用 MACD 分批卖出",
+            "label": "启用 MACD 两阶段卖出",
         },
-        "macd_sell_batches": {
-            "default": 4,
-            "type": "int",
-            "label": "分批次数(每批 1/N)",
+        "macd_sell_stage1_pct": {
+            "default": 0.15,
+            "type": "float",
+            "label": "Stage 1 卖出比例(初始持仓)",
+        },
+        "macd_sell_stage2_pct": {
+            "default": 0.20,
+            "type": "float",
+            "label": "Stage 2 卖出比例(初始持仓)",
+        },
+        "macd_sell_breakout_pct": {
+            "default": 0.05,
+            "type": "float",
+            "label": "Stage 2 突破阈值(P_ref 之上)",
         },
     }
 
@@ -79,11 +94,12 @@ class MaTangleValueStrategy(Strategy):
         super().__init__(param_overrides)
         # 在 __init__ 内根据参数初始化分批买入器,buy_weeks 可被外部覆盖
         self._buyer = MarketCapWeightedBatchBuyer(buy_weeks=self.p.buy_weeks)
-        # 卖出状态:{symbol: {"initial_shares": int, "sold_batches": int}}
-        # 仅在首次触发卖出时建档,清仓后清除
+        # 卖出状态(per-symbol):
+        #   {"stage": 0|1|2, "initial_shares": int, "p_ref": float, "stage1_week": str}
+        # stage=0: 未触发(state 不存在亦视为 0)
+        # stage=1: Stage 1 已触发,等待 daily close 突破 P_ref*1.05
+        # stage=2: Stage 2 已触发,本 symbol 不再卖出
         self._sell_state: dict[str, dict] = {}
-        # 周线 cadence 自检:记录上次执行 on_sell 的周键,避免同周内重复触发
-        self._last_sell_week_key: str | None = None
 
     def screen(self, ctx, symbols):
         ctx.log_flow("strategy.screen.start", input=len(symbols))
@@ -127,80 +143,112 @@ class MaTangleValueStrategy(Strategy):
         # 把 max_holdings 透传给 buyer(buyer 在 _create_buy_plans 时按当前持仓数过滤)
         self._buyer.step(ctx, max_holdings=self.p.max_holdings)
 
-    # ===== 卖出:周线 MACD 柱反转 → 分批 25% 卖出 =====
+    # ===== 卖出:MACD 两阶段(Stage 1 周线,Stage 2 daily 突破)=====
     def on_sell(self, ctx):
         if not self.p.macd_sell_enabled:
             return
 
-        # 周线 cadence:同一周内只触发一次
         cur_date = getattr(ctx, "current_date", None)
         if not cur_date:
             return
-        wk = _week_key(cur_date)
-        if wk == self._last_sell_week_key:
-            return
-        self._last_sell_week_key = wk
 
-        batches = max(1, int(self.p.macd_sell_batches or 4))
         positions = list(ctx.get_positions().items())
         for sym, pos in positions:
             shares = pos.shares if hasattr(pos, "shares") else pos.get("shares", 0)
             if shares <= 0:
                 continue
 
-            # 读取最近 2 根周线 macd_hist:本周 vs 上周
-            series = kline.get_macd_hist_series(ctx, sym, n=2, freq="weekly")
-            if series is None or len(series) < 2:
-                continue
-            prev_hist, cur_hist = series[-2], series[-1]
-            # 判定:本周 > 上周 即视为反转信号
-            if not (cur_hist > prev_hist):
-                continue
-
-            # 建档(首次触发):锁定原始持仓份额
             state = self._sell_state.get(sym)
-            if state is None:
-                state = {"initial_shares": int(shares), "sold_batches": 0}
-                self._sell_state[sym] = state
+            stage = state["stage"] if state else 0
 
-            initial = state["initial_shares"]
-            sold_batches = state["sold_batches"]
-            remaining_batches = batches - sold_batches
-            if remaining_batches <= 0:
-                # 已经全部卖完,清理状态(理论上 shares=0 时也不会到这里)
-                self._sell_state.pop(sym, None)
-                continue
+            if stage == 0:
+                self._try_stage1(ctx, sym, shares, cur_date)
+            elif stage == 1:
+                self._try_stage2(ctx, sym)
+            # stage == 2: 本 symbol 已结束生命周期,跳过
 
-            # 最后一批:把剩余全部卖掉,避免浮点 / 取整残留
-            is_last_batch = remaining_batches == 1
-            if is_last_batch:
-                sell_shares = int(shares)
-            else:
-                sell_shares = int(initial * (1.0 / batches))
-                # 防御:不能超过当前剩余
-                if sell_shares > shares:
-                    sell_shares = int(shares)
-                # 至少 1 股,否则视为持仓太少无法分批
-                if sell_shares <= 0:
-                    self._sell_state.pop(sym, None)
-                    continue
+    # ----- Stage 1:周线 macd_hist 减弱 → 卖 15% + 记录 P_ref -----
+    def _try_stage1(self, ctx, sym: str, shares: int, cur_date: str) -> None:
+        # 周线 cadence 自检(per-symbol):同一 ISO 周内只评估一次
+        wk = _week_key(cur_date)
 
-            ctx.order_shares(sym, -sell_shares)
-            state["sold_batches"] = sold_batches + 1
-            if hasattr(ctx, "log_exec"):
-                ctx.log_exec(
-                    "sell_signal",
-                    sym,
-                    shares=sell_shares,
-                    price=0.0,
-                    note=(
-                        f"macd_hist {prev_hist:.4f}→{cur_hist:.4f} "
-                        f"batch {state['sold_batches']}/{batches}"
-                    ),
-                )
+        series = kline.get_macd_hist_series(ctx, sym, n=2, freq="weekly")
+        if series is None or len(series) < 2:
+            return
+        prev_hist, cur_hist = series[-2], series[-1]
+        # 动能减弱:本周 hist < 上周 hist
+        if not (cur_hist < prev_hist):
+            return
 
-            if is_last_batch:
-                # 清仓:从 target pool 移除并清除 sell_state
-                if hasattr(ctx, "remove_target"):
-                    ctx.remove_target(sym)
-                self._sell_state.pop(sym, None)
+        # 取当周 weekly bar 的 (high+low)/2 作为 P_ref
+        bars = ctx.get_history(sym, 1, period="weekly")
+        if not bars:
+            return
+        last_bar = bars[-1]
+        try:
+            p_ref = (float(last_bar["high"]) + float(last_bar["low"])) / 2.0
+        except (KeyError, TypeError, ValueError):
+            return
+
+        sell_shares = int(shares * float(self.p.macd_sell_stage1_pct))
+        if sell_shares <= 0:
+            return
+        if sell_shares > shares:
+            sell_shares = int(shares)
+
+        ctx.order_shares(sym, -sell_shares)
+        self._sell_state[sym] = {
+            "stage": 1,
+            "initial_shares": int(shares),
+            "p_ref": p_ref,
+            "stage1_week": wk,
+        }
+        if hasattr(ctx, "log_exec"):
+            ctx.log_exec(
+                "sell_signal",
+                sym,
+                shares=sell_shares,
+                price=0.0,
+                note=(
+                    f"stage1 macd_hist {prev_hist:.4f}→{cur_hist:.4f} "
+                    f"p_ref={p_ref:.2f} (-15%)"
+                ),
+            )
+
+    # ----- Stage 2:daily close 突破 P_ref*1.05 → 卖 20% + remove_target -----
+    def _try_stage2(self, ctx, sym: str) -> None:
+        state = self._sell_state[sym]
+        daily = ctx.get_price(sym, period="daily")
+        if not daily:
+            return
+        close = daily.get("close") if isinstance(daily, dict) else None
+        if close is None:
+            return
+        try:
+            close_f = float(close)
+        except (TypeError, ValueError):
+            return
+
+        threshold = float(state["p_ref"]) * (1.0 + float(self.p.macd_sell_breakout_pct))
+        if close_f <= threshold:
+            return
+
+        sell_shares = int(state["initial_shares"] * float(self.p.macd_sell_stage2_pct))
+        if sell_shares <= 0:
+            return
+
+        ctx.order_shares(sym, -sell_shares)
+        state["stage"] = 2
+        if hasattr(ctx, "remove_target"):
+            ctx.remove_target(sym)
+        if hasattr(ctx, "log_exec"):
+            ctx.log_exec(
+                "sell_signal",
+                sym,
+                shares=sell_shares,
+                price=close_f,
+                note=(
+                    f"stage2 close={close_f:.2f} > p_ref*{1 + self.p.macd_sell_breakout_pct:.2f}"
+                    f"={threshold:.2f} (-20%)"
+                ),
+            )
