@@ -2,7 +2,7 @@
 
 路由顺序:
   Layer 1 (规则): session.output_dir 已有完整报告 → qa_followup
-  Layer 2 (规则): 无股票上下文 + 消息无股票码 → chitchat
+  Layer 2 (规则): 无股票上下文 + 消息无股票码 → clarify(硬编码澄清,不调 LLM)
   Layer 3 (LLM): 识别到股票码 → 意图分类器 → AGENT_REGISTRY[name].run()
                  (TODO 阶段 2:目前未实现,直接走 Layer 4 兜底)
   Layer 4 (兜底): 默认 agent = "cpa"
@@ -18,7 +18,7 @@ from typing import Awaitable, Callable, Optional
 from services.agent.agents import AGENT_REGISTRY
 from services.agent.core import sse
 from services.agent.core.symbol import extract
-from services.system_config.llm_client import LLMClient, LLMError, Message
+from services.system_config.llm_client import LLMClient, LLMError, Message  # noqa: F401
 
 SseSend = Callable[[dict], Awaitable[None]]
 
@@ -68,10 +68,10 @@ class Coordinator:
                     session_id, message, Path(output_dir)
                 )
 
-            # ---- Layer 2: 无股票上下文 → chitchat ----
+            # ---- Layer 2: 无股票上下文 → 硬编码澄清(不调 LLM)----
             ref = extract(message, context, stock_index=self.stock_index)
             if ref is None:
-                return await self._run_chitchat(session_id, message)
+                return await self._run_clarify(session_id)
 
             # ---- Layer 3: LLM 意图分类(TODO 阶段 2)----
             # agent_name = await self._classify_intent(message, ref) or DEFAULT_AGENT
@@ -106,25 +106,27 @@ class Coordinator:
             meta.get("phases", {}).get("phase3_valuation", {}).get("status") == "done"
         )
 
-    async def _run_chitchat(self, session_id: str, message: str) -> None:
-        await self.sse_send(sse.thinking("闲聊模式..."))
-        client = self.llm_factory("chitchat")
-        result = await client.complete(
-            [
-                Message(
-                    "system", "你是一名简洁友好的中文 AI 助手,回答问题并保持中立。"
-                ),
-                Message("user", message),
-            ]
-        )
+    # 硬编码澄清文案 — 未识别到股票码时引导用户提供明确意图。
+    # 不调 LLM,即使配置缺失/网络挂掉也能稳定响应。
+    _CLARIFY_TEXT = (
+        "我是问股助手,需要你告诉我想分析哪只股票才能开始。\n\n"
+        "请在消息里包含股票名称或代码,例如:\n"
+        "- A 股:`分析比亚迪 002594.SZ` / `看看 600519`\n"
+        "- 港股:`腾讯 00700.HK`\n"
+        "- 美股:`AAPL 怎么样`\n\n"
+        "已有分析报告时,你也可以直接追问报告中的细节。"
+    )
+
+    async def _run_clarify(self, session_id: str) -> None:
+        text = self._CLARIFY_TEXT
         self.repo.append_message(
             session_id,
             role="assistant",
-            content=result.text,
-            tokens_in=result.tokens_in,
-            tokens_out=result.tokens_out,
+            content=text,
+            tokens_in=0,
+            tokens_out=0,
         )
-        await self.sse_send(sse.done(result.text, artifacts=[]))
+        await self.sse_send(sse.done(text, artifacts=[]))
 
     async def _run_qa_followup(
         self, session_id: str, message: str, output_dir: Path

@@ -85,14 +85,17 @@ def _setup_chat_env(tmp_path, monkeypatch):
     )
 
 
-def test_chat_stream_chitchat(tmp_path, monkeypatch):
+def test_chat_stream_clarify_when_no_stock(tmp_path, monkeypatch):
+    """无股票码时走硬编码澄清,不调 LLM,不抛 INTERNAL。"""
     _setup_chat_env(tmp_path, monkeypatch)
 
-    fake = MagicMock()
-    fake.complete = AsyncMock(
-        return_value=CompletionResult(text="你好!", tokens_in=3, tokens_out=2)
-    )
-    with patch("routers.agent.build_client_for_phase", return_value=fake):
+    # llm_factory 即使被调也立刻 raise,验证 clarify 路径完全不依赖 LLM
+    def _should_not_be_called(phase):
+        raise AssertionError(f"clarify 路径不应调 build_client_for_phase({phase})")
+
+    with patch(
+        "routers.agent.build_client_for_phase", side_effect=_should_not_be_called
+    ):
         c = TestClient(app)
         with c.stream(
             "POST",
@@ -112,9 +115,10 @@ def test_chat_stream_chitchat(tmp_path, monkeypatch):
                     events.append(json.loads(line[6:]))
 
     types = [e["type"] for e in events]
-    assert types[0] == "thinking"
     assert types[-1] == "done"
-    assert events[-1]["content"] == "你好!"
+    assert "error" not in types
+    final_text = events[-1]["content"]
+    assert "股票" in final_text
 
 
 def test_chat_stream_full_pipeline_e2e(tmp_path, monkeypatch):
@@ -213,26 +217,23 @@ def test_chat_stream_full_pipeline_e2e(tmp_path, monkeypatch):
 
 
 def test_chat_stream_persists_user_message(tmp_path, monkeypatch):
+    """无股票码 → clarify 路径,user + assistant 两条都要落库。"""
     _setup_chat_env(tmp_path, monkeypatch)
 
-    fake = MagicMock()
-    fake.complete = AsyncMock(
-        return_value=CompletionResult(text="ok", tokens_in=1, tokens_out=1)
-    )
-    with patch("routers.agent.build_client_for_phase", return_value=fake):
-        c = TestClient(app)
-        with c.stream(
-            "POST",
-            "/api/v1/agent/chat/stream",
-            json={"message": "hello world", "session_id": "sx"},
-        ) as r:
-            for _ in r.iter_lines():
-                pass
-        # 用户消息应当落库
-        msgs = c.get("/api/v1/agent/sessions/sx/messages").json()["items"]
+    c = TestClient(app)
+    with c.stream(
+        "POST",
+        "/api/v1/agent/chat/stream",
+        json={"message": "hello world", "session_id": "sx"},
+    ) as r:
+        for _ in r.iter_lines():
+            pass
+    # 用户消息 + clarify assistant 消息都应当落库
+    msgs = c.get("/api/v1/agent/sessions/sx/messages").json()["items"]
     roles = [m["role"] for m in msgs]
     contents = [m["content"] for m in msgs]
     assert "user" in roles
     assert "assistant" in roles
     assert "hello world" in contents
-    assert "ok" in contents
+    # clarify 文案中包含「股票」关键词
+    assert any("股票" in c for c in contents)

@@ -6,49 +6,61 @@ from services.agent.coordinator import Coordinator
 from services.system_config.llm_client import CompletionResult, LLMError
 
 
-async def test_chitchat_emits_thinking_then_done():
+async def test_clarify_when_no_stock_detected_does_not_call_llm():
+    """未识别到股票码 → 硬编码澄清提示,不调 LLM,不抛 INTERNAL。
+
+    (取代旧 chitchat LLM 调用路径 — 问股场景下没识别到股票码时
+    引导用户提供明确意图,比闲聊 LLM 更稳更省 token,且 LLM 配置缺失也不会挂)
+    """
     sent: list[dict] = []
 
     async def sse_send(ev):
         sent.append(ev)
 
     fake_llm = MagicMock()
-    fake_llm.complete = AsyncMock(
-        return_value=CompletionResult(text="你好!", tokens_in=3, tokens_out=2)
-    )
+    fake_llm.complete = AsyncMock()  # 不应被调用
+
+    # 显式让 llm_factory 抛错,确认硬编码路径完全不触达 LLM 配置
+    def llm_factory_should_not_be_called(phase):
+        raise AssertionError(f"clarify 路径不应调 llm_factory(phase={phase})")
 
     repo = MagicMock()
     repo.get.return_value = {"session_id": "s1", "output_dir": None, "status": "idle"}
-
-    workspace = MagicMock()
     si = MagicMock()
     si.get_name.return_value = None  # 无股票码识别
 
     coord = Coordinator(
         sse_send=sse_send,
         repo=repo,
-        workspace=workspace,
+        workspace=MagicMock(),
         stock_index=si,
-        llm_factory=lambda phase: fake_llm,
+        llm_factory=llm_factory_should_not_be_called,
     )
     await coord.run(session_id="s1", message="你好", context=None)
 
     types = [e["type"] for e in sent]
-    assert types[0] == "thinking"
     assert types[-1] == "done"
-    assert sent[-1]["content"] == "你好!"
-    fake_llm.complete.assert_awaited_once()
+    assert "error" not in types
+    # 澄清文案应包含引导关键词
+    final_content = sent[-1]["content"]
+    assert "股票" in final_content
+    assert any(
+        kw in final_content for kw in ("代码", "比亚迪", "002594", "SZ", "SH", "HK")
+    )
+    # assistant 消息应入库,保证下次 qa_followup 能看到完整历史
     repo.append_message.assert_called_once()
+    fake_llm.complete.assert_not_awaited()
 
 
-async def test_chitchat_llm_error_emits_error_event():
+async def test_clarify_works_even_when_llm_config_missing():
+    """LLM_DEFAULT_CHANNEL 未配置时,clarify 路径仍能成功响应(不抛 INTERNAL)。"""
     sent: list[dict] = []
 
     async def sse_send(ev):
         sent.append(ev)
 
-    fake_llm = MagicMock()
-    fake_llm.complete = AsyncMock(side_effect=LLMError("HTTP_401", "bad key"))
+    def llm_factory_raises(phase):
+        raise LLMError("CONFIG", "LLM_DEFAULT_CHANNEL 未配置")
 
     repo = MagicMock()
     repo.get.return_value = {"session_id": "s1", "output_dir": None, "status": "idle"}
@@ -60,38 +72,13 @@ async def test_chitchat_llm_error_emits_error_event():
         repo=repo,
         workspace=MagicMock(),
         stock_index=si,
-        llm_factory=lambda p: fake_llm,
+        llm_factory=llm_factory_raises,
     )
-    await coord.run(session_id="s1", message="你好", context=None)
+    await coord.run(session_id="s1", message="随便聊聊", context=None)
+
     types = [e["type"] for e in sent]
-    assert "error" in types
-
-
-async def test_chitchat_internal_error_path():
-    """非 LLMError 也要进 error 事件而不是 raise。"""
-    sent: list[dict] = []
-
-    async def sse_send(ev):
-        sent.append(ev)
-
-    fake_llm = MagicMock()
-    fake_llm.complete = AsyncMock(side_effect=RuntimeError("boom"))
-
-    repo = MagicMock()
-    repo.get.return_value = {"session_id": "s1", "output_dir": None, "status": "idle"}
-    si = MagicMock()
-    si.get_name.return_value = None
-
-    coord = Coordinator(
-        sse_send=sse_send,
-        repo=repo,
-        workspace=MagicMock(),
-        stock_index=si,
-        llm_factory=lambda p: fake_llm,
-    )
-    await coord.run(session_id="s1", message="hi", context=None)
-    err = [e for e in sent if e["type"] == "error"]
-    assert err and err[0]["error"] == "INTERNAL"
+    assert "error" not in types
+    assert types[-1] == "done"
 
 
 async def test_routes_to_full_pipeline_when_stock_detected():
