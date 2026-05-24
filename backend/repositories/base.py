@@ -43,11 +43,16 @@ def append_models_to_parquet(
     path: Path,
     new_records: List[T],
     model_class: Type[T],
-    dedup_key: str = "date",
+    dedup_key="date",
     sort_by: str = "date",
     ascending: bool = False,
 ) -> None:
     """增量追加记录到 parquet 文件，按 dedup_key 去重。
+
+    dedup_key 支持单字段 str(向后兼容)或复合键 tuple/list:
+        dedup_key="REPORT_DATE"               # 单键
+        dedup_key=("END_DATE", "HOLDER_RANK")  # 复合键(§7 多行/期场景)
+
     冲突策略: 新记录覆盖旧记录 — 重要,因为下游可能在盘中误抓 partial bar,
     收盘后需要被完整收盘数据覆盖。"""
     if not new_records:
@@ -55,11 +60,22 @@ def append_models_to_parquet(
     existing = read_parquet_as_models(path, model_class, sort_by=None)
     # new_records 在前: 同 key 时新记录先入 seen,后续 existing 同 key 会被丢弃
     all_records = list(new_records) + existing
+
+    if isinstance(dedup_key, (tuple, list)):
+        keys = tuple(dedup_key)
+
+        def _key(r):
+            return tuple(getattr(r, k) for k in keys)
+    else:
+
+        def _key(r):
+            return getattr(r, dedup_key)
+
     seen = set()
     deduped = []
     for r in all_records:
-        key = getattr(r, dedup_key)
-        if key not in seen:
-            seen.add(key)
+        k = _key(r)
+        if k not in seen:
+            seen.add(k)
             deduped.append(r)
     write_models_as_parquet(path, deduped, sort_by=sort_by, ascending=ascending)

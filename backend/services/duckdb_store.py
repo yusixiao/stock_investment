@@ -892,6 +892,93 @@ class DuckDBStore:
             return []
         return df.to_dict("records")
 
+    # ---------- §7 控股股东 (EastMoney F10 + 按需拉取缓存) ----------
+    @property
+    def _holder_updater(self):
+        """懒构造 holder updater(避免单测必须传 mock,且与 DuckDB views 解耦)。"""
+        if not hasattr(self, "_holder_updater_inst"):
+            try:
+                from pathlib import Path
+
+                from backend.config import DATA_DIR
+                from backend.repositories.holder_repo import HolderRepository
+                from backend.services.holder_updater import HolderUpdater
+
+                holders_dir = Path(DATA_DIR) / "market" / "A" / "holders"
+                self._holder_updater_inst = HolderUpdater(
+                    repo=HolderRepository(holders_dir)
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("holder updater init failed: %s", e)
+                self._holder_updater_inst = None
+        return self._holder_updater_inst
+
+    def query_top10_holders(self, code: str, latest_n_periods: int = 2) -> list[dict]:
+        """查询十大股东最近 N 期。返回 list[dict]:每行一个 holder。"""
+        upd = self._holder_updater
+        if upd is None:
+            return []
+        try:
+            records = upd.fetch_with_cache(code, "top10")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("query_top10_holders(%s) failed: %s", code, e)
+            return []
+        if not records:
+            return []
+        # 按 END_DATE desc 取最近 N 期
+        rows = [r.model_dump(exclude_none=False) for r in records]
+        rows.sort(key=lambda r: str(r.get("END_DATE") or ""), reverse=True)
+        end_dates = []
+        for r in rows:
+            ed = r.get("END_DATE")
+            if ed and ed not in end_dates:
+                end_dates.append(ed)
+            if len(end_dates) >= latest_n_periods:
+                break
+        keep = set(end_dates)
+        return [r for r in rows if r.get("END_DATE") in keep]
+
+    def query_top10_free_holders(
+        self, code: str, latest_n_periods: int = 2
+    ) -> list[dict]:
+        upd = self._holder_updater
+        if upd is None:
+            return []
+        try:
+            records = upd.fetch_with_cache(code, "top10_free")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("query_top10_free_holders(%s) failed: %s", code, e)
+            return []
+        if not records:
+            return []
+        rows = [r.model_dump(exclude_none=False) for r in records]
+        rows.sort(key=lambda r: str(r.get("END_DATE") or ""), reverse=True)
+        end_dates = []
+        for r in rows:
+            ed = r.get("END_DATE")
+            if ed and ed not in end_dates:
+                end_dates.append(ed)
+            if len(end_dates) >= latest_n_periods:
+                break
+        keep = set(end_dates)
+        return [r for r in rows if r.get("END_DATE") in keep]
+
+    def query_holder_count(self, code: str) -> list[dict]:
+        """股东户数 — 当期 + PRE_END_DATE 上期(self-contained 单条记录)。"""
+        upd = self._holder_updater
+        if upd is None:
+            return []
+        try:
+            records = upd.fetch_with_cache(code, "holder_count")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("query_holder_count(%s) failed: %s", code, e)
+            return []
+        if not records:
+            return []
+        rows = [r.model_dump(exclude_none=False) for r in records]
+        rows.sort(key=lambda r: str(r.get("END_DATE") or ""), reverse=True)
+        return rows
+
     def query_circulating_shares_for_section(self, code: str) -> Optional[int]:
         """问股 §2 流通股数 adapter — 读 meta/circulating_shares.parquet。
 

@@ -14,17 +14,22 @@
 - SDK:官方 `tavily-python` 包
 - 缓存:`data/cache/tavily/<code>_<section>.json` + 7 天 mtime 过期
 
-### §7 五表清单 + 用途
+### §7 表清单 + 用途(2026-05-24 spike 后修订)
 
-| # | 表 | reportName(待 spike 验证) | 历史需求 | 渲染策略 |
-|---|---|---|---|---|
-| 1 | 十大股东 | `RPT_F10_EH_HOLDERS` | ≥2 期对比 | 最近一期 + 较上期 +/- pp |
-| 2 | 十大流通股东 | `RPT_F10_EH_FREEHOLDERS` | 同上 | 同上 |
-| 3 | 股东户数 | `RPT_F10_EH_HOLDERSNUMLATEST` | 4-8 期趋势 | 最近 8 期趋势线 |
-| 4 | 股权质押 | `RPT_PLEDGE_HOLDERSTAT` | 12 月事件流 | 最新累计 + 近 12 月新增/解押 |
-| 5 | 高管变动 | `RPT_EXECUTIVE_CHANGE` | 12 月事件 | 近 12 月事件清单 |
+| # | 表 | reportName | sortColumns | 历史需求 | 渲染策略 | 状态 |
+|---|---|---|---|---|---|---|
+| 1 | 十大股东 | `RPT_F10_EH_HOLDERS` | `END_DATE` | ≥2 期对比 | 最近一期 + 较上期 +/- pp | ✅ spike 通过 |
+| 2 | 十大流通股东 | `RPT_F10_EH_FREEHOLDERS` | `END_DATE` | 同上 | 同上 | ✅ spike 通过 |
+| 3 | 股东户数 | `RPT_HOLDERNUMLATEST` | `END_DATE` | 单期(自带 PRE_END_DATE / PRE_HOLDER_NUM) | 当期 vs 上期对比 | ✅ spike 通过 |
+| 4 | 股权质押 | — | — | — | — | ⏸ **placeholder,后续单独迭代** |
+| 5 | 高管变动 | — | — | — | — | ⏸ **placeholder,后续单独迭代** |
 
-数据量评估:单股 5 表合计 < 50 KB;5000 只 A 股全量 ≈ 250 MB。
+**Spike 结论**(2026-05-24):
+- F10 接口 `sortColumns` 必须用 `END_DATE`(`REPORT_DATE` 失败)
+- 质押 / 高管变动 5 个候选 reportName 全部「报表配置不存在」,turtle 框架历史上也从未实现(只有 placeholder doc)
+- **决策路径 1**:接受现状先落 3 表,§7 主体跑通,质押 + 高管标注「数据待补」,后续单独迭代
+
+数据量评估:单股 3 表合计 < 30 KB;5000 只 A 股全量 ≈ 150 MB。
 
 ---
 
@@ -38,26 +43,30 @@
 - 笔记落到 `notes/eastmoney_f10_spike.md`(本地工作笔记)
 - 如 reportName 错误,查 EastMoney F10 网页抓包修正
 
-### Phase 1 — §7 EastMoney F10 接入(~1.5 天)
+### Phase 1 — §7 EastMoney F10 接入(~1 天,3 表方案)
 
-1. **Pydantic models**(`backend/models/holder.py`):5 个 record class
-   - 字段以 spike 阶段确认的英文 schema 命名(EastMoney 原始字段保留)
-2. **Adapter 扩展**(`backend/adapters/eastmoney_adapter.py`):5 个新方法,共用现有 `_fetch_report`
-   - `fetch_top10_holders / fetch_top10_free_holders / fetch_holder_count_history / fetch_stock_pledge / fetch_executive_changes`
-   - **不传 latest_only**,默认拉全部历史
+1. **Pydantic models**(`backend/models/holder.py`):3 个 record class
+   - `Top10HolderRecord / Top10FreeHolderRecord / HolderCountRecord`
+   - 字段以 spike 确认的英文 schema 命名(SECURITY_CODE / END_DATE / HOLDER_NAME / HOLD_NUM / HOLD_NUM_RATIO …)
+2. **Adapter 扩展**(`backend/adapters/eastmoney_adapter.py`):3 个新方法
+   - `_fetch_report` 签名加 `sort_column="REPORT_DATE"` 参数(默认保持向后兼容)
+   - `fetch_top10_holders / fetch_top10_free_holders / fetch_holder_count_history`
+   - 全部传 `sort_column="END_DATE"`
 3. **Repository**(`backend/repositories/holder_repo.py`):append + dedup
-   - `data/market/A/holders/{top10, top10_free, holder_count, pledge, exec_change}/<code>.parquet`
+   - `data/market/A/holders/{top10, top10_free, holder_count}/<code>.parquet`
+   - dedup key:`(SECURITY_CODE, END_DATE, HOLDER_NAME)`(holder_count 用 END_DATE)
 4. **按需拉服务**(`backend/services/holder_updater.py`):`fetch_with_cache(code, table, ttl_days=7)`
    - mtime < 7 天直接读;否则调 adapter → append → 返回
    - 失败优雅降级到旧数据 + warning log
 5. **DuckDBStore 视图 + 查询**(`backend/services/duckdb_store.py`):
-   - `v_a_top10_holders` 等 5 视图
-   - `query_top10_holders(code, latest_n_periods=2)` 等 5 方法
-   - 每个查询前先调 `holder_updater.fetch_with_cache` 刷新
+   - `v_a_top10_holders / v_a_top10_free_holders / v_a_holder_count` 3 视图
+   - `query_top10_holders(code, latest_n_periods=2)` / `query_top10_free_holders(...)` / `query_holder_count_history(code, n=8)`
 6. **§7 section**(`s07_holders_placeholder.py` → `s07_holders.py`):重写为真实实现
+   - 渲染:十大股东最新一期 + 较上期变化 / 十大流通股东 / 股东户数 当期 vs PRE_HOLDER_NUM
+   - **质押 + 高管变动留空降级文本**:「数据待补 — 暂无可用数据源,后续迭代接入」
 7. **builder.py 注册**:替换 SECTION_REGISTRY 中的占位
 
-TDD:5 个 adapter mock 测试 + repo roundtrip + cache 命中/过期 + section 渲染各字段缺失场景 ≈ 25-30 case
+TDD:3 adapter mock 测试 + repo roundtrip + cache 命中/过期 + section 渲染缺失场景 ≈ 18-20 case
 
 ### Phase 2 — Tavily 客户端基建(~0.5 天)
 

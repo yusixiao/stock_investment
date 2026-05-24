@@ -13,6 +13,11 @@ from backend.models.financial import (
     FinancialIndicator,
 )
 from backend.models.event import DividendRecord
+from backend.models.holder import (
+    Top10HolderRecord,
+    Top10FreeHolderRecord,
+    HolderCountRecord,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +50,16 @@ def _fetch_page_with_retry(params: dict, code: str, report_name: str) -> dict | 
 
 
 def _fetch_report(
-    report_name: str, code: str, page_size: int = DEFAULT_PAGE_SIZE
+    report_name: str,
+    code: str,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    sort_column: str = "REPORT_DATE",
 ) -> List[dict]:
-    """通用东方财富报表获取"""
+    """通用东方财富报表获取。
+
+    sort_column:F10 不同接口的排序字段不同 — 财务三表用默认 REPORT_DATE,
+    §7 控股股东三表(spike 验证)需 END_DATE。
+    """
     security_code = code.split(".")[0] if "." in code else code
 
     all_records = []
@@ -62,7 +74,7 @@ def _fetch_report(
             "pageNumber": page,
             "pageSize": page_size,
             "sortTypes": -1,
-            "sortColumns": "REPORT_DATE",
+            "sortColumns": sort_column,
             "source": "HSF10",
             "client": "PC",
         }
@@ -200,6 +212,27 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
             if rec is not None:
                 out.append(rec)
         return out
+
+    # ---------- §7 控股股东 ----------
+    # spike 验证(2026-05-24):F10 接口 sortColumns 必须用 END_DATE
+    def fetch_top10_holders(self, code: str) -> List[Top10HolderRecord]:
+        """十大股东(全部口径,含 H 股 / 限售)。"""
+        records = _fetch_report("RPT_F10_EH_HOLDERS", code, sort_column="END_DATE")
+        return _records_to_models(records, Top10HolderRecord)
+
+    def fetch_top10_free_holders(self, code: str) -> List[Top10FreeHolderRecord]:
+        """十大流通股东。"""
+        records = _fetch_report("RPT_F10_EH_FREEHOLDERS", code, sort_column="END_DATE")
+        return _records_to_models(records, Top10FreeHolderRecord)
+
+    def fetch_holder_count_history(self, code: str) -> List[HolderCountRecord]:
+        """股东户数(latest 接口,单期 + PRE_END_DATE 上期对比)。
+
+        注:RPT_HOLDERNUMLATEST 每次只返回最近一期(count=1),长期趋势需周期性
+        调用 + holder_repo.append 累积。
+        """
+        records = _fetch_report("RPT_HOLDERNUMLATEST", code, sort_column="END_DATE")
+        return _records_to_models(records, HolderCountRecord)
 
     def login(self):
         """兼容 BaoStockAdapter 接口,EastMoney 无需登录。"""
