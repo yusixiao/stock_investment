@@ -1004,6 +1004,38 @@ class DuckDBStore:
         except Exception:  # noqa: BLE001
             return None
 
+    def query_total_shares_for_section(self, code: str) -> Optional[int]:
+        """问股 §17 总股本 adapter — 读 v_a_indicator.TOTAL_SHARE 最新一期。
+
+        与 query_circulating_shares_for_section 不同:这里取总股本(含限售),
+        用于市值/EV 计算;前者取流通 A 股(A_FREE_SHARE)。
+        视图缺失/无数据 → None。
+        """
+        market = self._market_of_code(code)
+        view = f"v_{market.lower()}_indicator"
+        if not self._view_exists(view):
+            return None
+        try:
+            df = self._conn.execute(
+                f"""
+                SELECT TOTAL_SHARE
+                FROM {view}
+                WHERE _symbol = ? AND TOTAL_SHARE IS NOT NULL AND TOTAL_SHARE > 0
+                ORDER BY REPORT_DATE DESC
+                LIMIT 1
+                """,
+                [code],
+            ).fetchdf()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("query_total_shares_for_section(%s) failed: %s", code, e)
+            return None
+        if df.empty:
+            return None
+        try:
+            return int(df.iloc[0]["TOTAL_SHARE"])
+        except Exception:  # noqa: BLE001
+            return None
+
     def close(self):
         self._conn.close()
 
