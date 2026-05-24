@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from services.agent.pipeline.phase1_data_pack.sections._table import fmt_num
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections._table import fmt_num
 
 
 def build(ref, *, store, stock_index, indicators) -> str:

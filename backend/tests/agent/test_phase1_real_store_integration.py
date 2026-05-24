@@ -166,8 +166,8 @@ def test_adapter_circulating_shares_graceful(real_store):
 
 
 def test_section_s03_income_renders_real_numbers(real_store):
-    from services.agent.pipeline.phase1_data_pack.sections import s03_income
-    from services.agent.symbol import StockRef
+    from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s03_income
+    from services.agent.core.symbol import StockRef
 
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
     text = s03_income.build(ref, store=real_store, stock_index=None, indicators=None)
@@ -180,8 +180,8 @@ def test_section_s03_income_renders_real_numbers(real_store):
 
 
 def test_section_s05_cashflow_renders_real(real_store):
-    from services.agent.pipeline.phase1_data_pack.sections import s05_cashflow
-    from services.agent.symbol import StockRef
+    from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s05_cashflow
+    from services.agent.core.symbol import StockRef
 
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
     text = s05_cashflow.build(ref, store=real_store, stock_index=None, indicators=None)
@@ -190,8 +190,8 @@ def test_section_s05_cashflow_renders_real(real_store):
 
 
 def test_section_s06_dividend_renders_real(real_store):
-    from services.agent.pipeline.phase1_data_pack.sections import s06_dividend
-    from services.agent.symbol import StockRef
+    from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s06_dividend
+    from services.agent.core.symbol import StockRef
 
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
     text = s06_dividend.build(ref, store=real_store, stock_index=None, indicators=None)
@@ -201,8 +201,8 @@ def test_section_s06_dividend_renders_real(real_store):
 
 
 def test_section_s12_ratios_renders_real(real_store):
-    from services.agent.pipeline.phase1_data_pack.sections import s12_ratios
-    from services.agent.symbol import StockRef
+    from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s12_ratios
+    from services.agent.core.symbol import StockRef
 
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
     text = s12_ratios.build(ref, store=real_store, stock_index=None, indicators=None)
@@ -211,8 +211,8 @@ def test_section_s12_ratios_renders_real(real_store):
 
 
 def test_section_s11_weekly_renders_real(real_store):
-    from services.agent.pipeline.phase1_data_pack.sections import s11_weekly_kline
-    from services.agent.symbol import StockRef
+    from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s11_weekly_kline
+    from services.agent.core.symbol import StockRef
 
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
     text = s11_weekly_kline.build(
@@ -223,8 +223,8 @@ def test_section_s11_weekly_renders_real(real_store):
 
 
 def test_section_s02_market_renders_real(real_store):
-    from services.agent.pipeline.phase1_data_pack.sections import s02_market
-    from services.agent.symbol import StockRef
+    from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s02_market
+    from services.agent.core.symbol import StockRef
 
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
     text = s02_market.build(ref, store=real_store, stock_index=None, indicators=None)

@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional, Protocol
 
-from services.agent.parser import parse_phase3_quant_results
-from services.agent.prompts import loader
+from services.agent.core.parser import parse_phase3_quant_results
+from services.agent.agents.cpa import prompts as loader
 
 
 class StreamLLM(Protocol):

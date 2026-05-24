@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from services.agent.symbol import StockRef
+from services.agent.core.symbol import StockRef
 
 # Windows / *nix 文件系统都不允许的字符
 _UNSAFE = re.compile(r'[\\/:*?"<>|]')

@@ -2,7 +2,7 @@
 
 import pytest
 
-from services.agent.llm_routing import RoutingError, resolve_channel_name
+from services.agent.core.llm_routing import RoutingError, resolve_channel_name
 
 
 def test_phase_specific_route():

@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from services.agent.pipeline.phase1_data_pack.sections import s06_dividend
-from services.agent.symbol import StockRef
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s06_dividend
+from services.agent.core.symbol import StockRef
 
 
 def test_section_6_dps_5_years():

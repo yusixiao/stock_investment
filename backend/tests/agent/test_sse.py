@@ -2,7 +2,7 @@
 
 import json
 
-from services.agent import sse
+from services.agent.core import sse
 
 
 def test_thinking_shape():

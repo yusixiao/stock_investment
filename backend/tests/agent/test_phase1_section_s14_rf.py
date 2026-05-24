@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from services.agent.pipeline.phase1_data_pack.sections import s14_rf
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s14_rf
 
 
 class _Ref:

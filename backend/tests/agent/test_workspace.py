@@ -1,7 +1,7 @@
 import pytest
 
-from services.agent.symbol import StockRef
-from services.agent.workspace import Workspace
+from services.agent.core.symbol import StockRef
+from services.agent.core.workspace import Workspace
 
 
 @pytest.fixture

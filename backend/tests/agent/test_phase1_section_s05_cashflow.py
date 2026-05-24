@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from services.agent.pipeline.phase1_data_pack.sections import s05_cashflow
-from services.agent.symbol import StockRef
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s05_cashflow
+from services.agent.core.symbol import StockRef
 
 
 def test_section_5_basic():

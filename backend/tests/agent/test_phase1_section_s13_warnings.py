@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from services.agent.pipeline.phase1_data_pack.sections import s13_warnings
-from services.agent.symbol import StockRef
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s13_warnings
+from services.agent.core.symbol import StockRef
 
 
 def test_section_13_no_warnings_when_healthy():

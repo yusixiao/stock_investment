@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from services.agent.symbol import StockRef, extract, normalize
+from services.agent.core.symbol import StockRef, extract, normalize
 
 
 class TestNormalize:

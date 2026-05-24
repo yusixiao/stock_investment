@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from services.agent.pipeline.phase1_data_pack.sections import s04_balance
-from services.agent.symbol import StockRef
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s04_balance
+from services.agent.core.symbol import StockRef
 
 
 def test_section_4_basic():
@@ -51,7 +51,7 @@ def test_section_4_empty_emits_warning():
 
 # ---- §4P 母公司资产负债表(Task 23) ----
 
-from services.agent.pipeline.phase1_data_pack.sections import s04p_parent_balance  # noqa: E402
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s04p_parent_balance  # noqa: E402
 
 
 def test_s04p_returns_none_for_hk():

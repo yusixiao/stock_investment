@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from services.agent.pipeline.phase1_data_pack.sections import (
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import (
     s16_peers_placeholder as s16,
 )
 

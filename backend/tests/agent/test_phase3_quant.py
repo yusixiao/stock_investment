@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from services.agent.pipeline.phase3_quant import run_phase3_quant
+from services.agent.agents.cpa.pipeline.phase3_quant import run_phase3_quant
 
 
 class _FakeStreamLLM:

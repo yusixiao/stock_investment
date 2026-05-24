@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.agent.coordinator import Coordinator
-from services.agent.symbol import StockRef
+from services.agent.core.symbol import StockRef
 
 
 class _FakeStreamLLM:
@@ -59,7 +59,7 @@ def _make_coord(tmp_path: Path, *, quant_llm, valuation_llm, sent: list[dict]):
     si = MagicMock()
     si.get_name.return_value = "比亚迪"
 
-    from services.agent.workspace import Workspace
+    from services.agent.core.workspace import Workspace
 
     ws = Workspace(tmp_path)
 
@@ -91,7 +91,7 @@ def patched_builder():
         return out
 
     with patch(
-        "services.agent.coordinator.DataPackBuilder.build",
+        "services.agent.agents.cpa.pipeline.phase1_data_pack.builder.DataPackBuilder.build",
         new=fake_build,
     ):
         yield
@@ -106,7 +106,7 @@ async def test_full_pipeline_happy_path(tmp_path, patched_builder):
     )
 
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
-    await coord._run_full_pipeline("s1", ref)
+    await coord.run(session_id="s1", message=ref.code, context=None)
 
     types = [e["type"] for e in sent]
     # 应包含三阶段的 tool_start/tool_done 和最终 done
@@ -156,7 +156,7 @@ async def test_full_pipeline_phase3_quant_failure_emits_error(
     )
 
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
-    await coord._run_full_pipeline("s1", ref)
+    await coord.run(session_id="s1", message=ref.code, context=None)
 
     types = [e["type"] for e in sent]
     assert "error" in types
@@ -181,7 +181,7 @@ async def test_full_pipeline_session_output_dir_persisted(tmp_path, patched_buil
     )
 
     ref = StockRef(code="002594.SZ", name="比亚迪", market="A")
-    await coord._run_full_pipeline("s1", ref)
+    await coord.run(session_id="s1", message=ref.code, context=None)
 
     # Coordinator 应在 repo 上调 set_output_dir 或 update,记录 output_dir
     # 接受 set_output_dir / update 任一形式

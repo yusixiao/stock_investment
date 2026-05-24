@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
-from services.agent.pipeline.phase1_data_pack.sections import (
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import (
     s01_basic,
     s02_market,
     s03_income,
@@ -33,7 +33,7 @@ from services.agent.pipeline.phase1_data_pack.sections import (
     s16_peers_placeholder,
     s17_derived,
 )
-from services.agent.symbol import StockRef
+from services.agent.core.symbol import StockRef
 
 SECTION_REGISTRY: dict = {
     "s01": s01_basic.build,

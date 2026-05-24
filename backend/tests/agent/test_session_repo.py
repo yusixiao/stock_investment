@@ -80,7 +80,7 @@ def test_indexes_created(tmp_path: Path):
 
 import time
 
-from services.agent.session_repo import SessionRepo
+from services.agent.core.session_repo import SessionRepo
 
 
 def _conn(tmp_path: Path):

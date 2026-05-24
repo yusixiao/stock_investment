@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from services.agent.pipeline.phase1_data_pack.sections import s15_industry_valuation
-from services.agent.symbol import StockRef
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s15_industry_valuation
+from services.agent.core.symbol import StockRef
 
 
 def test_section_15_industry_median():

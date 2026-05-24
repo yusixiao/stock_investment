@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from services.agent.pipeline.phase1_data_pack.builder import DataPackBuilder
-from services.agent.symbol import StockRef
+from services.agent.agents.cpa.pipeline.phase1_data_pack.builder import DataPackBuilder
+from services.agent.core.symbol import StockRef
 
 
 def test_builder_produces_file_with_placeholders(tmp_path):

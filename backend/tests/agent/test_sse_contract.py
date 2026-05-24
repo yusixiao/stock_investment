@@ -6,7 +6,7 @@
   error?, phase?, artifacts?
 """
 
-from services.agent import sse
+from services.agent.core import sse
 
 ALLOWED = {
     "type",

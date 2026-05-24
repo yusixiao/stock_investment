@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from services.agent.pipeline.phase1_data_pack.sections import s03_income
-from services.agent.symbol import StockRef
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s03_income
+from services.agent.core.symbol import StockRef
 
 
 def _store(rows):
@@ -62,7 +62,7 @@ def test_section_3_empty_emits_warning():
 
 # ---- §3P 母公司利润表(Task 23) ----
 
-from services.agent.pipeline.phase1_data_pack.sections import s03p_parent_income  # noqa: E402
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections import s03p_parent_income  # noqa: E402
 
 
 def test_s03p_returns_none_for_hk():

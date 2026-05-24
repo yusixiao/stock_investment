@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from services.agent.pipeline.phase1_data_pack.sections._table import fmt_num, md_table
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections._table import fmt_num, md_table
 
 # 与 §12 一致,但只取最近一期
 PEER_RATIO_FIELDS = [

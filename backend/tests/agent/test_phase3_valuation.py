@@ -2,7 +2,7 @@
 
 import asyncio
 
-from services.agent.pipeline.phase3_valuation import run_phase3_valuation
+from services.agent.agents.cpa.pipeline.phase3_valuation import run_phase3_valuation
 
 
 class _FakeStreamLLM:

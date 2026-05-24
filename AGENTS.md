@@ -287,3 +287,65 @@ cd frontend && npm run lint                # ESLint
 
 ### 旧版备份
 - 旧 AGENTS.md 严重滞后(Vue + 单一 A 股),已替换
+
+## 问股(Ask Stock)架构 — 多 Agent + 4 层 Fallback(2026-05-24 决策)
+
+### 总体定位
+问股**不是单 agent 系统**,而是**多 agent 平台**。当前已实现 **CPA 问股(cpa)**,后续将扩展 **团队分析问股(team,多角色协作/辩论)** 等更多 agent。所以目录结构、Coordinator、Prompts 都必须按 agent 维度可扩展,**禁止把单一 agent 的实现细节硬编码进顶层模块**。
+
+### 目录结构(重构目标)
+```
+backend/services/agent/
+├── coordinator.py              # 顶层路由:4 层 fallback(暂留 agent/ 根)
+├── core/                       # 通用基础设施(跨 agent 复用)
+│   ├── parser.py / sse.py / session_repo.py / workspace.py
+│   ├── symbol.py / llm_routing.py
+│   └── prompts_loader.py       # 原 prompts/loader.py
+├── agents/                     # 每个 agent 一个子包,自包含
+│   ├── __init__.py             # AGENT_REGISTRY = {"cpa": CpaAgent, "team": ...}
+│   ├── cpa/                    # CPA 问股(现有)
+│   │   ├── agent.py            # CpaAgent.run(ctx) → AsyncIterator[SSEEvent]
+│   │   ├── pipeline/           # phase1_data_pack / phase3_quant / phase3_valuation
+│   │   └── prompts/            # coordinator.md / phase3_*.md / references/
+│   └── team/                   # 团队分析问股(未来)
+│       ├── agent.py            # 多角色协作(分析师/风控/策略)
+│       ├── pipeline/
+│       └── prompts/
+```
+
+### 设计原则
+1. **每个 agent 自包含** — `agents/<name>/` 包含自己的 pipeline + prompts + 解析逻辑,**不跨 agent 共享业务代码**;共享的下沉到 `core/`
+2. **统一入口契约** — 每个 agent 实现 `Agent.run(ctx) -> AsyncIterator[SSEEvent]`,Coordinator 只关心这个接口
+3. **AGENT_REGISTRY** — `agents/__init__.py` 维护 `name → class` 映射,Coordinator 按意图分类结果路由
+4. **Prompts 跟着 agent 走** — cpa 的 prompts 在 `agents/cpa/prompts/`,team 的在 `agents/team/prompts/`,各自独立演进
+
+### Coordinator 4 层 Fallback(规则 + LLM 意图分析混合)
+**不让用户显式选 agent**,Coordinator 自动路由,顺序如下:
+
+```
+Layer 1 (规则): session.output_dir 已有完整报告 → qa_followup
+              ↓ (无报告)
+Layer 2 (规则): 无股票上下文 + 消息无股票码 → chitchat
+              ↓ (识别到股票码)
+Layer 3 (LLM): 意图分类器(轻量 LLM call)→ 选 agent
+              { 个股深度分析 → cpa
+                团队辩论 / 多视角对比 → team
+                其他 ... → ... }
+              ↓ (LLM 失败/超时/置信度低)
+Layer 4 (兜底): 默认 agent = cpa (当前唯一稳定 agent)
+```
+
+- **Layer 1/2 是规则快路径**:无需 LLM,毫秒级响应
+- **Layer 3 是 LLM 意图分类**:仅在识别到股票码后触发,决定派给哪个 agent
+- **Layer 4 是兜底**:意图分类失败永不阻塞,降级到 cpa
+
+### 当前实现状态(2026-05-24)
+- ✅ Layer 1/2/4 已在 `coordinator.py` 实现(三分支版)
+- ❌ Layer 3 LLM 意图分类**未实现**,目前识别到股票码后直接走 cpa(原 turtle)
+- ❌ 目录还是平铺 `pipeline/` + `prompts/turtle/`,**未按 multi-agent 切分**
+- 🔄 即将一次性重构:`pipeline/ → agents/cpa/pipeline/`、`prompts/turtle/ → agents/cpa/prompts/`、新增 `core/` 下沉通用基础设施、coordinator 加 Layer 3 意图分类
+
+### 测试策略
+- 重构按 TDD:先迁移文件 + 改 import,跑 692 cases 全绿;再加 Layer 3 + 团队 agent 时新增测试
+- AGENT_REGISTRY 单测:确保新 agent 注册后 coordinator 能路由到它
+- 意图分类 mock LLM 返回值,验证 4 层 fallback 在不同条件下的分支

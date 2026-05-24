@@ -22,12 +22,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from services import stock_index
-from services.agent import sse
+from services.agent.core import sse
 from services.agent.coordinator import Coordinator
 from services.duckdb_store import get_store as get_duckdb_store
-from services.agent.llm_routing import resolve_channel_name
-from services.agent.session_repo import SessionRepo
-from services.agent.workspace import Workspace
+from services.agent.core.llm_routing import resolve_channel_name
+from services.agent.core.session_repo import SessionRepo
+from services.agent.core.workspace import Workspace
 from services.db_schema import init_chat_tables
 from services.system_config.channels import get_channel
 from services.system_config.llm_client import LLMError, build_client

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from services.agent.pipeline.phase1_data_pack.sections._table import (
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections._table import (
     fmt_million,
     fmt_num,
     md_table,

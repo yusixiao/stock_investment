@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from services.agent.pipeline.phase1_data_pack.sections._table import (
+from services.agent.agents.cpa.pipeline.phase1_data_pack.sections._table import (
     fmt_million,
     md_table,
 )

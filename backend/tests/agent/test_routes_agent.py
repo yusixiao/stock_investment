@@ -169,7 +169,7 @@ def test_chat_stream_full_pipeline_e2e(tmp_path, monkeypatch):
         patch("routers.agent.build_client_for_phase", side_effect=factory),
         patch("routers.agent.stock_index", fake_si),
         patch(
-            "services.agent.coordinator.DataPackBuilder.build",
+            "services.agent.agents.cpa.pipeline.phase1_data_pack.builder.DataPackBuilder.build",
             new=fake_build,
         ),
     ):

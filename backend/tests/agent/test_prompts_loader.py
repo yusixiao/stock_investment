@@ -2,11 +2,9 @@
 
 from pathlib import Path
 
-from services.agent.prompts import loader
+from services.agent.agents.cpa import prompts as loader
 
-PROMPTS_DIR = (
-    Path(__file__).resolve().parents[2] / "services" / "agent" / "prompts" / "turtle"
-)
+PROMPTS_DIR = loader.PROMPTS_DIR
 
 
 def test_six_prompt_files_exist():

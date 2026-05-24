@@ -1,6 +1,6 @@
 """问股期 1 — Task 28:phase3_quant <results> 块解析器测试。"""
 
-from services.agent.parser import parse_phase3_quant_results
+from services.agent.core.parser import parse_phase3_quant_results
 
 SAMPLE = """
 # Phase 3 定量分析报告
