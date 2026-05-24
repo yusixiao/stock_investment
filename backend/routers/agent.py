@@ -11,13 +11,26 @@ _conn() 每次请求从 env 读 DSA_PORTFOLIO_DB,且确保 chat_* 表已建。
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
+from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
+from services import stock_index
+from services.agent import sse
+from services.agent.coordinator import Coordinator
+from services.agent.llm_routing import resolve_channel_name
 from services.agent.session_repo import SessionRepo
+from services.agent.workspace import Workspace
 from services.db_schema import init_chat_tables
+from services.system_config.channels import get_channel
+from services.system_config.llm_client import LLMError, build_client
+from services.system_config.store import ConfigStore
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
@@ -61,3 +74,81 @@ def delete_session(sid: str):
 @router.get("/sessions/{sid}/messages")
 def list_messages(sid: str):
     return {"items": _repo().list_messages(sid)}
+
+
+# ===== Task 18:/chat/stream =====
+
+
+class ChatStreamRequest(BaseModel):
+    message: str
+    session_id: str
+    skills: list[str] = []
+    context: Optional[dict] = None
+
+
+def _config_kv() -> dict:
+    path = Path(os.environ.get("DSA_CONFIG_PATH", "data/system_config.yaml"))
+    return ConfigStore(path).load()
+
+
+def build_client_for_phase(phase: str):
+    """按 phase 解析 channel 并构造 LLMClient(供 Coordinator 注入)。"""
+    kv = _config_kv()
+    name = resolve_channel_name(kv, phase)
+    ch = get_channel(kv, name)
+    if not ch:
+        raise LLMError("CONFIG", f"channel {name} not configured")
+    return build_client(ch)
+
+
+def _workspace() -> Workspace:
+    return Workspace(Path(os.environ.get("DSA_AGENT_RUNS", "data/agent_runs")))
+
+
+@router.post("/chat/stream")
+async def chat_stream(payload: ChatStreamRequest = Body(...)):
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def sse_send(event: dict) -> None:
+        await queue.put(sse.encode(event))
+
+    repo = _repo()
+    repo.upsert(payload.session_id)
+    repo.append_message(
+        payload.session_id,
+        role="user",
+        content=payload.message,
+        context=payload.context,
+    )
+
+    coord = Coordinator(
+        sse_send=sse_send,
+        repo=repo,
+        workspace=_workspace(),
+        stock_index=stock_index,
+        llm_factory=build_client_for_phase,
+    )
+
+    async def runner() -> None:
+        try:
+            await coord.run(
+                session_id=payload.session_id,
+                message=payload.message,
+                context=payload.context,
+            )
+        finally:
+            await queue.put(None)
+
+    async def gen():
+        task = asyncio.create_task(runner())
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield chunk
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
