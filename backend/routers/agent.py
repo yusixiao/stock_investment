@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from services import stock_index
 from services.agent import sse
 from services.agent.coordinator import Coordinator
+from services.duckdb_store import get_store as get_duckdb_store
 from services.agent.llm_routing import resolve_channel_name
 from services.agent.session_repo import SessionRepo
 from services.agent.workspace import Workspace
@@ -121,12 +122,20 @@ async def chat_stream(payload: ChatStreamRequest = Body(...)):
         context=payload.context,
     )
 
+    # full_pipeline 走真实 DuckDB store;chitchat / qa_followup 不会用到
+    try:
+        store = get_duckdb_store()
+    except Exception:
+        store = None
+
     coord = Coordinator(
         sse_send=sse_send,
         repo=repo,
         workspace=_workspace(),
         stock_index=stock_index,
         llm_factory=build_client_for_phase,
+        store=store,
+        indicators=None,
     )
 
     async def runner() -> None:

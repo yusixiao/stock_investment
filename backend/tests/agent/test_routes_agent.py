@@ -117,6 +117,101 @@ def test_chat_stream_chitchat(tmp_path, monkeypatch):
     assert events[-1]["content"] == "你好!"
 
 
+def test_chat_stream_full_pipeline_e2e(tmp_path, monkeypatch):
+    """E2E:识别股票码 → 三阶段 SSE 事件序列 + 报告写盘 + session output_dir 落库。"""
+    _setup_chat_env(tmp_path, monkeypatch)
+
+    QUANT = (
+        "# Phase 3.1\n<results>\n"
+        "owner_earnings_I=100\nfinal_return_GG=12.5\nthreshold_II=10\n"
+        "margin_KK=0.5\ntrap_risk=低\nextrapolation_confidence=高\n"
+        "</results>\n"
+    )
+    REPORT = "# 投资分析报告\n\n## 评级\nA\n"
+
+    class _StreamLLM:
+        """fake LLMClient,stream(messages) 异步生成。"""
+
+        def __init__(self, text):
+            self._text = text
+            self.complete = AsyncMock(
+                return_value=CompletionResult(text=text, tokens_in=1, tokens_out=1)
+            )
+
+        async def stream(self, messages, **kwargs):
+            # 分两 chunk
+            mid = len(self._text) // 2
+            yield self._text[:mid]
+            yield self._text[mid:]
+
+    quant_llm = _StreamLLM(QUANT)
+    val_llm = _StreamLLM(REPORT)
+
+    def factory(phase: str):
+        if phase == "phase3_quant":
+            return quant_llm
+        if phase == "phase3_valuation":
+            return val_llm
+        return _StreamLLM("")
+
+    # patch DataPackBuilder 的 build,避开真实 DuckDB 依赖
+    def fake_build(self, ref, output_dir):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        out = output_dir / "data_pack_market.md"
+        out.write_text(f"# 数据包 {ref.code}\n", encoding="utf-8")
+        return out
+
+    # patch stock_index 让股票码被识别
+    fake_si = MagicMock()
+    fake_si.get_name.return_value = "贵州茅台"
+
+    with (
+        patch("routers.agent.build_client_for_phase", side_effect=factory),
+        patch("routers.agent.stock_index", fake_si),
+        patch(
+            "services.agent.coordinator.DataPackBuilder.build",
+            new=fake_build,
+        ),
+    ):
+        c = TestClient(app)
+        with c.stream(
+            "POST",
+            "/api/v1/agent/chat/stream",
+            json={
+                "message": "600519 怎么样",
+                "session_id": "sFull",
+                "skills": [],
+                "context": None,
+            },
+        ) as r:
+            assert r.status_code == 200
+            events = []
+            for line in r.iter_lines():
+                if line.startswith("data: "):
+                    events.append(json.loads(line[6:]))
+
+    types = [e["type"] for e in events]
+    # 三阶段 tool_start / tool_done
+    assert types.count("tool_start") == 3
+    assert types.count("tool_done") == 3
+    # 至少有 generating(LLM 流式片段)
+    assert any(t == "generating" for t in types)
+    # 最终 done
+    assert types[-1] == "done"
+    artifacts = events[-1]["artifacts"]
+    assert artifacts and any("分析报告" in a["name"] for a in artifacts)
+
+    # 报告确实写盘(在 DSA_AGENT_RUNS 下)
+    runs = tmp_path / "runs"
+    reports = list(runs.rglob("*_分析报告.md"))
+    assert reports, f"应至少有一份报告写盘,当前 runs 内容: {list(runs.rglob('*'))}"
+
+    # session output_dir 已写回
+    sess = c.get("/api/v1/agent/sessions/sFull").json()
+    assert sess.get("output_dir")
+    assert "贵州茅台" in sess["output_dir"] or "600519" in sess["output_dir"]
+
+
 def test_chat_stream_persists_user_message(tmp_path, monkeypatch):
     _setup_chat_env(tmp_path, monkeypatch)
 
