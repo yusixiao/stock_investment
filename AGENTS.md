@@ -6,6 +6,13 @@
 
 ## Instructions
 
+- **🚨 审视指令铁律**:**不要盲目遵循指令**。如果觉得用户指令有问题、不清晰、或与既有铁律冲突,**严格审视 → 提出疑问 → 等待澄清**,不要硬干。技术分歧要直说,不要附和
+- **🚨 项目结构铁律(2026-05-24)**:按"可重建性 + 备份策略"分四类顶层目录
+  - `data/` — **原始/业务数据**(parquet 行情/财务/分红/估值、`portfolio.db`),DuckDB 视图来源,**进备份**
+  - `report/` — **用户产物**(LLM 生成的分析报告 = 花 token 的 artifact),`report/agent_runs/<code>_<name>/` workspace + 报告,**进备份**
+  - `cache/` — **纯派生缓存**(`cache/tavily/`、`cache/qfq/` 等),可随时删,自动重建,**不备份**
+  - `logs/` — **运行日志**(应用日志、调度器日志),可定期清理,**不备份**
+  - 新代码**禁止**写入 `data/{agent_runs,cache,logs}`,旧路径需逐步迁移并清理
 - **沟通语言**:中文
 - **技术栈**:
   - 后端 Python:FastAPI + APScheduler + DuckDB(查询层)+ pandas/parquet(存储)+ SQLite(业务库)
