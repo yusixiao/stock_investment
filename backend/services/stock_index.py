@@ -19,6 +19,7 @@ class StockIndexEntry:
     code: str
     name: Optional[str]
     market: str  # "A", "HK", "US"
+    industry: Optional[str] = None
 
 
 _index: List[StockIndexEntry] = []
@@ -32,15 +33,26 @@ def init_stock_index() -> None:
     # A股：从 stock_list.parquet 加载 code+name
     a_list_path = BASIC_DIR / "stock_list.parquet"
     if a_list_path.exists():
-        df = pd.read_parquet(a_list_path, columns=["code", "name", "status"])
+        # 兼容旧 parquet 无 industry 列的情况
+        try:
+            df = pd.read_parquet(
+                a_list_path, columns=["code", "name", "status", "industry"]
+            )
+        except (KeyError, ValueError):
+            df = pd.read_parquet(a_list_path, columns=["code", "name", "status"])
+            df["industry"] = None
         # status=1 表示正常上市
         active = df[df["status"] == "1"]
         for _, row in active.iterrows():
+            ind = row.get("industry") if "industry" in row.index else None
+            if ind is not None and (isinstance(ind, float) and pd.isna(ind)):
+                ind = None
             entries.append(
                 StockIndexEntry(
                     code=row["code"],
                     name=row["name"],
                     market="A",
+                    industry=ind,
                 )
             )
         logger.info("A股索引加载完成: %d 只", len(entries))
@@ -82,6 +94,35 @@ def get_name(code: str, market: str = "A") -> Optional[str]:
         if e.code == code and e.market == market:
             return e.name
     return None
+
+
+def get_industry(code: str, market: str = "A") -> Optional[str]:
+    """根据 (code, market) 查行业(证监会分类)。索引未命中或 industry 缺失返回 None。"""
+    for e in _index:
+        if e.code == code and e.market == market:
+            return e.industry
+    return None
+
+
+def get_peers_by_industry(
+    industry: str,
+    exclude_code: Optional[str] = None,
+    limit: int = 5,
+    market: str = "A",
+) -> List[StockIndexEntry]:
+    """返回同行业的索引条目(排除指定 code,默认前 limit 个,按 code 字典序)。
+
+    industry 缺失或匹配不到任何条目时返回空列表。
+    """
+    if not industry:
+        return []
+    peers = [
+        e
+        for e in _index
+        if e.market == market and e.industry == industry and e.code != exclude_code
+    ]
+    peers.sort(key=lambda e: e.code)
+    return peers[:limit]
 
 
 def search_stocks(query: str, limit: int = 10) -> List[dict]:

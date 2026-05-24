@@ -209,6 +209,12 @@ class BaoStockAdapter(MarketDataAdapter, BasicDataAdapter, EventDataAdapter):
         try:
             rs = bs.query_stock_basic()
             df_basic = _result_to_df(rs)
+            # query_stock_basic 实际不返回 industry,需另调 query_stock_industry merge
+            try:
+                rs_ind = bs.query_stock_industry()
+                df_ind = _result_to_df(rs_ind)
+            except Exception:
+                df_ind = None
         finally:
             if auto_session:
                 self.logout()
@@ -216,10 +222,20 @@ class BaoStockAdapter(MarketDataAdapter, BasicDataAdapter, EventDataAdapter):
         if df_basic.empty:
             return []
 
+        # 构 bs_code -> industry 映射(部分股票无行业,缺失即 None)
+        ind_map: dict[str, str] = {}
+        if df_ind is not None and not df_ind.empty and "industry" in df_ind.columns:
+            for _, row in df_ind.iterrows():
+                code = row.get("code", "")
+                ind = row.get("industry", "")
+                if code and ind:
+                    ind_map[code] = ind
+
         records = []
         for _, row in df_basic.iterrows():
             bs_code = row.get("code", "")
             std_code = _to_standard_code(bs_code)
+            industry = ind_map.get(bs_code) or row.get("industry") or None
             records.append(
                 StockBasicInfo(
                     code=std_code,
@@ -228,7 +244,7 @@ class BaoStockAdapter(MarketDataAdapter, BasicDataAdapter, EventDataAdapter):
                     delist_date=row.get("outDate") if row.get("outDate") else None,
                     stock_type=row.get("type") if row.get("type") else None,
                     status=row.get("status", "1"),
-                    industry=row.get("industry") if row.get("industry") else None,
+                    industry=industry,
                 )
             )
 

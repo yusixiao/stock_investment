@@ -219,34 +219,75 @@ class TestBaoStockAdapterAdjustFactor:
 
 class TestBaoStockAdapterStockList:
     @patch("backend.adapters.baostock_adapter.bs")
-    def test_fetch_stock_list_success(self, mock_bs):
+    def test_fetch_stock_list_merges_industry(self, mock_bs):
+        """fetch_stock_list 调 query_stock_basic + query_stock_industry,按 code 合并 industry。
+
+        baostock 的 query_stock_basic 实际不返回 industry 字段,需要单独调
+        query_stock_industry 拿到证监会行业分类后 merge。
+        """
         mock_bs.login.return_value = MagicMock(error_code="0")
         mock_bs.logout.return_value = None
 
-        fields = [
+        # query_stock_basic:不含 industry
+        basic_fields = ["code", "code_name", "ipoDate", "outDate", "type", "status"]
+        basic_rows = [
+            ["sz.000001", "平安银行", "1991-04-03", "", "1", "1"],
+            ["sh.600000", "浦发银行", "1999-11-10", "", "1", "1"],
+            [
+                "sh.600002",
+                "齐鲁石化",
+                "1993-08-06",
+                "",
+                "1",
+                "1",
+            ],  # 无行业,merge 后应为 None
+        ]
+        mock_bs.query_stock_basic.return_value = _make_bs_result(
+            basic_fields, basic_rows
+        )
+
+        # query_stock_industry:独立 API,字段 updateDate/code/code_name/industry/industryClassification
+        ind_fields = [
+            "updateDate",
             "code",
             "code_name",
-            "ipoDate",
-            "outDate",
-            "type",
-            "status",
             "industry",
+            "industryClassification",
         ]
-        rows = [
-            ["sz.000001", "平安银行", "1991-04-03", "", "1", "1", "银行"],
-            ["sh.600000", "浦发银行", "1999-11-10", "", "1", "1", "银行"],
+        ind_rows = [
+            [
+                "2026-05-18",
+                "sz.000001",
+                "平安银行",
+                "J66货币金融服务",
+                "证监会行业分类",
+            ],
+            [
+                "2026-05-18",
+                "sh.600000",
+                "浦发银行",
+                "J66货币金融服务",
+                "证监会行业分类",
+            ],
+            # 600002 缺失 — 部分股票确实无行业分类
         ]
-        mock_bs.query_stock_basic.return_value = _make_bs_result(fields, rows)
+        mock_bs.query_stock_industry.return_value = _make_bs_result(
+            ind_fields, ind_rows
+        )
 
         adapter = BaoStockAdapter()
         records = adapter.fetch_stock_list()
 
-        assert len(records) == 2
+        assert len(records) == 3
         assert isinstance(records[0], StockBasicInfo)
         assert records[0].code == "000001.SZ"
         assert records[0].name == "平安银行"
-        assert records[0].industry == "银行"
+        assert records[0].industry == "J66货币金融服务"
         assert records[1].code == "600000.SH"
+        assert records[1].industry == "J66货币金融服务"
+        # merge 失败的股票:industry 应为 None,不抛
+        assert records[2].code == "600002.SH"
+        assert records[2].industry is None
 
 
 class TestBaoStockAdapterDividends:
