@@ -106,6 +106,51 @@ def get_macd(
     return 2.0 * (dif_series[-1] - dea_series[-1])
 
 
+def get_macd_hist_series(
+    ctx,
+    symbol: str,
+    n: int = 2,
+    *,
+    fast: int = 12,
+    slow: int = 26,
+    signal: int = 9,
+    freq: str = "weekly",
+) -> list[float] | None:
+    """返回最近 n 根 K 线的 MACD hist 序列(末尾为最新)。
+
+    用于"本周 MACD vs 上周 MACD"等多期比较场景。
+    hist = 2 × (DIF - DEA)(项目硬性约定)。
+    数据不足(< slow + signal + n)→ None。
+    """
+    if n <= 0:
+        return None
+    need = slow + signal + n
+    bars = ctx.get_history(symbol, need + 5, period=freq)
+    if not bars or len(bars) < slow + signal + n:
+        return None
+    closes = [b["close"] for b in bars]
+    ema_fast = _ema(closes, fast)
+    ema_slow = _ema(closes, slow)
+    if not ema_fast or not ema_slow:
+        return None
+    aligned_len = min(len(ema_fast), len(ema_slow))
+    dif_series = [
+        ema_fast[-aligned_len + i] - ema_slow[-aligned_len + i]
+        for i in range(aligned_len)
+    ]
+    dea_series = _ema(dif_series, signal)
+    if not dea_series:
+        return None
+    aligned = min(len(dif_series), len(dea_series))
+    hist = [
+        2.0 * (dif_series[-aligned + i] - dea_series[-aligned + i])
+        for i in range(aligned)
+    ]
+    if len(hist) < n:
+        return None
+    return hist[-n:]
+
+
 def filter_by_ma_close(
     ctx,
     symbols: list[str],
@@ -152,6 +197,60 @@ def filter_by_ma_close(
                 slow=slow,
                 ratio=ratio,
                 threshold=threshold,
+            )
+    ctx.log_flow(stage, input=len(symbols), passed=len(result))
+    return result
+
+
+def filter_by_close_above_ma(
+    ctx,
+    symbols: list[str],
+    *,
+    ma_window: int = 20,
+    freq: str = "monthly",
+) -> list[str]:
+    """筛选最近一根 K 线 close > MA(ma_window) 的股票(简单趋势择时)。
+
+    数据不足或 MA 缺失视作未通过。stage = "kline.close_above_ma"
+    日志:
+      log_pass(symbol, stage, window=N, close=C, ma=M, premium_pct=P)
+      log_reject(symbol, stage, "no_data" | "no_price" | "below_ma", ...)
+    Factor:
+      "close>MA{N}溢价%" → (close/ma - 1) * 100
+    """
+    stage = "kline.close_above_ma"
+    result: list[str] = []
+    for sym in symbols:
+        ma_val = get_ma(ctx, sym, ma_window, freq=freq)
+        if ma_val is None or ma_val == 0:
+            ctx.log_reject(sym, stage, "no_data", window=ma_window)
+            continue
+        # 取当前 bar 的 close(period 取与 MA 一致,保证语义对齐)
+        price = ctx.get_price(sym, period=freq)
+        close = price.get("close") if price else None
+        if close is None:
+            ctx.log_reject(sym, stage, "no_price", window=ma_window)
+            continue
+        if close > ma_val:
+            premium_pct = (close / ma_val - 1.0) * 100
+            ctx.log_pass(
+                sym,
+                stage,
+                window=ma_window,
+                close=close,
+                ma=ma_val,
+                premium_pct=premium_pct,
+            )
+            ctx.record_factor(sym, f"close>MA{ma_window}溢价%", round(premium_pct, 3))
+            result.append(sym)
+        else:
+            ctx.log_reject(
+                sym,
+                stage,
+                "below_ma",
+                window=ma_window,
+                close=close,
+                ma=ma_val,
             )
     ctx.log_flow(stage, input=len(symbols), passed=len(result))
     return result
