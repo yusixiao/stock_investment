@@ -35,8 +35,8 @@ async def main() -> int:
     parser.add_argument("--message", default=None, help="自定义提问(默认问大概情况)")
     parser.add_argument(
         "--out",
-        default=str(ROOT / "data" / "agent_runs"),
-        help="工作区根目录(默认 data/agent_runs/)",
+        default=str(ROOT / "report" / "agent_runs"),
+        help="工作区根目录(默认 report/agent_runs/)",
     )
     args = parser.parse_args()
 
@@ -74,7 +74,8 @@ async def main() -> int:
     ws = Workspace(Path(args.out))
 
     # 真实 LLM factory(按 phase 解析)
-    from routers.agent import build_client_for_phase
+    from routers.agent import build_client_for_phase, _config_kv
+    from services.agent.core.tavily_client import TavilyClient
 
     sid = f"smoke-{int(time.time())}"
     msg = args.message or f"{args.symbol} 这家公司怎么样,值得投吗?"
@@ -96,6 +97,7 @@ async def main() -> int:
         llm_factory=build_client_for_phase,
         store=store,
         indicators=None,
+        tavily=TavilyClient(api_key=_config_kv().get("TAVILY_API_KEY") or None),
     )
 
     print(f"=== smoke ask_stock: {args.symbol} | sid={sid} ===")
