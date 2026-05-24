@@ -1,7 +1,8 @@
 import type React from 'react';
 import { useRef, useState } from 'react';
 import { cn } from '../../utils/cn';
-import { Badge } from '../common';
+import { Badge, Button } from '../common';
+import { buildTradesFilename, exportTradesToXlsx } from '../../utils/exportTradesXlsx';
 import type { BacktestTask } from './BacktestAnalysis';
 
 interface Props {
@@ -170,9 +171,30 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
       {/* Trade Table */}
       {result.trades.length > 0 && (
         <div className="rounded-2xl border border-border/40 bg-card/50 p-4">
-          <h4 className="mb-3 text-sm font-medium text-secondary-text">
-            交易明细 <span className="text-muted-text">({result.trades.length}笔)</span>
-          </h4>
+          <div className="mb-3 flex items-center justify-between">
+            <h4 className="text-sm font-medium text-secondary-text">
+              交易明细 <span className="text-muted-text">({result.trades.length}笔)</span>
+            </h4>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                exportTradesToXlsx(
+                  result.trades,
+                  buildTradesFilename({
+                    strategyName: task.strategyName,
+                    symbol: task.symbol,
+                    market: task.market,
+                    startDate: task.startDate,
+                    endDate: task.endDate,
+                  }),
+                )
+              }
+              aria-label="导出交易明细到 Excel"
+            >
+              导出 Excel
+            </Button>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
