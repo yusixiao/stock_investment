@@ -295,9 +295,20 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             throw getStreamFailureError(event as unknown as StreamFailureEvent, '分析出错');
           }
 
-        currentProgressSteps.push(event);
-        set((s) => ({ progressSteps: [...s.progressSteps, event] }));
-      };
+          // generating 事件是 LLM token 流(每个 chunk 一个事件,可达上千条)
+          // 仅用于实时状态显示,不累积到思考过程列表(否则折叠面板会满屏「生成分析」)
+          if (event.type === 'generating') {
+            set((s) => {
+              // 只保留最近一条 generating 在 progressSteps,用于驱动 getCurrentStage 显示
+              const filtered = s.progressSteps.filter((st) => st.type !== 'generating');
+              return { progressSteps: [...filtered, event] };
+            });
+            return;
+          }
+
+          currentProgressSteps.push(event);
+          set((s) => ({ progressSteps: [...s.progressSteps, event] }));
+        };
 
       while (true) {
         const { done, value } = await reader.read();
