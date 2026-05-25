@@ -17,6 +17,10 @@ from services.agent.agents.cpa.pipeline.phase1_data_pack.builder import DataPack
 from services.agent.agents.cpa.pipeline.phase3_quant import run_phase3_quant
 from services.agent.agents.cpa.pipeline.phase3_valuation import run_phase3_valuation
 from services.agent.core import sse
+from services.agent.core.qualitative import run_qualitative
+from services.agent.core.qualitative.cache import QualitativeCache
+from services.agent.core.qualitative.dimensions import MOCK_DIMENSION_FNS
+from services.agent.core.qualitative.schema import QualitativeParams
 from services.agent.core.symbol import StockRef
 from services.system_config.llm_client import LLMClient, Message
 
@@ -37,6 +41,9 @@ class CpaAgent:
         store=None,
         indicators=None,
         tavily=None,
+        qualitative_cache: Optional[QualitativeCache] = None,
+        qualitative_dimension_fns: Optional[dict] = None,
+        qualitative_params_fallback: Optional[QualitativeParams] = None,
     ):
         self.sse_send = sse_send
         self.repo = repo
@@ -48,6 +55,10 @@ class CpaAgent:
         self.indicators = indicators
         # 可选 Tavily web search(§8 行业 / §10 ESG);无 key 自动降级
         self.tavily = tavily
+        # Phase 0 定性分析依赖(cache=None 时跳过 Phase 0,向后兼容)
+        self.qualitative_cache = qualitative_cache
+        self.qualitative_dimension_fns = qualitative_dimension_fns or MOCK_DIMENSION_FNS
+        self.qualitative_params_fallback = qualitative_params_fallback
 
     async def run(self, session_id: str, ref: StockRef) -> None:
         """完整流水线:Phase 1 数据包 → Phase 3.1 量化 → Phase 3.2 估值。"""
@@ -62,6 +73,18 @@ class CpaAgent:
         except Exception:
             # MagicMock 或某些自定义 repo 可能没有 upsert,不影响主流程
             pass
+
+        # ---------- Phase 0:定性分析(可选,cache=None 跳过)----------
+        # 软失败:Phase 0 异常不阻断 Phase 1/3,只标 _meta 为 failed
+        if self.qualitative_cache is not None:
+            await self._run_phase(
+                phase="phase0_qualitative",
+                display_name="定性分析(6 维度)",
+                workdir=d,
+                fn=lambda: self._run_qualitative_silent(ref),
+                is_async=True,
+                soft_fail=True,
+            )
 
         # ---------- Phase 1:数据包 ----------
         if not await self._run_phase(
@@ -151,6 +174,24 @@ class CpaAgent:
 
     # ===== 内部辅助 =====
 
+    async def _run_qualitative_silent(self, ref: StockRef) -> None:
+        """Phase 0:静默调 run_qualitative(on_event=None,不污染外层 SSE)。
+
+        命中缓存秒过;未命中时各维度顺序执行(目前是 mock,Phase 2 接真实)。
+        定性产物写盘到 data/qualitative/<code>_<name>/,Phase 3.2 后续可读取。
+        """
+        await run_qualitative(
+            ref,
+            cache=self.qualitative_cache,
+            dimension_fns=self.qualitative_dimension_fns,
+            current_report_date=None,
+            on_event=None,  # 静默
+            store=self.store,
+            tavily=self.tavily,
+            llm=None,
+            params_fallback=self.qualitative_params_fallback,
+        )
+
     def _build_data_pack(self, ref: StockRef, output_dir: Path) -> None:
         """同步执行 Phase 1 数据包构建。"""
         builder = DataPackBuilder(
@@ -169,10 +210,14 @@ class CpaAgent:
         workdir: Path,
         fn,
         is_async: bool = False,
+        soft_fail: bool = False,
     ) -> bool:
         """统一阶段编排:tool_start → mark running → 执行 → mark done/failed → tool_done。
 
-        失败时发 error 事件并返回 False,调用方应直接 return。
+        失败时:
+          - soft_fail=False(默认):发 error 事件 + 返回 False(调用方应 return 中止流程)
+          - soft_fail=True:仅 mark failed + tool_done(success=False),不发 error,
+            返回 True 让流程继续(用于 Phase 0 这种"降级即可"的可选阶段)
         """
         await self.sse_send(sse.tool_start(phase, display_name))
         self.workspace.mark_phase(workdir, phase, status="running")
@@ -190,6 +235,8 @@ class CpaAgent:
             await self.sse_send(
                 sse.tool_done(phase, success=False, duration=duration, message=str(e))
             )
+            if soft_fail:
+                return True
             await self.sse_send(sse.error("PHASE_FAILED", str(e), phase=phase))
             return False
         duration = time.time() - t0

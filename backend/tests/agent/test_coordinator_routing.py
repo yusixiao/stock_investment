@@ -104,7 +104,10 @@ async def test_routes_to_full_pipeline_when_stock_detected():
     await coord.run(session_id="s1", message="600519 怎么样", context=None)
     tool_starts = [e for e in sent if e["type"] == "tool_start"]
     assert tool_starts, "应至少有一个 tool_start 事件(说明进入了 full_pipeline 分支)"
-    assert tool_starts[0]["tool"] == "phase1_data_pack"
+    # Phase 5 起 cpa 首阶段是 phase0_qualitative,phase1_data_pack 紧随
+    tools = [e["tool"] for e in tool_starts]
+    assert tools[0] == "phase0_qualitative"
+    assert "phase1_data_pack" in tools
 
 
 # ===== Task 19: qa_followup =====

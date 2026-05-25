@@ -76,6 +76,7 @@ def _make_coord(tmp_path: Path, *, quant_llm, valuation_llm, sent: list[dict]):
         workspace=ws,
         stock_index=si,
         llm_factory=factory,
+        qualitative_dir=tmp_path / "qual",
     )
     return coord, ws
 
@@ -109,9 +110,9 @@ async def test_full_pipeline_happy_path(tmp_path, patched_builder):
     await coord.run(session_id="s1", message=ref.code, context=None)
 
     types = [e["type"] for e in sent]
-    # 应包含三阶段的 tool_start/tool_done 和最终 done
-    assert types.count("tool_start") == 3
-    assert types.count("tool_done") == 3
+    # Phase 5 起 cpa 含 4 阶段:phase0_qualitative + phase1 + phase3_quant + phase3_valuation
+    assert types.count("tool_start") == 4
+    assert types.count("tool_done") == 4
     assert types[-1] == "done"
     assert any(e["type"] == "generating" for e in sent)
 

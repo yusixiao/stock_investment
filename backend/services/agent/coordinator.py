@@ -68,11 +68,17 @@ class Coordinator:
         # 可选 Tavily web search(§8 行业 / §10 ESG);无 key 自动降级
         self.tavily = tavily
         # 定性分析缓存目录(BA agent / cpa Phase 0 共享)
-        # 默认走 config.QUALITATIVE_DIR;测试可注入隔离目录
+        # 优先级:显式参数 > DSA_QUALITATIVE_DIR 环境变量 > config.QUALITATIVE_DIR
         if qualitative_dir is None:
-            from config import QUALITATIVE_DIR
+            import os
 
-            qualitative_dir = QUALITATIVE_DIR
+            env_dir = os.getenv("DSA_QUALITATIVE_DIR")
+            if env_dir:
+                qualitative_dir = Path(env_dir)
+            else:
+                from config import QUALITATIVE_DIR
+
+                qualitative_dir = QUALITATIVE_DIR
         self._qualitative_cache = QualitativeCache(qualitative_dir)
 
     async def run(
@@ -137,7 +143,7 @@ class Coordinator:
                 llm_factory=self.llm_factory,
             )
         # cpa 与未来同构 agent 走标准签名
-        return agent_cls(
+        kwargs = dict(
             sse_send=self.sse_send,
             repo=self.repo,
             workspace=self.workspace,
@@ -147,6 +153,10 @@ class Coordinator:
             indicators=self.indicators,
             tavily=self.tavily,
         )
+        # cpa 接受 Phase 0 定性分析依赖(其他同构 agent 若不接受会被忽略)
+        if agent_name == "cpa":
+            kwargs["qualitative_cache"] = self._qualitative_cache
+        return agent_cls(**kwargs)
 
     def _has_completed_report(self, d: Path) -> bool:
         try:

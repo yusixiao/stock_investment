@@ -93,6 +93,7 @@ def _setup_chat_env(tmp_path, monkeypatch):
     monkeypatch.setenv("DSA_PORTFOLIO_DB", str(tmp_path / "p.db"))
     monkeypatch.setenv("DSA_CONFIG_PATH", str(tmp_path / "cfg.yaml"))
     monkeypatch.setenv("DSA_AGENT_RUNS", str(tmp_path / "runs"))
+    monkeypatch.setenv("DSA_QUALITATIVE_DIR", str(tmp_path / "qual"))
     (tmp_path / "cfg.yaml").write_text(
         yaml.safe_dump(
             {
@@ -217,9 +218,9 @@ def test_chat_stream_full_pipeline_e2e(tmp_path, monkeypatch):
                     events.append(json.loads(line[6:]))
 
     types = [e["type"] for e in events]
-    # 三阶段 tool_start / tool_done
-    assert types.count("tool_start") == 3
-    assert types.count("tool_done") == 3
+    # Phase 5 起 cpa 含 4 阶段:phase0_qualitative + phase1 + phase3_quant + phase3_valuation
+    assert types.count("tool_start") == 4
+    assert types.count("tool_done") == 4
     # 至少有 generating(LLM 流式片段)
     assert any(t == "generating" for t in types)
     # 最终 done

@@ -69,11 +69,14 @@ async def test_keyword_routes_to_business_analysis(tmp_path, msg):
 
 
 async def test_no_keyword_routes_to_cpa(tmp_path):
-    """无关键词时仍走 cpa(发出 phase1_data_pack tool_start)。"""
+    """无关键词时仍走 cpa。Phase 5 起 cpa 注入 qualitative_cache → 首发 phase0_qualitative。"""
     sent: list[dict] = []
     coord, _ = _make_coord(tmp_path, sent)
     await coord.run(session_id="s1", message="600519 怎么样", context=None)
 
     tool_starts = [e for e in sent if e["type"] == "tool_start"]
     assert tool_starts
-    assert tool_starts[0]["tool"] == "phase1_data_pack"
+    # Phase 5 后 cpa 第一阶段是 Phase 0(定性分析),Phase 1 紧随其后
+    tools = [e["tool"] for e in tool_starts]
+    assert tools[0] == "phase0_qualitative"
+    assert "phase1_data_pack" in tools
