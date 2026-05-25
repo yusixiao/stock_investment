@@ -6,6 +6,9 @@ DATA_DIR = BASE_DIR / "data"
 # 旧路径 (data/{kline,valuation,dividend,financial,indicators}/A/) 已废弃,见 AGENTS.md 铁律
 META_DIR = DATA_DIR / "meta"
 MARKET_DIR = DATA_DIR / "market"
+# 问股 · 定性分析产物缓存(business-analysis agent)
+# 跨任务共享(cpa Phase 0 / BA agent 都读这里),所以归 data/ 不是 report/
+QUALITATIVE_DIR = DATA_DIR / "qualitative"
 STRATEGY_DIR = BASE_DIR / "strategies"
 LOG_DIR = BASE_DIR / "logs"
 PORTFOLIO_DB = DATA_DIR / "portfolio.db"
@@ -13,6 +16,7 @@ PORTFOLIO_DB = DATA_DIR / "portfolio.db"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 META_DIR.mkdir(parents=True, exist_ok=True)
 MARKET_DIR.mkdir(parents=True, exist_ok=True)
+QUALITATIVE_DIR.mkdir(parents=True, exist_ok=True)
 
 LOG_RETENTION_DAYS = 90
 

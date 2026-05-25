@@ -17,6 +17,7 @@ from typing import Awaitable, Callable, Optional
 
 from services.agent.agents import AGENT_REGISTRY
 from services.agent.core import sse
+from services.agent.core.qualitative.cache import QualitativeCache
 from services.agent.core.symbol import extract
 from services.system_config.llm_client import LLMClient, LLMError, Message  # noqa: F401
 
@@ -24,6 +25,20 @@ SseSend = Callable[[dict], Awaitable[None]]
 
 # Layer 4 兜底 agent(意图分类失败/未实现时)
 DEFAULT_AGENT = "cpa"
+
+# Layer 2.5 关键词路由 → business_analysis agent
+# 命中任一关键词即路由(简单子串匹配,大小写不敏感对中文无影响)
+BUSINESS_ANALYSIS_KEYWORDS = (
+    "定性分析",
+    "商业模式",
+    "护城河",
+    "管理层",
+    "周期性",
+    "行业地位",
+    "治理",
+    "资本配置",
+    "战略",
+)
 
 
 class Coordinator:
@@ -40,6 +55,7 @@ class Coordinator:
         store=None,
         indicators=None,
         tavily=None,
+        qualitative_dir: Optional[Path] = None,
     ):
         self.sse_send = sse_send
         self.repo = repo
@@ -51,6 +67,13 @@ class Coordinator:
         self.indicators = indicators
         # 可选 Tavily web search(§8 行业 / §10 ESG);无 key 自动降级
         self.tavily = tavily
+        # 定性分析缓存目录(BA agent / cpa Phase 0 共享)
+        # 默认走 config.QUALITATIVE_DIR;测试可注入隔离目录
+        if qualitative_dir is None:
+            from config import QUALITATIVE_DIR
+
+            qualitative_dir = QUALITATIVE_DIR
+        self._qualitative_cache = QualitativeCache(qualitative_dir)
 
     async def run(
         self,
@@ -73,22 +96,18 @@ class Coordinator:
             if ref is None:
                 return await self._run_clarify(session_id)
 
-            # ---- Layer 3: LLM 意图分类(TODO 阶段 2)----
-            # agent_name = await self._classify_intent(message, ref) or DEFAULT_AGENT
+            # ---- Layer 2.5: 关键词路由(规则,毫秒级)----
+            agent_name = self._route_by_keywords(message)
+
+            # ---- Layer 3: LLM 意图分类(TODO 后续阶段)----
+            # if agent_name is None:
+            #     agent_name = await self._classify_intent(message, ref)
 
             # ---- Layer 4: 兜底默认 agent ----
-            agent_name = DEFAULT_AGENT
-            agent_cls = AGENT_REGISTRY[agent_name]
-            agent = agent_cls(
-                sse_send=self.sse_send,
-                repo=self.repo,
-                workspace=self.workspace,
-                stock_index=self.stock_index,
-                llm_factory=self.llm_factory,
-                store=self.store,
-                indicators=self.indicators,
-                tavily=self.tavily,
-            )
+            if agent_name is None:
+                agent_name = DEFAULT_AGENT
+
+            agent = self._build_agent(agent_name)
             return await agent.run(session_id, ref)
         except LLMError as e:
             await self.sse_send(sse.error(e.code, e.message))
@@ -96,6 +115,38 @@ class Coordinator:
             await self.sse_send(sse.error("INTERNAL", str(e)))
 
     # ===== 内部 =====
+
+    def _route_by_keywords(self, message: str) -> Optional[str]:
+        """Layer 2.5 关键词路由。命中 → 返回 agent name;未命中 → None。"""
+        for kw in BUSINESS_ANALYSIS_KEYWORDS:
+            if kw in message:
+                return "business_analysis"
+        return None
+
+    def _build_agent(self, agent_name: str):
+        """按 agent_name 实例化 agent,屏蔽不同构造器签名差异。"""
+        agent_cls = AGENT_REGISTRY[agent_name]
+        if agent_name == "business_analysis":
+            return agent_cls(
+                sse_send=self.sse_send,
+                repo=self.repo,
+                stock_index=self.stock_index,
+                qualitative_cache=self._qualitative_cache,
+                store=self.store,
+                tavily=self.tavily,
+                llm_factory=self.llm_factory,
+            )
+        # cpa 与未来同构 agent 走标准签名
+        return agent_cls(
+            sse_send=self.sse_send,
+            repo=self.repo,
+            workspace=self.workspace,
+            stock_index=self.stock_index,
+            llm_factory=self.llm_factory,
+            store=self.store,
+            indicators=self.indicators,
+            tavily=self.tavily,
+        )
 
     def _has_completed_report(self, d: Path) -> bool:
         try:
