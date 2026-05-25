@@ -27,6 +27,12 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
+        // SSE / 长连接友好:LLM Pipeline 单阶段最长可达数分钟,
+        // 显式禁用 socket / 上游 proxy 超时,避免 Phase 切换间隔被中间件断开。
+        // (http-proxy 默认就是 0=不限,这里显式声明防回归。)
+        timeout: 0,
+        proxyTimeout: 0,
+        ws: false,
       },
     },
   },

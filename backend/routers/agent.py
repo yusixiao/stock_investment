@@ -161,11 +161,21 @@ async def chat_stream(payload: ChatStreamRequest = Body(...)):
         finally:
             await queue.put(None)
 
+    # 长连接心跳:Phase 切换间隔可能 >60s 无事件,部分代理(nginx 默认
+    # proxy_read_timeout=60s / 公司网关 / 移动网络中间件)会主动断开。
+    # 每 15s 发一个 SSE 注释行 `: ping\n\n`,EventSource/fetch 都会忽略,
+    # 但能让中间件看到字节流活着。
+    HEARTBEAT_SEC = 15.0
+
     async def gen():
         task = asyncio.create_task(runner())
         try:
             while True:
-                chunk = await queue.get()
+                try:
+                    chunk = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_SEC)
+                except asyncio.TimeoutError:
+                    yield b": ping\n\n"
+                    continue
                 if chunk is None:
                     break
                 yield chunk
@@ -173,4 +183,17 @@ async def chat_stream(payload: ChatStreamRequest = Body(...)):
             if not task.done():
                 task.cancel()
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    # SSE 标准头 + 反代友好:
+    # - Cache-Control: no-cache       禁止任何中间层缓存
+    # - X-Accel-Buffering: no         告诉 nginx 不要 proxy_buffering(关键)
+    # - Connection: keep-alive        显式声明保持
+    headers = {
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    }
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers=headers,
+    )
