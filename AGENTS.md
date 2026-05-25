@@ -136,16 +136,6 @@
 - 任务历史表显示类型/汇总/状态/创建时间
 - 回测结果详情页显示 pipeline 配置 + 实际参数 + 日期范围
 
-## Pending Designs(claude-mem 中尚未完全落地)
-
-仍可能需要复核现状的设计:
-
-1. **#29 QFQ 缓存重构**(2026-05-08):3 状态缓存模型已部分实现(`qfq_cache.py`),需验证 `_meta.json` 与每日增量更新链路是否完整
-2. **#27 BatchBuyTrader**(2026-04-24):分 N 批买入(默认 4 个月 4 批),Broker `price_func` 机制 — 检查 `market_cap_weighted_buyer` 是否覆盖此场景或需独立策略
-3. **#30 StrategyGroup 三层 UI**(2026-05-09):后端已有,前端三层页面(组列表/组详情/运行详情)是否完成需核对
-4. **#32 Buy/Sell 系统**(2026-05-09):引擎已落地;策略基类拆分完成度需确认
-5. ~~**APScheduler misfire_grace_time 调大**~~ ✅ 2026-05-20 完成:三个 `add_job` 都加了 `misfire_grace_time=3600`
-
 ## Relevant files / directories
 
 ```
@@ -158,13 +148,7 @@ stock_investment/
 │   ├── domain/                         # stock 领域常量
 │   ├── models/                         # basic / market / financial / event Pydantic
 │   ├── repositories/                   # base / basic_repo / market_repo / financial_repo / event_repo
-│   ├── routers/                        # 13 个路由
-│   │   ├── stock.py / stock_search.py / market_kline.py
-│   │   ├── data_update.py / market_update.py
-│   │   ├── backtest.py / screener.py / strategy_group.py
-│   │   ├── portfolio.py
-│   │   ├── valuation.py / dividend.py / financial.py
-│   │   └── meta.py
+│   ├── routers/                        # stock / stock_search / market_kline / data_update / market_update / backtest / screener / portfolio / valuation / dividend / financial / agent / system_config / auth_stub / meta
 │   ├── services/
 │   │   ├── stock_data.py               # aggregate_kline (W-FRI / M)
 │   │   ├── duckdb_store.py             # parquet 视图查询层
@@ -175,22 +159,23 @@ stock_investment/
 │   │   ├── dividend_updater.py / financial_updater.py / valuation_updater.py
 │   │   ├── circulating_shares.py / indicator_store.py / indicator.py
 │   │   ├── api_utils.py / db_schema.py
-│   │   ├── backtest/
-│   │   │   ├── engine.py               # 主引擎,频率缓存,join_mode
-│   │   │   ├── buy_sell_engine.py      # Buy/Sell 拆分版引擎
-│   │   │   ├── engine_base.py          # BaseEngine + parse_screen_result
-│   │   │   ├── base.py                 # ScreenerStrategy / BuyStrategy / SellStrategy
-│   │   │   ├── context.py              # ScreenerContext / TraderContext + 多频率/分红/财务/估值
+│   │   ├── backtest/                   # Phase 6 后单一 Strategy 模型
+│   │   │   ├── engine.py               # 统一引擎:run() 完整回测 + run_scan() 雷达扫描
+│   │   │   ├── base.py                 # Strategy 单一类(screen + on_buy/on_sell hooks)
+│   │   │   ├── context.py              # Context 统一(取代旧 ScreenerContext / TraderContext)
+│   │   │   ├── market_data.py          # numpy 缓存 + 二分查找;启动预聚合周/月线
+│   │   │   ├── indicators.py           # 加载阶段一次性算 MA/EMA/MACD/Vol MA + Context O(1) 查
+│   │   │   ├── data_cache.py           # MarketBundle 全市场 + slice_bundle 派生
+│   │   │   ├── decision_log.py         # per-task 决策日志目录
 │   │   │   ├── broker.py               # T+1 / 涨跌停 / 佣金 / price_func
 │   │   │   ├── portfolio.py            # 资产/持仓
 │   │   │   ├── analyzer.py             # 指标计算
 │   │   │   ├── strategy_loader.py      # importlib 扫描 + frequency
-│   │   │   ├── group_manager.py        # 策略组管理
 │   │   │   ├── task_manager.py         # SQLite 持久化 + 进度
 │   │   │   └── date_utils.py           # format_match_date / date_belongs_to / detect_frequency
 │   │   └── portfolio/
 │   │       ├── db.py / manager.py
-│   └── tests/                          # 550 cases
+│   └── tests/                          # 797 cases
 ├── strategies/examples/
 │   ├── ma_tangle_breakout_screener.py  # frequency = "monthly"
 │   ├── dividend_years_screener.py
@@ -230,72 +215,22 @@ stock_investment/
 ## Testing
 
 ```bash
-python -m pytest backend/tests/ -x -q     # 后端 550 tests
+python -m pytest backend/tests/ -x -q     # 后端 797 tests
 cd frontend && npm test                    # 前端 vitest
 cd frontend && npm run test:smoke          # Playwright smoke
 cd frontend && npx tsc --noEmit            # 类型检查
 cd frontend && npm run lint                # ESLint
 ```
 
-## Update (2026-05-18)
+## 问股(Ask Stock)Phase 1 数据包构成
 
-- 重写 AGENTS.md 以反映实际状态:前端 React 重构、后端 DDD 三层、多市场数据层、DuckDB、Buy/Sell 引擎、策略组、财务/分红/估值子系统
-- 测试规模从 177 增至 550
+`DataPackBuilder` 共 19 sections,002594.SZ 端到端跑通:
+- §1 基础 / §2 市值股价 / §3·§3P 利润表 / §4·§4P 资产负债 / §5 现金流 / §6 股息
+- §7 股东(EastMoney F10 三表) / §8 行业 + §10 ESG(Tavily search,7 天文件缓存,无 key 优雅降级)
+- §9 主营 / §11 周线 / §12 比率 / §13 warnings / §14 Rf(`RF_CHINA_10Y` 常量) / §15 行业估值 / §16 同行对比 / §17 衍生
+- ⬜ §7 质押 / 高管增减持(待单独 issue);⬜ §17.8 D&A → EV/EBITDA
 
-## Update (2026-05-23 night — Ask Stock Phase A+B 完成)
-
-- v1+v2+v3 价值策略全部跑完(8+8+8 变体)
-- v3 全期最佳:**P0 全期 2010-2026 = 2.96% 年化**;v2 中 V10 = **5.29% 年化(全市场最佳)**;**未达 10% 年化目标**
-- 问股进展:**Phase A(T1-T11)+ Phase B(T12-T19)全部完成**(共 19 个 task,8 个本轮新增)
-- 测试规模 595 → **630**(+35,**0 回归**)
-- pytest-asyncio 1.3.0 已安装,`pytest.ini` 加 `asyncio_mode = auto`
-
-## Update (2026-05-24 — Ask Stock Phase 1 全部 34 task 完成 ✅)
-
-**T20-T34 收尾(本轮 +15 task,**测试 630 → 692,+62,0 回归**)**
-
-### 数据包(Phase 1)
-- T20-T26:`DataPackBuilder` + 14 个真实 section
-  - §1 基础 / §2 市值股价 / §3·§3P 利润表 / §4·§4P 资产负债 / §5 现金流 / §6 股息
-  - §9 主营 / §11 周线 / §12 比率 / §13 warnings / §15 行业估值 / §17 衍生
-  - §14 Rf:常量快照(akshare 已移除,手动维护 RF_CHINA_10Y)
-  - §16 同行对比:已是真实实现(行业内 ROE/毛利率/净利率/资产负债率)
-  - §7/§8/§10 占位(后续填,**禁止用 akshare**)
-- 端到端集成测试用 002594.SZ 跑通 19 sections 拼装
-
-### LLM 流水线(Phase 3)
-- T27:复制 turtle Phase 3 prompts(coordinator + phase3_quantitative + phase3_valuation + 3 个 references)+ `prompts/loader.py`(支持 includes 展开 + 变量注入)
-- T28:`parse_phase3_quant_results()` 解析 `<results>...</results>` 块(穿透回报率/阈值/安全边际/陷阱风险等)
-- T29:`run_phase3_quant()` 执行器 — 拼 prompt → stream → 写盘 → 解析
-- T30:`run_phase3_valuation()` — 喂量化报告 + 数据包 → 流式生成最终 `*_分析报告.md`
-
-### Coordinator 完整流水线
-- **T31:`_run_full_pipeline` 实现**(替换 NotImplementedError)— 串接三阶段,统一发 `tool_start/tool_done` + `_meta.json` 状态原子写,失败发 phase 标注的 error
-- 新增 `_wrap_stream_llm` 适配器:`LLMClient(messages-based)` → phase3_* 期望的 `StreamLLM(prompt-based)`
-- 新增 `store / indicators` 可选构造参数(单测可不传)
-- session repo `upsert(output_dir=...)` 写回,后续追问自动命中 `qa_followup`
-
-### 路由 & 烟囱
-- **T32:`/chat/stream` 注入真实 `DuckDBStore.get_store()`** + e2e 集成测试(patch DataPackBuilder.build + stock_index;验证 3×tool_start/3×tool_done/generating/done 序列 + 报告写盘 + session output_dir 落库)
-- **T33:`scripts/smoke_ask_stock.py`** — 真实 LLM 烟囱(后台跑:`nohup python scripts/smoke_ask_stock.py 002594.SZ > /tmp/smoke.log 2>&1 &`)
-- 前端 `frontend/src/api/agent.ts::chatStream` 期 1 已实装(fetch SSE),无需新增 hook
-
-### 问股可用功能(Phase 1 收口)
-1. **闲聊**:`POST /chat/stream` 无股票上下文 → chitchat 分支
-2. **追问**:已有报告 → qa_followup,基于报告 + 最近 10 条历史
-3. **完整分析**:识别股票码 → Phase 1 数据包 + Phase 3.1 量化(穿透回报率)+ Phase 3.2 估值与最终 `*_分析报告.md`
-4. SSE 6 类事件:thinking / tool_start / tool_done / generating / done / error
-5. Workspace 按 `<code>_<name>/` 隔离,`_meta.json` 阶段状态原子写
-
-### Phase 1 待办(下一阶段非阻塞)
-- ✅ §7 股东 — EastMoney F10 三表已接入(2026-05-24,commit 845e4e3)
-- ✅ §8 行业 / §10 ESG — Tavily search API 已接入(2026-05-24,7 天文件缓存),`config/system_config.yaml` 中配 `TAVILY_API_KEY: tvly-xxx`,未配置时优雅降级为「数据待补」
-- ⬜ §7 质押 / 高管增减持 — 单独 issue 跟进
-- 真实 LLM smoke 跑通后再决定是否要做 prompt 调优 / 多模型对比
-- 前端 ChatPage UI 已有,但 full_pipeline 的进度条/artifact 下载链路需端到端联调
-
-### 旧版备份
-- 旧 AGENTS.md 严重滞后(Vue + 单一 A 股),已替换
+LLM 流水线三阶段:Phase 1 数据包 → Phase 3.1 量化(`run_phase3_quant`,穿透回报率/阈值/安全边际)→ Phase 3.2 估值(`run_phase3_valuation`,生成 `*_分析报告.md`)。Coordinator `_run_full_pipeline` 串接,统一发 `tool_start/tool_done` + `_meta.json` 状态原子写,失败带 phase 标注。SSE 6 事件:thinking / tool_start / tool_done / generating / done / error。Workspace 按 `<code>_<name>/` 隔离。
 
 ## 问股(Ask Stock)架构 — 多 Agent + 4 层 Fallback(2026-05-24 决策)
 
@@ -348,13 +283,120 @@ Layer 4 (兜底): 默认 agent = cpa (当前唯一稳定 agent)
 - **Layer 3 是 LLM 意图分类**:仅在识别到股票码后触发,决定派给哪个 agent
 - **Layer 4 是兜底**:意图分类失败永不阻塞,降级到 cpa
 
-### 当前实现状态(2026-05-24)
+### 当前实现状态(2026-05-25)
 - ✅ Layer 1/2/4 已在 `coordinator.py` 实现(三分支版)
-- ❌ Layer 3 LLM 意图分类**未实现**,目前识别到股票码后直接走 cpa(原 turtle)
-- ❌ 目录还是平铺 `pipeline/` + `prompts/turtle/`,**未按 multi-agent 切分**
-- 🔄 即将一次性重构:`pipeline/ → agents/cpa/pipeline/`、`prompts/turtle/ → agents/cpa/prompts/`、新增 `core/` 下沉通用基础设施、coordinator 加 Layer 3 意图分类
+- ✅ **目录重构已完成**:`agents/cpa/{agent.py, pipeline/, prompts/}` + `core/`(session_repo / llm_routing / tavily_client / prompts_loader / symbol / sse / parser / workspace) 全部到位,旧 `pipeline/` 与 `prompts/turtle/` 已迁走
+- ❌ Layer 3 LLM 意图分类**未实现**,`coordinator.py:76` 仍是 `# TODO 阶段 2` 注释,识别到股票码后直接走 `DEFAULT_AGENT = cpa`
 
 ### 测试策略
-- 重构按 TDD:先迁移文件 + 改 import,跑 692 cases 全绿;再加 Layer 3 + 团队 agent 时新增测试
 - AGENT_REGISTRY 单测:确保新 agent 注册后 coordinator 能路由到它
 - 意图分类 mock LLM 返回值,验证 4 层 fallback 在不同条件下的分支
+
+## TODO
+
+- L3 LLM 意图分类器(coordinator `_classify_intent` 实现 + 4 层 fallback 测试)
+- team agent 骨架(`agents/team/`,多角色协作)
+- §17.8 D&A → EV/EBITDA
+- Vite proxy / Nginx 长连超时验证
+
+## Project Timeline(claude-mem 摘要 · 2026-05-13 → 2026-05-25)
+
+来自本项目 claude-mem 5500+ 条观察记录的日级提炼,只列**架构决策 / 数据踩坑 / 不可逆迁移**,日常代码改动不复述。
+
+### 2026-05-13 — Phase 4 DDD 启动 + BaoStock K 线验证
+- 建 `domain/` 层(Stock 聚合根,可选 repository 注入,默认 lazy 创建)
+- 50 只样本跑 BaoStock K 线核对,**A 股 volume 单位**在新旧 parquet 间多次出现一致性问题(`002907.SZ`、`000708.SZ`、`603070.SH` 多次返工),最终统一为「股」
+- AKShare → BaoStock 主迁移完成(此时还有 mock 测试残留,后期 5-21 才彻底清)
+
+### 2026-05-14 — Vue → React 大切换 + HK 数据源踩坑
+- ✅ 前端从 Vue 全量迁到 React 19(`#499`),旧 Vue 备份留 `frontend/src_vue_backup/`
+- BacktestPage 重写为列表布局
+- ⚠️ **EastMoney HK API 硬限制**:单次请求 >~250 行 / >12 个月范围必报错(`#242 #244 #247`),HK 长历史**只能切片拉取**
+- ⚠️ AKShare `stock_hk_hist` 直连失败(`#238`),HK/US 改走 yfinance(`#231` 加依赖)
+
+### 2026-05-15 — KlineChart 精修
+- lightweight-charts v5 双侧 priceScale 切换(volume / MACD overlay 调到 left,price 留 right)
+- MACD bar 计算修复(确认 `2 × (DIF - DEA)`,用户口径)
+- pctChg 双负号 bug 修复
+- kline API limit 参数化,前端默认拉更长窗口
+
+### 2026-05-16 — K 线交互定型
+- 默认显示 150 根 + 鼠标跟随 ruler + 持久 Tooltip(`#913`)
+- 调度器 3 个 job 落地:每日 06:00 市场更新 / 15:30 持仓快照 / 周日 03:00 备份(`#910`)
+
+### 2026-05-18 — 🚨 DuckDB 唯一来源决策日 + 策略 frequency 模型
+- 🟣 **DuckDB 成为业务数据唯一来源**(`#1567 #1513`)— 旧 qfq_cache 物理路径废弃,改用 `adjust_factor` ASOF JOIN 派生
+- 🟣 多市场数据层完工(A/HK/US 并行增量更新器,DuckDB 视图注册)
+- 策略 `Strategy.frequency_overridable` flag 加入,UI K 线周期联动
+- `MaTangleValueStrategy` 声明 `monthly` 且不可覆盖
+- AGENTS.md **首次大改写**反映多市场 + DDD(`#1532`)
+- merge-strategies plan 文档进库(`docs/superpowers/plans/2026-05-18-merge-strategies.md`)
+
+### 2026-05-19 — 🚨 Phase 6 统一引擎(单日 777 条记录,最大重构)
+- 🟣 **`Strategy / ScreenerStrategy / BuyStrategy / SellStrategy` 三角拆分模型废除**,合并为单一 `Strategy` 类(`screen()` + 可选 `on_buy / on_sell` hooks)
+- 🟣 `BacktestEngine` 统一(legacy v1/v2 + buy_sell_engine 合并),`run()` 完整回测 / `run_scan()` 雷达扫描两条路径
+- 🔴 **StrategyGroup 后端整套移除**(`#2764`),前端三层 UI 设计也同步搁置 — 之前 AGENTS.md Pending Designs #30 实际是被砍掉而非待办
+- 旧引擎/上下文/策略基类的所有 import 全网清理(`#2737 #2736`)
+- 链路保留 `source_task_id` 与 Signal Table 模式
+
+### 2026-05-20 — 性能 + 元数据修复
+- DuckDBStore 批量 qfq 查询(`#3349 #3350`),回测路由用批量替代单股循环
+- BacktestEngine 接收 per-task `log_dir`(决策日志按任务隔离)
+- `backtest_tasks.pipeline_info` 历史脏数据清理(空 pipeline 软删除,`#3303 #3305`)
+- `strategy_name` 显式存表 + 前端历史列表展示
+
+### 2026-05-21 — 🚨 数据路径铁律 + HK/US 分红回填
+- 🟣 **铁律确立**:所有业务数据**只走 `data/market/`**,禁止读旧 `data/{kline,financial,dividend,valuation,indicators}/...`(commit 1: 数据架构规则)
+- 🟣 strategies/utils 全英文字段切换(`commit 2`),旧中文 schema utils 弃用
+- 🟣 obsolete updaters/routers 整批清(`commit 3`)
+- HK 分红后台回填 + US 分红后台回填(yfinance 频繁触发限速,多次重启加 retry,共 7400+ 美股)
+- ⚠️ **HK/US 分红字段语义与 A 股不一致**已识别(`#4349 #4352`),修复方案落地
+
+### 2026-05-22 — StrategyRadar 完善 + 工具库
+- 雷达扫描结果导出 Excel(`#4963`)
+- StrategyRadar 参数对话框走 createPortal(避开滚动容器裁剪)
+- 6m lookback 选项前后端贯通
+- 雷达扫描默认开决策日志
+- `strategies/utils/kline.py::filter_by_ma_close` + `MaCloseStrategy` 示例
+- 指标快路径:`get_ma / macd` 工具直查 DataFrame 列(O(1))
+
+### 2026-05-23 — Ask Stock Phase A 启动(LLM 客户端 + agent 骨架)
+- `LLMClient` 抽象基类 + `OpenAICompatibleClient`(deepseek/openrouter/openai 三家)
+- `services/system_config/channels.py` 自动从 KV 重建 ChannelConfig
+- `routers/agent.py` SSE 骨架 + `routers/system_config.py` 注册到 main
+- `auth_stub` 路由接入(本地默认关闭鉴权)
+- pytest-asyncio 1.3.0 + `asyncio_mode=auto`
+- 价值策略 v1+v2+v3(共 24 变体)全期跑批,**未达 10% 年化目标**(v3 P0 全期 2.96%,v2 V10 5.29% 最佳)
+
+### 2026-05-24 — Ask Stock Phase 1 全收口 + Settings 集成
+- ✅ **Phase 1 全 34 task**:DataPackBuilder + 14 真实 section + Coordinator 三阶段流水线 + SSE 6 事件 + workspace `<code>_<name>/` 隔离
+- ✅ §7 股东 EastMoney F10 接入;§8/§10 Tavily search + 7 天文件缓存(无 key 优雅降级)
+- ✅ AKShare 适配器**物理删除**(`backend/adapters/akshare_adapter.py`),迁移脚本归档不再调用
+- ✅ Settings 9 字段 SSOT(`field_schema.py`)+ 路由重写 + LLMChannelEditor 隐藏(字段命名与后端 SSOT 不兼容,1796 行编辑器废弃)
+- ✅ 敏感字段 mask 三态语义 + 删除前端"显示密码"眼睛按钮
+- 测试 630 → 692 → **797**(0 回归)
+
+### 2026-05-25(今天)— Settings UI 收尾 + AGENTS.md 整理
+- commit `2227eb1` 设置页接入 yaml 9 字段
+- commit `0725cb2` 通用配置卡片标题按分类动态化
+- 阅读 claude-mem 5500+ 条记录,补全本时间线段落
+
+## 历史教训汇总(claude-mem 提炼)
+
+放这里防止再踩:
+
+1. **HK/US 数据源限制**
+   - EastMoney HK 单次 ≤ 250 行 / ≤ 12 个月,长历史必须切片
+   - yfinance 美股全量(~7400 只)极易触发限速,后台跑必须加 retry + 进度日志
+   - HK/US 分红字段语义与 A 股不同,适配层必须显式映射
+2. **AKShare 已彻底删除**(2026-05-24),不要再 `import akshare`,任何"AKShare 兼容层"提议都拒绝
+3. **DuckDB 是唯一业务数据入口**(2026-05-18 决策),新数据访问 API 必须先在 `DuckDBStore` 加方法,**禁止** `glob` parquet 或读旧路径
+4. **`data/market/` 是唯一业务数据物理路径**(2026-05-21 铁律),旧 `data/{kline,financial,dividend,valuation,indicators}/` 物理目录可删,引用必须迁移
+5. **Strategy 三角模型(Screener/Buy/Sell)已死**(2026-05-19 Phase 6),任何看到旧文档/代码提到 BuyStrategy/SellStrategy/TraderStrategy 的,都按"已合并到单一 Strategy"理解
+6. **StrategyGroup 整套已砍**(2026-05-19),前端三层 UI 不要再做
+7. **LLMChannelEditor 不兼容后端 SSOT**(2026-05-24),字段命名差太多(`_PROTOCOL` vs `_PROVIDER` / `_MODELS` 列表 vs 单值 / 强写 5 个 litellm 死字段),已隐藏不调用,后续若要做 channel UI 必须**重写**而非沿用
+8. **敏感字段不通过 HTTP 下发真实值**(产品级铁律),三态 mask 语义,前端"显示密码"按钮无意义
+9. **A 股 volume 单位 = 股**(2026-05-13 多次返工确认),不是手
+10. **MACD bar = 2 × (DIF - DEA)**(用户口径,与某些行情软件 1× 不同)
+11. **长任务必须 `nohup ... &`**(回测/全市场更新/分红回填都被超时打断过多次)
+12. **claude-mem 项目 key 必须用完整绝对路径**,`stock_investment` 那个是 claude source 只有早期记录
