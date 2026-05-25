@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from typing import Dict, Type
 
+from services.agent.agents.business_analysis.agent import BusinessAnalysisAgent
 from services.agent.agents.cpa.agent import CpaAgent
 
 AGENT_REGISTRY: Dict[str, Type] = {
     "cpa": CpaAgent,
+    "business_analysis": BusinessAnalysisAgent,
 }
