@@ -111,12 +111,19 @@ class BusinessAnalysisAgent:
 
         # ----- 调 runner -----
         llm = self.llm_factory("business_analysis") if self.llm_factory else None
+        # current_report_date:显式传入优先,否则从 DuckDB 查最新 REPORT_DATE(失败 → None)
+        report_date = self.current_report_date
+        if report_date is None and self.store is not None:
+            try:
+                report_date = self.store.query_latest_report_date(ref.code)
+            except Exception:  # noqa: BLE001
+                report_date = None
         try:
             report = await run_qualitative(
                 ref,
                 cache=self.cache,
                 dimension_fns=self.dimension_fns,
-                current_report_date=self.current_report_date,
+                current_report_date=report_date,
                 on_event=_on_event,
                 store=self.store,
                 tavily=self.tavily,

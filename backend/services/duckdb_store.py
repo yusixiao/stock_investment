@@ -1036,6 +1036,32 @@ class DuckDBStore:
         except Exception:  # noqa: BLE001
             return None
 
+    def query_latest_report_date(self, code: str) -> Optional[str]:
+        """问股定性分析 cache 失效用 — 取 v_<market>_indicator 中该股票最新 REPORT_DATE。
+
+        视图缺失 / 无数据 / 异常 → None,调用方按"无失效校验,只跑 TTL"降级。
+        返回格式:'YYYY-MM-DD' 字符串(与 cache 内 report_date 字段对齐)。
+        """
+        market = self._market_of_code(code)
+        view = f"v_{market.lower()}_indicator"
+        if not self._view_exists(view):
+            return None
+        try:
+            df = self._conn.execute(
+                f"""
+                SELECT MAX(REPORT_DATE) AS latest
+                FROM {view}
+                WHERE _symbol = ? AND REPORT_DATE IS NOT NULL
+                """,
+                [code],
+            ).fetchdf()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("query_latest_report_date(%s) failed: %s", code, e)
+            return None
+        if df.empty or df.iloc[0]["latest"] is None:
+            return None
+        return str(df.iloc[0]["latest"])
+
     def close(self):
         self._conn.close()
 

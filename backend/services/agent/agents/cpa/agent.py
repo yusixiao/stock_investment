@@ -180,11 +180,19 @@ class CpaAgent:
         命中缓存秒过;未命中时各维度顺序执行(目前是 mock,Phase 2 接真实)。
         定性产物写盘到 data/qualitative/<code>_<name>/,Phase 3.2 后续可读取。
         """
+        # 取 DuckDB 最新 REPORT_DATE 作为 cache 失效信号(失败容忍 → None)
+        try:
+            latest_rd = (
+                self.store.query_latest_report_date(ref.code) if self.store else None
+            )
+        except Exception:  # noqa: BLE001
+            latest_rd = None
+
         await run_qualitative(
             ref,
             cache=self.qualitative_cache,
             dimension_fns=self.qualitative_dimension_fns,
-            current_report_date=None,
+            current_report_date=latest_rd,
             on_event=None,  # 静默
             store=self.store,
             tavily=self.tavily,
