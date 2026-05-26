@@ -12,6 +12,7 @@ from backend.models.financial import (
     CashFlow,
     FinancialIndicator,
 )
+from backend.models.business_review import BusinessReviewRecord
 from backend.models.event import DividendRecord
 from backend.models.holder import (
     Top10HolderRecord,
@@ -233,6 +234,14 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
         """
         records = _fetch_report("RPT_HOLDERNUMLATEST", code, sort_column="END_DATE")
         return _records_to_models(records, HolderCountRecord)
+
+    # ---------- D5 经营评述(MD&A 全文) ----------
+    # 2026-05-26 spike 验证(603939):RPT_F10_OP_BUSINESSANALYSIS 一次返回所有期
+    # (年报/中报/季报),BUSINESS_REVIEW 为已结构化纯文本(年报 1.4-3.3k 字)。
+    def fetch_business_review(self, code: str) -> List[BusinessReviewRecord]:
+        """所有历史经营评述(按 REPORT_DATE 降序)。"""
+        records = _fetch_report("RPT_F10_OP_BUSINESSANALYSIS", code)
+        return _records_to_models(records, BusinessReviewRecord)
 
     def login(self):
         """兼容 BaoStockAdapter 接口,EastMoney 无需登录。"""
