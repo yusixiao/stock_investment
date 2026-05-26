@@ -3,7 +3,7 @@
 MANIFEST = {
     "id": "cpa_conservative",
     "label": "保守分析",
-    "aliases": ["保守分析", "保守", "cpa", "穿透回报率", "龟龟"],
+    "aliases": ["保守分析", "现金流保守策略", "保守", "cpa", "穿透回报率"],
     "description": "基于 CPA 视角的极端保守假设穿透回报率精算,适合长期持有决策。",
     "version": "1.0.0",
     "steps": [

@@ -1,4 +1,4 @@
-# 龟龟投资策略 v2.0 — 协调器（Coordinator）
+# 现金流保守策略 v2.0 — 协调器（Coordinator）
 
 > **角色**：你是项目经理。职责：(1) 验证输入并通过 AskUserQuestion 补全缺失信息；(2) 检查前置条件（定性分析报告）；(3) 按依赖关系调度 Phase 0→1→2→3；(4) 监控 checkpoint 和超时；(5) 交付最终报告。你不执行数据采集或分析计算。
 >
@@ -66,8 +66,8 @@
    - 若存在 → Agent B 使用完整数据（P2/P3/P4/P6/P13/SUB）
    - 若不存在 → Agent B 使用降级方案（无附注数据）
 
-> 定性分析和 PDF 附注提取已从龟龟策略中解耦，由 `/business-analysis` 独立完成。
-> 龟龟策略直接读取其输出，不再内嵌定性分析或 PDF 提取流程。
+> 定性分析和 PDF 附注提取已从现金流保守策略中解耦，由 `/business-analysis` 独立完成。
+> 现金流保守策略直接读取其输出，不再内嵌定性分析或 PDF 提取流程。
 
 ---
 
@@ -152,7 +152,7 @@ Bash(
 
 **Agent B（定量）加载**：
 - `{strategy_dir}/phase3_quantitative.md` — 穿透回报率计算
-- `{strategy_dir}/references/judgment_examples_turtle.md` — 龟龟专属锚点（G系数、分配意愿、λ可靠性）
+- `{strategy_dir}/references/judgment_examples_conservative.md` — 保守策略专属锚点（G系数、分配意愿、λ可靠性）
 - `{strategy_dir}/references/factor_interface.md` — 参数传递 schema
 
 ```
@@ -167,7 +167,7 @@ Task(
   subagent_type = "general-purpose",
   prompt = """
   请阅读 {strategy_dir}/phase3_quantitative.md 中的完整指令（含 Step 0 数据校验）。
-  同时加载 {strategy_dir}/references/judgment_examples_turtle.md 作为龟龟专属判断锚点参考。
+  同时加载 {strategy_dir}/references/judgment_examples_conservative.md 作为保守策略专属判断锚点参考。
 
   数据包文件：
     - {strategy_dir}/references/shared_tables.md（税率/门槛/公式）
@@ -227,7 +227,7 @@ Task(
 | ≤ 7 天 | --refresh-market 模式：仅刷新 §1/§2/§11/§14 |
 | > 7 天 | 自动降级为全量采集（可能有新季报发布） |
 
-> 中报时效性、PDF 下载等均由 `/business-analysis` 负责。龟龟策略不再管理 PDF 流程。
+> 中报时效性、PDF 下载等均由 `/business-analysis` 负责。现金流保守策略不再管理 PDF 流程。
 
 ---
 
@@ -264,7 +264,7 @@ Task(
 **变量定义**：
 - `{workspace}` = 项目根目录
 - `{shared_dir}` = `{workspace}/shared`
-- `{strategy_dir}` = `{workspace}/strategies/turtle`
+- `{strategy_dir}` = `{workspace}/strategies/conservative`
 - `{output_dir}` = `{workspace}/output/{代码}_{公司}`（如 `output/600887_伊利股份`、`output/00001_长和`）
 
 ```
@@ -279,16 +279,16 @@ Task(
 │           ├── judgment_examples.md            ← 通用判断锚点
 │           ├── market_rules_hk.md              ← 港股规则（条件加载）
 │           └── market_rules_us.md              ← 美股规则（条件加载）
-├── strategies/turtle/                          ← 龟龟策略（只读）
+├── strategies/conservative/                          ← 现金流保守策略（只读）
 │   ├── coordinator.md                          ← 本文件（调度逻辑）
 │   ├── phase2_PDF解析.md                        ← PDF 附注提取格式规范（BA Step 1C 引用）
 │   ├── phase3_preflight.md                     ← 已废弃（合并到 phase3_quantitative.md Step 0）
 │   ├── phase3_quantitative.md                  ← Step 3.1 Agent B（含 Step 0 数据校验 + 定量分析）
 │   ├── phase3_valuation.md                     ← Step 3.2 Agent C 估值+报告
 │   └── references/
-│       ├── shared_tables.md                    ← 税率/门槛/公式（龟龟专属）
+│       ├── shared_tables.md                    ← 税率/门槛/公式（保守策略专属）
 │       ├── factor_interface.md                 ← 因子间参数传递 schema
-│       └── judgment_examples_turtle.md         ← G系数/分配意愿/λ锚点（龟龟专属）
+│       └── judgment_examples_conservative.md         ← G系数/分配意愿/λ锚点（保守策略专属）
 ├── scripts/                                    ← 预处理脚本（只读）
 │   ├── tushare_collector.py                    ← 数据采集脚本（支持 --refresh-market）
 │   ├── pdf_preprocessor.py                     ← PDF 预处理脚本（BA 扫描件 fallback 用）
@@ -334,4 +334,4 @@ PDF 下载最多重试 **3次**（指数退避：3s / 6s / 9s）。3次均失败
 
 ---
 
-*龟龟投资策略 v2.0 | 协调器 | Coordinator*
+*现金流保守策略 v2.0 | 协调器 | Coordinator*

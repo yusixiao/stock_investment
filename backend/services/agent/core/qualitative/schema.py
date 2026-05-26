@@ -5,8 +5,8 @@
 
 设计要点:
   - 必填 vs 可选区分严格(cycle_position / sotp_discount_pct 仅在适用时给值)
-  - moat_rating 通用值域(强/较强/中/弱)→ 龟龟值域(优质/中性/负面)映射
-    单独函数 map_moat_rating_turtle 提供,Agent C 调用
+  - moat_rating 通用值域(强/较强/中/弱)→ 现金流保守策略值域(优质/中性/负面)映射
+    单独函数 map_moat_rating_conservative 提供,Agent C 调用
   - DimensionReport 支持降级:narrative 标 ⚠️ + evidence 空时不阻塞
   - 全模型 Pydantic v2,model_dump_json / model_validate_json 双向可序列化
 """
@@ -27,8 +27,8 @@ ManagementRating = Literal["优秀", "合格", "损害价值", "观察期"]
 MdaCredibility = Literal["高", "中", "低"]
 MdaImpact = Literal["正面", "中性", "负面"]
 
-# 龟龟策略值域(map_moat_rating_turtle 输出)
-MoatRatingTurtle = Literal["优质", "中性", "负面"]
+# 现金流保守策略值域(map_moat_rating_conservative 输出)
+MoatRatingConservative = Literal["优质", "中性", "负面"]
 
 
 class QualitativeParams(BaseModel):
@@ -105,7 +105,7 @@ class QualitativeReport(BaseModel):
 
 
 # ===== 值域映射 =====
-_MOAT_RATING_TURTLE_MAP: dict[str, MoatRatingTurtle] = {
+_MOAT_RATING_CONSERVATIVE_MAP: dict[str, MoatRatingConservative] = {
     "强": "优质",
     "较强": "优质",
     "中": "中性",
@@ -113,12 +113,12 @@ _MOAT_RATING_TURTLE_MAP: dict[str, MoatRatingTurtle] = {
 }
 
 
-def map_moat_rating_turtle(rating: str) -> MoatRatingTurtle:
-    """通用值域(强/较强/中/弱)→ 龟龟策略值域(优质/中性/负面)。
+def map_moat_rating_conservative(rating: str) -> MoatRatingConservative:
+    """通用值域(强/较强/中/弱)→ 现金流保守策略值域(优质/中性/负面)。
 
     Agent C 在读取 qualitative_report.md 时执行此映射,
     见 factor_interface.md 「值域映射」段落。
     """
-    if rating not in _MOAT_RATING_TURTLE_MAP:
+    if rating not in _MOAT_RATING_CONSERVATIVE_MAP:
         raise ValueError(f"unknown moat_rating: {rating!r}")
-    return _MOAT_RATING_TURTLE_MAP[rating]
+    return _MOAT_RATING_CONSERVATIVE_MAP[rating]

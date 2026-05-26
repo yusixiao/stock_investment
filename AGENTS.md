@@ -57,6 +57,14 @@
 - **测试**:550+ case,`python -m pytest backend/tests/ -x -q`。adapter 测试用 mock(`test_adapters.py` 等)
 - **长任务后台执行**:任何预计运行超过 1 分钟的任务(回测、矩阵跑批、诊断脚本、全市场数据更新、批量数据迁移等)**必须**用 `nohup ... > log 2>&1 &` 后台执行,前台只查 PID/日志/进度,避免阻塞会话
 
+## Terminology
+
+- **🚨 术语铁律(2026-05-26)**:本项目内部统一使用 **「现金流保守策略」**(英文标识符 `conservative` / `cpa_conservative`)指代基于穿透回报率的保守估值策略。
+- **历史代号 「龟龟策略 / Turtle」 已弃用**,不要在新代码、新 prompt、新文档中出现。
+- **唯一例外**:`/Users/11182300/PycharmProjects/Turtle_investment_framework` 是外部 sibling 项目的真实路径,引用该路径或描述「prompt 来源于 Turtle 框架」时保留 `Turtle` 字样,不替换。
+- **Python 符号对应**:`MoatRatingConservative` / `map_moat_rating_conservative` / `_MOAT_RATING_CONSERVATIVE_MAP`。
+- **Prompt 文件**:`judgment_examples_conservative.md`(原 `judgment_examples_turtle.md`)。
+
 ## Discoveries
 
 - ~~`data/kline/A/raw/`:不复权;`data/kline/A/qfq/`:前复权~~ 已废弃,现统一走 `data/market/A/daily/` + DuckDB `query_qfq_kline` ASOF JOIN 派生

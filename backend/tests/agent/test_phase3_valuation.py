@@ -16,7 +16,7 @@ class _FakeStreamLLM:
             yield self.text[i : i + 200]
 
 
-FINAL_REPORT = """# 龟龟投资策略 · 分析报告:比亚迪(002594.SZ)
+FINAL_REPORT = """# 现金流保守策略 · 分析报告:比亚迪(002594.SZ)
 
 ## Executive Summary
 **仓位建议**:观察

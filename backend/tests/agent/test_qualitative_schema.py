@@ -4,7 +4,7 @@
 - 14 个结构化参数的 Pydantic 序列化/反序列化
 - 值域校验(enum 字段拒绝非法值)
 - DimensionReport / QualitativeReport 组合
-- moat_rating 通用值域 → cpa 龟龟值域映射
+- moat_rating 通用值域 → cpa 现金流保守策略值域映射
 
 不依赖外部数据源,纯模型测试。
 """
@@ -18,7 +18,7 @@ from services.agent.core.qualitative.schema import (
     QualitativeParams,
     DimensionReport,
     QualitativeReport,
-    map_moat_rating_turtle,
+    map_moat_rating_conservative,
 )
 
 
@@ -134,19 +134,19 @@ class TestQualitativeParams:
 
 
 class TestMoatRatingMapping:
-    """moat_rating 通用值域 → 龟龟值域映射(Agent C 用)。"""
+    """moat_rating 通用值域 → 现金流保守策略值域映射(Agent C 用)。"""
 
     def test_strong_maps_to_premium(self):
-        assert map_moat_rating_turtle("强") == "优质"
+        assert map_moat_rating_conservative("强") == "优质"
 
     def test_relatively_strong_maps_to_premium(self):
-        assert map_moat_rating_turtle("较强") == "优质"
+        assert map_moat_rating_conservative("较强") == "优质"
 
     def test_medium_maps_to_neutral(self):
-        assert map_moat_rating_turtle("中") == "中性"
+        assert map_moat_rating_conservative("中") == "中性"
 
     def test_weak_maps_to_negative(self):
-        assert map_moat_rating_turtle("弱") == "负面"
+        assert map_moat_rating_conservative("弱") == "负面"
 
 
 class TestDimensionReport:

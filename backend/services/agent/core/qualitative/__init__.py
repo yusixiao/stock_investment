@@ -17,7 +17,7 @@ from services.agent.core.qualitative.schema import (
     DimensionReport,
     QualitativeParams,
     QualitativeReport,
-    map_moat_rating_turtle,
+    map_moat_rating_conservative,
 )
 
 __all__ = [
@@ -26,5 +26,5 @@ __all__ = [
     "QualitativeReport",
     "QualitativeCache",
     "run_qualitative",
-    "map_moat_rating_turtle",
+    "map_moat_rating_conservative",
 ]

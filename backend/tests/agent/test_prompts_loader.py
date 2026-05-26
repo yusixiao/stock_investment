@@ -1,4 +1,4 @@
-"""问股期 1 — Task 27:turtle prompts loader 测试。"""
+"""问股期 1 — Task 27:cpa(现金流保守策略) prompts loader 测试。"""
 
 from pathlib import Path
 
@@ -13,7 +13,7 @@ def test_six_prompt_files_exist():
         "phase3_quantitative.md",
         "phase3_valuation.md",
         "references/shared_tables.md",
-        "references/judgment_examples_turtle.md",
+        "references/judgment_examples_conservative.md",
         "references/factor_interface.md",
     ]
     for rel in expected:
