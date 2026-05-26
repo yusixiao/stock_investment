@@ -19,10 +19,12 @@ from backend.models.holder import (
     Top10FreeHolderRecord,
     HolderCountRecord,
 )
+from backend.models.management import ExecutiveRecord, ExecutiveHoldChangeRecord
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://datacenter.eastmoney.com/securities/api/data/v1/get"
+EMWEB_BASE = "https://emweb.eastmoney.com/PC_HSF10"
 DEFAULT_TIMEOUT = 15
 DEFAULT_PAGE_SIZE = 200
 REQUEST_INTERVAL = 0.1
@@ -132,6 +134,83 @@ def _records_to_models(records: List[dict], model_class) -> list:
     return models
 
 
+def _to_int_or_none(v):
+    if v is None or v == "":
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float_or_none(v):
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _gglb_to_executives(items: list) -> List[ExecutiveRecord]:
+    """emweb gglb 字段 → ExecutiveRecord 列表。"""
+    out: List[ExecutiveRecord] = []
+    for it in items:
+        name = (it.get("PERSON_NAME") or "").strip()
+        if not name:
+            continue
+        try:
+            out.append(
+                ExecutiveRecord(
+                    name=name,
+                    position=it.get("POSITION"),
+                    age=_to_int_or_none(it.get("AGE")),
+                    sex=it.get("SEX"),
+                    education=it.get("HIGH_DEGREE"),
+                    tenure_text=it.get("INCUMBENT_TIME"),
+                    resume=it.get("RESUME"),
+                    hold_num=_to_float_or_none(it.get("HOLD_NUM")),
+                    salary=_to_float_or_none(it.get("SALARY")),
+                    source="eastmoney",
+                )
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"gglb 解析跳过 {name}: {e}")
+    return out
+
+
+def _cgbd_to_hold_changes(items: list) -> List[ExecutiveHoldChangeRecord]:
+    """emweb cgbd → ExecutiveHoldChangeRecord 列表(按 END_DATE 降序保持原序)。"""
+    out: List[ExecutiveHoldChangeRecord] = []
+    for it in items:
+        end_date_raw = it.get("END_DATE") or ""
+        # END_DATE 形如 "2018-09-26 00:00:00"
+        end_date = end_date_raw[:10] if len(end_date_raw) >= 10 else end_date_raw
+        exec_name = (it.get("EXECUTIVE_NAME") or "").strip()
+        change_num = _to_float_or_none(it.get("CHANGE_NUM"))
+        if not end_date or not exec_name or change_num is None:
+            continue
+        try:
+            out.append(
+                ExecutiveHoldChangeRecord(
+                    end_date=end_date,
+                    executive_name=exec_name,
+                    position=it.get("POSITION"),
+                    change_num=change_num,
+                    average_price=_to_float_or_none(it.get("AVERAGE_PRICE")),
+                    change_after_holdnum=_to_float_or_none(
+                        it.get("CHANGE_AFTER_HOLDNUM")
+                    ),
+                    trade_way=it.get("TRADE_WAY"),
+                    executive_relation=it.get("EXECUTIVE_RELATION"),
+                    source="eastmoney",
+                )
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"cgbd 解析跳过 {exec_name} {end_date}: {e}")
+    return out
+
+
 def _em_dividend_to_record(code: str, em: dict) -> DividendRecord | None:
     """EastMoney RPT_SHAREBONUS_DET 单条 → DividendRecord(BaoStock-style schema)。
 
@@ -234,6 +313,44 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
         """
         records = _fetch_report("RPT_HOLDERNUMLATEST", code, sort_column="END_DATE")
         return _records_to_models(records, HolderCountRecord)
+
+    # ---------- D4 管理层(emweb F10 PageAjax) ----------
+    # 2026-05-26 spike 验证(600519/002594):
+    # GET https://emweb.eastmoney.com/PC_HSF10/CompanyManagement/PageAjax?code=SH600519
+    # 返 {gglb: [...], cgbd: [...]} —— A 股专用,HK/US 不支持
+    def fetch_company_management(
+        self, code: str
+    ) -> tuple[List[ExecutiveRecord], List[ExecutiveHoldChangeRecord]]:
+        """高管列表 + 持股变动(A 股专用,HK/US 调用方应走 yfinance)。
+
+        返回 (executives, hold_changes)。失败/空返 ([], [])。
+        """
+        if "." not in code:
+            logger.debug(f"D4 EastMoney 跳过非标准 code={code}")
+            return [], []
+
+        sec, suffix = code.split(".")
+        suffix = suffix.upper()
+        if suffix not in ("SH", "SZ", "BJ"):
+            logger.debug(f"D4 EastMoney 仅支持 A 股,跳过 {code}")
+            return [], []
+
+        em_code = f"{suffix}{sec}"
+        url = f"{EMWEB_BASE}/CompanyManagement/PageAjax"
+        try:
+            resp = requests.get(url, params={"code": em_code}, timeout=DEFAULT_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"D4 emweb CompanyManagement 失败 {code}: {exc}")
+            return [], []
+
+        if not isinstance(data, dict):
+            return [], []
+
+        executives = _gglb_to_executives(data.get("gglb") or [])
+        hold_changes = _cgbd_to_hold_changes(data.get("cgbd") or [])
+        return executives, hold_changes
 
     # ---------- D5 经营评述(MD&A 全文) ----------
     # 2026-05-26 spike 验证(603939):RPT_F10_OP_BUSINESSANALYSIS 一次返回所有期

@@ -8,6 +8,7 @@ import yfinance as yf
 from backend.adapters.base import MarketDataAdapter, EventDataAdapter
 from backend.models.market import DailyKlineRecord, AdjustFactorRecord
 from backend.models.event import DividendRecord
+from backend.models.management import ExecutiveRecord, ExecutiveHoldChangeRecord
 
 logger = logging.getLogger(__name__)
 
@@ -213,3 +214,143 @@ class YFinanceAdapter(MarketDataAdapter, EventDataAdapter):
                 )
             )
         return records
+
+    # ---------- D4 管理层(HK / US) ----------
+    # 2026-05-26 spike 验证:emweb 不支持 HK/US,改用 yfinance
+    # - Ticker.info["companyOfficers"] ~10 条核心高管
+    # - Ticker.insider_transactions DataFrame ~30-100 条变动
+    def fetch_company_management(
+        self, code: str
+    ) -> tuple[List[ExecutiveRecord], List[ExecutiveHoldChangeRecord]]:
+        """高管列表 + 内部人交易(HK / US)。失败/空返 ([], [])。
+
+        yfinance 字段差异(对 ExecutiveRecord 模型的影响):
+        - 仅有 name / title / age(由 yearBorn 推算)/ totalPay
+        - 无 sex / education / tenure_text / resume(全留空)
+
+        insider_transactions:
+        - Shares(股数,正负不区分,方向看 Transaction 列文本)
+        - Value / Text / Insider / Position / Transaction / Start Date
+        """
+        yf_code = _to_yfinance_code(code)
+        try:
+            t = yf.Ticker(yf_code)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"D4 yfinance Ticker init 失败 {code}: {exc}")
+            return [], []
+
+        executives = _yf_officers_to_executives(t)
+        hold_changes = _yf_insider_to_hold_changes(t)
+        return executives, hold_changes
+
+
+def _yf_officers_to_executives(t) -> List[ExecutiveRecord]:
+    """Ticker.info['companyOfficers'] → ExecutiveRecord 列表。"""
+    try:
+        info = t.info or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"yfinance Ticker.info 失败: {exc}")
+        return []
+    officers = info.get("companyOfficers") or []
+    if not isinstance(officers, list):
+        return []
+
+    out: List[ExecutiveRecord] = []
+    for it in officers:
+        if not isinstance(it, dict):
+            continue
+        name = (it.get("name") or "").strip()
+        if not name:
+            continue
+        # age 优先取 age,缺则用 fiscalYear - yearBorn 兜底
+        age = it.get("age")
+        if age is None and it.get("yearBorn") and it.get("fiscalYear"):
+            try:
+                age = int(it["fiscalYear"]) - int(it["yearBorn"])
+            except (TypeError, ValueError):
+                age = None
+        try:
+            out.append(
+                ExecutiveRecord(
+                    name=name,
+                    position=it.get("title"),
+                    age=int(age) if age is not None else None,
+                    salary=float(it["totalPay"])
+                    if it.get("totalPay") is not None
+                    else None,
+                    source="yfinance",
+                )
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"yfinance officer 解析跳过 {name}: {e}")
+    return out
+
+
+def _yf_insider_to_hold_changes(t) -> List[ExecutiveHoldChangeRecord]:
+    """Ticker.insider_transactions → ExecutiveHoldChangeRecord 列表。
+
+    yfinance 这张表方向(增/减)藏在 'Transaction' 列文本(如 'Sale' / 'Purchase' /
+    'Stock Gift' / 'Statement of Ownership'),Shares 列本身**不带符号**。
+    我们只对包含 Sale/Sell/Disposition/Buy/Purchase/Acquisition 关键字的行处理。
+    """
+    try:
+        df = t.insider_transactions
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"yfinance insider_transactions 失败: {exc}")
+        return []
+    if df is None or getattr(df, "empty", True):
+        return []
+
+    out: List[ExecutiveHoldChangeRecord] = []
+    for _, row in df.iterrows():
+        try:
+            insider = str(row.get("Insider") or "").strip()
+            if not insider:
+                continue
+            txn = str(row.get("Transaction") or "")
+            txn_low = txn.lower()
+            shares = row.get("Shares")
+            try:
+                shares_val = float(shares) if pd.notna(shares) else None
+            except (TypeError, ValueError):
+                shares_val = None
+            if shares_val is None:
+                continue
+            # 方向判定:能识别再处理,识别不出来跳过
+            if any(k in txn_low for k in ("sale", "sell", "disposition")):
+                change_num = -abs(shares_val)
+            elif any(
+                k in txn_low for k in ("buy", "purchase", "acquisition", "exercise")
+            ):
+                change_num = abs(shares_val)
+            else:
+                continue
+            start_date = row.get("Start Date")
+            try:
+                date_str = pd.to_datetime(start_date).strftime("%Y-%m-%d")
+            except Exception:  # noqa: BLE001
+                continue
+            value = row.get("Value")
+            avg_price = None
+            try:
+                if pd.notna(value) and shares_val:
+                    avg_price = float(value) / abs(shares_val)
+            except (TypeError, ValueError, ZeroDivisionError):
+                avg_price = None
+            out.append(
+                ExecutiveHoldChangeRecord(
+                    end_date=date_str,
+                    executive_name=insider,
+                    position=str(row.get("Position") or "") or None,
+                    change_num=change_num,
+                    average_price=avg_price,
+                    trade_way=txn or None,
+                    executive_relation=str(row.get("Ownership") or "") or None,
+                    source="yfinance",
+                )
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"yfinance insider 行解析跳过: {e}")
+    # 按日期降序
+    out.sort(key=lambda r: r.end_date, reverse=True)
+    return out
