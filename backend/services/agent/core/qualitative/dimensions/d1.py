@@ -86,11 +86,30 @@ def _build_sql(market: str) -> str:
     """
 
 
+def _to_float(v: Any, default: float = 0.0) -> float:
+    """pd.NA / None / NaN / 字符串异常 → default;数值正常返回 float。"""
+    if v is None:
+        return default
+    try:
+        if pd.isna(v):
+            return default
+    except (TypeError, ValueError):
+        pass
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def _safe_div(num: Any, den: Any) -> Optional[float]:
     try:
+        if num is None or den is None:
+            return None
+        if pd.isna(num) or pd.isna(den):
+            return None
         n = float(num)
         d = float(den)
-        if d == 0 or pd.isna(n) or pd.isna(d):
+        if d == 0:
             return None
         return n / d
     except (TypeError, ValueError):
@@ -109,19 +128,19 @@ def _compute_ratios(df: pd.DataFrame) -> Optional[dict[str, float]]:
     ocf_r: list[float] = []
 
     for _, row in df.iterrows():
-        ta = row.get("TOTAL_ASSETS")
-        rev = row.get("TOTAL_OPERATE_INCOME")
+        ta = _to_float(row.get("TOTAL_ASSETS"))
+        rev = _to_float(row.get("TOTAL_OPERATE_INCOME"))
         # asset_intensity 不依赖 revenue
-        if pd.notna(ta) and float(ta or 0) > 0:
-            fa = float(row.get("FIXED_ASSETS") or 0)
-            gw = float(row.get("GOODWILL") or 0)
-            ia = float(row.get("INTANGIBLE_ASSETS") or 0)
-            asset_int.append((fa + gw + ia) / float(ta))
+        if ta > 0:
+            fa = _to_float(row.get("FIXED_ASSETS"))
+            gw = _to_float(row.get("GOODWILL"))
+            ia = _to_float(row.get("INTANGIBLE_ASSETS"))
+            asset_int.append((fa + gw + ia) / ta)
 
         # 其余比率需要 revenue > 0
-        if rev is None or pd.isna(rev) or float(rev) <= 0:
+        if rev <= 0:
             continue
-        rev_f = float(rev)
+        rev_f = rev
         v = _safe_div(row.get("CONSTRUCT_LONG_ASSET"), rev_f)
         if v is not None:
             capex_r.append(v)
@@ -213,7 +232,11 @@ async def dimension_d1(
         logger.warning(f"D1 store.query 失败 {ref.code}: {exc}")
         return _degrade(f"DuckDB 查询失败:{exc}")
 
-    ratios = _compute_ratios(df)
+    try:
+        ratios = _compute_ratios(df)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"D1 _compute_ratios 异常 {ref.code}: {exc}")
+        return _degrade(f"比率计算异常:{exc}")
     if ratios is None:
         return _degrade(f"{ref.code} 财务数据不足,无法计算资本/收款比率")
 
