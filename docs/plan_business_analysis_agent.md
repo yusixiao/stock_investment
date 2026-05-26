@@ -100,7 +100,23 @@ data/qualitative/                       ← 新增缓存目录(进备份)
 
 ---
 
-### 阶段 2:6 维度真实实现(3-5 天,逐维 RED→GREEN)
+### 阶段 2:6 维度真实实现 ✅ 已完成(2026-05-26)
+
+**实施顺序与 commit**:D5 端到端样板(`16d4b44`)→ D1 纯 DuckDB(`f224c96`)→ D2 DuckDB+Tavily(`c4fd77c`)→ D3 DuckDB+Tavily(`764de53`)→ D4 emweb+yfinance+Tavily(`67ff305`)→ D6 holders+Tavily(`a5c8ec1`)。
+
+**统一模式**(6 维都用):
+1. 数据采集(adapter / store.query / Tavily)
+2. 派生量(`_concentration` / `_summarize_changes` / `_classify_holders` 等)
+3. Prompt 拼装(模板 + 数据段)
+4. LLM JSON 解析(`_parse_llm_json` 容忍 ` ```json ` fence)
+5. 值域校验(失败降级,**不抛异常**)
+6. `mock_dimension_dN = dimension_dN` 别名(让 `MOCK_DIMENSION_FNS` 自动用真实实现)
+
+**测试基线**:759 → **926 passed + 1 skipped**(新增 ~167 个测试,0 回归)。
+
+---
+
+### 阶段 2:6 维度真实实现(原计划,3-5 天,逐维 RED→GREEN)
 
 #### 数据源调研结论(2026-05-26)
 
@@ -297,12 +313,12 @@ L3 实现后,在 `_classify_intent` 里增加 `business_analysis` 作为返回�
 | 阶段 | 原估 | 实际/重估 |
 |---|---|---|
 | 1. Schema + Service 骨架 | 2-3 天 | ✅ **已完成**(commit) |
-| 2. 6 维度真实实现 | 5-7 天 | **3-5 天**(数据源调研 2026-05-26 后下调,EastMoney 接口已确认无 PDF 解析需求) |
+| 2. 6 维度真实实现 | 5-7 天 | ✅ **已完成**(D5 `16d4b44` / D1 `f224c96` / D2 `c4fd77c` / D3 `764de53` / D4 `67ff305` / D6 `a5c8ec1`) |
 | 3. agents/business_analysis 入口 | 1-2 天 | ✅ **已完成**(commit) |
 | 4a. 关键词路由 | 0.5 天 | ✅ **已完成**(commit) |
 | 5. cpa 集成 | 1-2 天 | ✅ **已完成**(commit) |
-| 6. 文档与回归 | 1 天 | 待做 |
-| **剩余合计** | — | **4-6 天**(Phase 2 + Phase 6) |
+| 6. 文档与回归 | 1 天 | 🔄 **进行中**(本次提交) |
+| **剩余合计** | — | Phase 6 收尾 |
 
 > 4b(L3 协同)不计入本 plan,L3 落地后另行 0.5 天补丁。
 
@@ -319,4 +335,42 @@ L3 实现后,在 `_classify_intent` 里增加 `business_analysis` 作为返回�
 
 ---
 
-*Plan 版本 v2 · 2026-05-26 · Phase 1/3/4a/5 已落地,数据源调研完成,Phase 2 数据源映射定稿*
+*Plan 版本 v3 · 2026-05-26 · Phase 1/2/3/4a/5 全部落地,Phase 6 收尾中*
+
+## 实施回顾(v3 增补)
+
+### Phase 2 数据源决策与现实差异
+
+| 维度 | 原计划数据源 | 实际实现 |
+|---|---|---|
+| D1 | DuckDB v_a_balance + v_a_indicator | ✅ 一致(纯 DuckDB) |
+| D2 | Tavily + DuckDB 行业兜底竞对 + zygcfx | ✅ DuckDB ROE/毛利率 + Tavily 护城河,**未用 zygcfx**(Tavily answer 已含竞对) |
+| D3 | EastMoney 行业 + Tavily + 营收波动率 | ✅ 一致 |
+| D4 | emweb CompanyManagement + Tavily | ✅ 一致;**HK/US 走 yfinance**(emweb 不支持) |
+| D5 | RPT_F10_OP_BUSINESSANALYSIS | ✅ 一致 |
+| D6 | zygcfx 主营构成 + 十大股东 + D5 提及 | ✅ **简化为**十大股东 + holder_count + Tavily;`zygcfx` 留给 §9 主营,D6 prompt 让 LLM 从持股集中度 + Tavily 板块描述判定 holding_structure |
+
+### D4 数据源 spike 关键发现(2026-05-26)
+
+- **emweb F10**:`CompanyManagement/PageAjax?code=<MARKET><CODE>` 返 `{gglb, cgbd}`,A 股可用;**HK/US 返 status=-1**
+- **datacenter API 9 个 reportName 全部不存在**,`gglb / cgbd` 只能走 emweb
+- **HK/US 改 yfinance**:`Ticker.info["companyOfficers"]`(~10 条)+ `Ticker.insider_transactions`(~30-100 条 DataFrame)
+- yfinance Shares 列**不带方向符号**,方向看 Transaction 文本(sale/sell/disposition → 减;buy/purchase/acquisition/exercise → 增)
+- yfinance `fiscalYear` 实际在每个 officer dict 里,不在 info 顶层
+
+### 术语铁律(commit `caf6180`,2026-05-26)
+
+「龟龟策略 → 现金流保守策略」全局重命名;Python 符号统一为 `MoatRatingConservative` / `map_moat_rating_conservative`;prompt 文件 `judgment_examples_conservative.md`。**唯一例外**:`/Users/11182300/PycharmProjects/Turtle_investment_framework` sibling 项目真实路径保留 Turtle 字样。
+
+### 测试基线轨迹
+
+| 节点 | passed | 增量 |
+|---|---|---|
+| Phase 5 cpa 集成完成 | 759 | — |
+| Phase 2 D5 | 778 | +19 |
+| Phase 2 D1 | 802 | +24 |
+| Phase 2 D2 | 837 | +35 |
+| Phase 2 D3 | 856 | +19 |
+| 改名 | 886 | +30(改名同时补的覆盖) |
+| Phase 2 D4 | 911 | +25(11 adapter + 14 dimension) |
+| Phase 2 D6 | **926** | +15 |

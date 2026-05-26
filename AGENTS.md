@@ -291,10 +291,51 @@ Layer 4 (兜底): 默认 agent = cpa (当前唯一稳定 agent)
 - **Layer 3 是 LLM 意图分类**:仅在识别到股票码后触发,决定派给哪个 agent
 - **Layer 4 是兜底**:意图分类失败永不阻塞,降级到 cpa
 
-### 当前实现状态(2026-05-25)
+### 当前实现状态(2026-05-26)
 - ✅ Layer 1/2/4 已在 `coordinator.py` 实现(三分支版)
 - ✅ **目录重构已完成**:`agents/cpa/{agent.py, pipeline/, prompts/}` + `core/`(session_repo / llm_routing / tavily_client / prompts_loader / symbol / sse / parser / workspace) 全部到位,旧 `pipeline/` 与 `prompts/turtle/` 已迁走
-- ❌ Layer 3 LLM 意图分类**未实现**,`coordinator.py:76` 仍是 `# TODO 阶段 2` 注释,识别到股票码后直接走 `DEFAULT_AGENT = cpa`
+- ✅ **Layer 2.5 关键词路由**:`coordinator.py` 在识别到股票码后扫描 BA 关键词(护城河/管理层/周期性/...),命中即路由 `business_analysis` agent
+- ✅ **business_analysis agent**(2026-05-26):`agents/business_analysis/` 用户入口 + `core/qualitative/` 共享 service(6 维度全部真实实现)
+- ❌ Layer 3 LLM 意图分类**未实现**,识别到股票码 + 无 BA 关键词时直接走 `DEFAULT_AGENT = cpa`
+
+## 定性分析子系统(`core/qualitative/` + business_analysis agent · 2026-05-26)
+
+### 架构
+
+```
+backend/services/agent/
+├── core/qualitative/                # 共享 service(cpa Phase 0 / business_analysis 复用)
+│   ├── schema.py                    # DimensionReport / QualitativeParams(14 字段) / QualitativeReport
+│   ├── runner.py                    # run_qualitative(ref, store, tavily, llm) 编排 6 维度
+│   ├── cache.py                     # data/qualitative/<code>_<name>/ 30 天 TTL + REPORT_DATE 失效
+│   ├── dimensions/d{1..6}.py        # 6 维度真实实现
+│   └── prompts/d{1..6}.md           # LLM prompt(评级指引固化保守策略口径)
+└── agents/business_analysis/        # 用户入口 agent(SSE 6 事件)
+    └── agent.py                     # BusinessAnalysisAgent.run → run_qualitative + 落 qualitative_report.md
+```
+
+### 6 维度数据源
+
+| 维度 | 数据源 | 输出参数 |
+|---|---|---|
+| **D1** 商业模式 | DuckDB(资产负债 + 指标视图) | `capital_intensity / collection_mode` |
+| **D2** 护城河 | DuckDB(长期 ROE/毛利率)+ Tavily | `moat_type / moat_flywheel / moat_rating / competitors[]` |
+| **D3** 行业周期 | DuckDB(营收/利润波动)+ Tavily | `cyclicality / cycle_position` |
+| **D4** 管理层 | EastMoney emweb F10(A 股)/ yfinance(HK+US)+ Tavily | `management_rating ∈ {优秀/合格/损害价值/观察期}` |
+| **D5** 经营评述 | EastMoney `RPT_F10_OP_BUSINESSANALYSIS` | `mda_credibility / mda_impact` |
+| **D6** 控股结构 | DuckDB(十大股东 + 流通 + 户数)+ Tavily | `holding_structure / sotp_discount_pct` |
+
+### 设计铁律
+
+- **降级优先于抛异常**:任一数据源不可用 → `narrative="⚠️ ..."` + DEFAULT_PARAMS,**不阻塞**
+- **30 天 TTL + REPORT_DATE 失效**:cache 命中策略,DuckDB 出现新报告期则强制刷新
+- **cpa Phase 0 前置**:cpa agent 启动先调 `run_qualitative()`,失败容忍(降级,Phase 1/3.1/3.2 仍跑通)
+- **价值陷阱 5 项排查**:Phase 3.2 valuation 启用 D2 护城河 / D3 周期 / D4 管理层 / D6 控股结构 5 项二元规则
+- **mock_dimension_dN = dimension_dN 别名**:让 `MOCK_DIMENSION_FNS` 自动用真实实现(无需改 runner)
+
+### 测试覆盖
+
+`backend/tests/agent/test_qualitative_d{1..6}.py` 共 ~115 用例。基线 **926 passed + 1 skipped**。
 
 ### 测试策略
 - AGENT_REGISTRY 单测:确保新 agent 注册后 coordinator 能路由到它
@@ -307,7 +348,7 @@ Layer 4 (兜底): 默认 agent = cpa (当前唯一稳定 agent)
 - §17.8 D&A → EV/EBITDA
 - Vite proxy / Nginx 长连超时验证
 
-## Project Timeline(claude-mem 摘要 · 2026-05-13 → 2026-05-25)
+## Project Timeline(claude-mem 摘要 · 2026-05-13 → 2026-05-26)
 
 来自本项目 claude-mem 5500+ 条观察记录的日级提炼,只列**架构决策 / 数据踩坑 / 不可逆迁移**,日常代码改动不复述。
 
@@ -384,10 +425,23 @@ Layer 4 (兜底): 默认 agent = cpa (当前唯一稳定 agent)
 - ✅ 敏感字段 mask 三态语义 + 删除前端"显示密码"眼睛按钮
 - 测试 630 → 692 → **797**(0 回归)
 
-### 2026-05-25(今天)— Settings UI 收尾 + AGENTS.md 整理
+### 2026-05-25 — Settings UI 收尾 + AGENTS.md 整理
 - commit `2227eb1` 设置页接入 yaml 9 字段
 - commit `0725cb2` 通用配置卡片标题按分类动态化
 - 阅读 claude-mem 5500+ 条记录,补全本时间线段落
+
+### 2026-05-26(今天)— 🚨 定性分析子系统 Phase 2 全收口 + 术语铁律
+- 🟣 **business_analysis agent + core/qualitative/ 共享 service 全部 6 维度真实实现**(单日 6 个 commit):
+  - `16d4b44` D5 经营评述(端到端样板,EastMoney `RPT_F10_OP_BUSINESSANALYSIS`)
+  - `f224c96` D1 商业模式(纯 DuckDB 资产负债 + 指标视图)
+  - `c4fd77c` D2 护城河(DuckDB ROE/毛利率 + Tavily)
+  - `764de53` D3 行业周期(DuckDB 营收波动 + Tavily)
+  - `67ff305` D4 管理层(emweb F10 / yfinance,A 股 + HK + US 全覆盖)
+  - `a5c8ec1` D6 控股结构(十大股东 + Tavily,LLM 校验 sotp 0-1)
+- 🟣 **D4 数据源 spike 关键发现**:emweb HK/US 返 status=-1 → 改 yfinance(`companyOfficers` + `insider_transactions`),Transaction 文本派生增减持方向
+- 🟣 **术语铁律确立**(`caf6180`):「龟龟策略 → 现金流保守策略」全局重命名,Python 符号 `MoatRatingConservative` / `map_moat_rating_conservative`,prompt `judgment_examples_conservative.md`;唯一例外是 sibling 项目真实路径 `Turtle_investment_framework`
+- 测试基线:797 → **926 passed + 1 skipped**(单日 +130 测试,0 回归)
+- ⚠️ 仍未实现:Coordinator L3 LLM 意图分类(规则 + 关键词路由已稳定,L3 是兜底)
 
 ## 历史教训汇总(claude-mem 提炼)
 
