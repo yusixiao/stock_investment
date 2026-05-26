@@ -5,9 +5,7 @@
 - 十大流通股东 ← RPT_F10_EH_FREEHOLDERS (DuckDB)
 - 股东户数 ← RPT_HOLDERNUMLATEST (DuckDB,自带 PRE_END_DATE)
 - 高管增减持 ← emweb F10 CompanyManagement/PageAjax 的 cgbd 字段 (实时 HTTP,A 股专用)
-
-未接入(后续单独迭代):
-- 股权质押 — F10 接口 reportName 无命中,emweb PageAjax 全 302,需另寻数据源
+- 股权质押 ← datacenter RPT_CSDC_LIST 周频快照 (实时 HTTP,A 股专用)
 """
 
 from __future__ import annotations
@@ -113,25 +111,49 @@ def _within_window(end_date: str, today: date | None = None) -> bool:
     return d >= cutoff
 
 
+def _resolve_em_adapter(em_adapter, code: str):
+    """统一获取 EastMoney adapter,失败返 None。"""
+    if em_adapter is not None:
+        return em_adapter
+    try:
+        from adapters.eastmoney_adapter import EastMoneyAdapter
+
+        return EastMoneyAdapter()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"§7 EastMoneyAdapter 初始化失败 {code}: {exc}")
+        return None
+
+
 def _fetch_hold_changes(code: str, em_adapter) -> list:
     """获取近 12 月高管增减持记录。失败 / 非 A 股 → []。"""
     if not _is_a_share(code):
         return []
-    adapter = em_adapter
+    adapter = _resolve_em_adapter(em_adapter, code)
     if adapter is None:
-        try:
-            from adapters.eastmoney_adapter import EastMoneyAdapter
-
-            adapter = EastMoneyAdapter()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"§7 EastMoneyAdapter 初始化失败 {code}: {exc}")
-            return []
+        return []
     try:
         _execs, changes = adapter.fetch_company_management(code)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"§7 高管增减持获取失败 {code}: {exc}")
         return []
     return [c for c in (changes or []) if _within_window(c.end_date)]
+
+
+def _fetch_pledge_history(code: str, em_adapter) -> list:
+    """获取股权质押周频快照(全历史,渲染时再切片)。失败 / 非 A 股 → []。"""
+    if not _is_a_share(code):
+        return []
+    adapter = _resolve_em_adapter(em_adapter, code)
+    if adapter is None:
+        return []
+    fn = getattr(adapter, "fetch_pledge_history", None)
+    if fn is None:
+        return []
+    try:
+        return fn(code) or []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"§7 股权质押获取失败 {code}: {exc}")
+        return []
 
 
 def _render_hold_changes(changes: list) -> str:
@@ -167,6 +189,66 @@ def _render_hold_changes(changes: list) -> str:
     return "### 高管增减持(近 12 月)\n\n" + md_table(header, body) + "\n"
 
 
+def _risk_label(ratio: float | None) -> str:
+    """质押比例风险口径(参考监管 / 业内常用):
+    < 5%  无忧 / 5-30% 一般 / 30-50% 偏高 / >= 50% 高风险。
+    """
+    if ratio is None:
+        return "—"
+    if ratio < 5:
+        return "无忧"
+    if ratio < 30:
+        return "一般"
+    if ratio < 50:
+        return "偏高"
+    return "高风险"
+
+
+def _render_pledge(rows: list, recent_n: int = 8) -> str:
+    """股权质押:最新一期摘要 + 近 N 期周频趋势。"""
+    if not rows:
+        return "### 股权质押\n\n暂无中证登质押快照(可能为新股 / 数据延迟)。\n"
+    rows = sorted(rows, key=lambda r: r.trade_date, reverse=True)
+    latest = rows[0]
+    summary = md_table(
+        ["指标", "数值"],
+        [
+            ["快照日期", latest.trade_date],
+            ["质押比例 (%)", fmt_num(latest.pledge_ratio, 2)],
+            ["风险等级", _risk_label(latest.pledge_ratio)],
+            ["质押笔数", _fmt_int(latest.pledge_deal_num)],
+            ["待购回余额(亿元)", fmt_num(latest.repurchase_balance, 2)],
+            [
+                "其中:无限售 / 有限售(亿元)",
+                f"{fmt_num(latest.repurchase_unlimited_balance, 2)} / "
+                f"{fmt_num(latest.repurchase_limited_balance, 2)}",
+            ],
+            ["质押市值(亿元)", fmt_num(latest.pledge_market_cap, 2)],
+        ],
+    )
+    trend_rows = rows[:recent_n]
+    trend = md_table(
+        ["快照日期", "质押比例(%)", "笔数", "待购回余额(亿)", "质押市值(亿)"],
+        [
+            [
+                r.trade_date,
+                fmt_num(r.pledge_ratio, 2),
+                _fmt_int(r.pledge_deal_num),
+                fmt_num(r.repurchase_balance, 2),
+                fmt_num(r.pledge_market_cap, 2),
+            ]
+            for r in trend_rows
+        ],
+    )
+    return (
+        "### 股权质押\n\n"
+        + summary
+        + f"\n\n#### 近 {len(trend_rows)} 期周频趋势\n\n"
+        + trend
+        + "\n"
+    )
+
+
 def build(
     ref, *, store, stock_index=None, indicators=None, em_adapter=None, **_
 ) -> str:
@@ -176,6 +258,7 @@ def build(
     )
     holder_count = _safe_query(store, "query_holder_count", ref.code)
     hold_changes = _fetch_hold_changes(ref.code, em_adapter)
+    pledge_rows = _fetch_pledge_history(ref.code, em_adapter)
 
     parts = ["## §7 控股股东与管理层", ""]
     parts.append(_render_top10(top10, "十大股东", ratio_key="HOLD_NUM_RATIO"))
@@ -184,9 +267,5 @@ def build(
     )
     parts.append(_render_holder_count(holder_count))
     parts.append(_render_hold_changes(hold_changes))
-    parts.append(
-        "### 股权质押\n\n"
-        "> 数据待补 — EastMoney F10 接口 reportName 全无命中,emweb PageAjax 返 302,"
-        "需独立 spike(`data.eastmoney.com/gpzy/` XHR)单独接入。\n"
-    )
+    parts.append(_render_pledge(pledge_rows))
     return "\n".join(parts)

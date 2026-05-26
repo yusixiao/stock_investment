@@ -20,6 +20,7 @@ from backend.models.holder import (
     HolderCountRecord,
 )
 from backend.models.management import ExecutiveRecord, ExecutiveHoldChangeRecord
+from backend.models.pledge import PledgeRecord
 
 logger = logging.getLogger(__name__)
 
@@ -351,6 +352,23 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
         executives = _gglb_to_executives(data.get("gglb") or [])
         hold_changes = _cgbd_to_hold_changes(data.get("cgbd") or [])
         return executives, hold_changes
+
+    # ---------- §7 股权质押(中证登周频) ----------
+    # 2026-05-26 spike 验证(600519):RPT_CSDC_LIST 返 weekly snapshots,
+    # A 股全样本(2014 至今 ~586 条茅台)。字段:TRADE_DATE / PLEDGE_RATIO /
+    # REPURCHASE_BALANCE / PLEDGE_DEAL_NUM / REPURCHASE_{LIMITED,UNLIMITED}_BALANCE /
+    # PLEDGE_MARKET_CAP。HK / US 不支持。
+    def fetch_pledge_history(self, code: str) -> List[PledgeRecord]:
+        """股权质押周频快照(按 TRADE_DATE 降序)。失败 / 非 A 股 → []。"""
+        if "." not in code:
+            logger.debug(f"股权质押 跳过非标准 code={code}")
+            return []
+        suffix = code.split(".")[1].upper()
+        if suffix not in ("SH", "SZ", "BJ"):
+            logger.debug(f"股权质押 仅支持 A 股,跳过 {code}")
+            return []
+        records = _fetch_report("RPT_CSDC_LIST", code, sort_column="TRADE_DATE")
+        return _records_to_models(records, PledgeRecord)
 
     # ---------- D5 经营评述(MD&A 全文) ----------
     # 2026-05-26 spike 验证(603939):RPT_F10_OP_BUSINESSANALYSIS 一次返回所有期
