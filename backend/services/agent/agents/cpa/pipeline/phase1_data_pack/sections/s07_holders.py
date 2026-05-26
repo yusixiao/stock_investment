@@ -1,21 +1,28 @@
-"""§7 控股股东与管理层 — EastMoney F10 三表渲染。
+"""§7 控股股东与管理层 — EastMoney F10 三表 + 高管增减持渲染。
 
-数据来源(2026-05-24 决策):
-- 十大股东 ← RPT_F10_EH_HOLDERS
-- 十大流通股东 ← RPT_F10_EH_FREEHOLDERS
-- 股东户数 ← RPT_HOLDERNUMLATEST(自带 PRE_END_DATE 上期对比)
+数据来源(2026-05-24 / 2026-05-26 决策):
+- 十大股东 ← RPT_F10_EH_HOLDERS (DuckDB)
+- 十大流通股东 ← RPT_F10_EH_FREEHOLDERS (DuckDB)
+- 股东户数 ← RPT_HOLDERNUMLATEST (DuckDB,自带 PRE_END_DATE)
+- 高管增减持 ← emweb F10 CompanyManagement/PageAjax 的 cgbd 字段 (实时 HTTP,A 股专用)
 
 未接入(后续单独迭代):
-- 股权质押 — F10 接口 reportName 无命中,需另寻数据源
-- 高管变动 — 同上
+- 股权质押 — F10 接口 reportName 无命中,emweb PageAjax 全 302,需另寻数据源
 """
 
 from __future__ import annotations
+
+import logging
+from datetime import date, datetime, timedelta
 
 from services.agent.agents.cpa.pipeline.phase1_data_pack.sections._table import (
     fmt_num,
     md_table,
 )
+
+logger = logging.getLogger(__name__)
+
+HOLD_CHANGE_WINDOW_DAYS = 365  # 近 12 月
 
 
 def _safe_query(store, method_name: str, *args, **kwargs):
@@ -47,7 +54,7 @@ def _render_top10(rows: list[dict], title: str, ratio_key: str) -> str:
     latest_date = rows[0].get("END_DATE") or "—"
     latest = [r for r in rows if r.get("END_DATE") == latest_date]
     latest = sorted(latest, key=lambda r: r.get("HOLDER_RANK") or 99)[:10]
-    header = ["排名", "股东名称", f"持股比例(%)", "持股数(股)", "较上期变动"]
+    header = ["排名", "股东名称", "持股比例(%)", "持股数(股)", "较上期变动"]
     body = []
     for r in latest:
         rank = r.get("HOLDER_RANK") or "—"
@@ -92,12 +99,83 @@ def _render_holder_count(rows: list[dict]) -> str:
     )
 
 
-def build(ref, *, store, stock_index=None, indicators=None, **_) -> str:
+def _is_a_share(code: str) -> bool:
+    upper = (code or "").upper()
+    return upper.endswith((".SH", ".SZ", ".BJ"))
+
+
+def _within_window(end_date: str, today: date | None = None) -> bool:
+    try:
+        d = datetime.strptime(end_date[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return False
+    cutoff = (today or date.today()) - timedelta(days=HOLD_CHANGE_WINDOW_DAYS)
+    return d >= cutoff
+
+
+def _fetch_hold_changes(code: str, em_adapter) -> list:
+    """获取近 12 月高管增减持记录。失败 / 非 A 股 → []。"""
+    if not _is_a_share(code):
+        return []
+    adapter = em_adapter
+    if adapter is None:
+        try:
+            from adapters.eastmoney_adapter import EastMoneyAdapter
+
+            adapter = EastMoneyAdapter()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"§7 EastMoneyAdapter 初始化失败 {code}: {exc}")
+            return []
+    try:
+        _execs, changes = adapter.fetch_company_management(code)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"§7 高管增减持获取失败 {code}: {exc}")
+        return []
+    return [c for c in (changes or []) if _within_window(c.end_date)]
+
+
+def _render_hold_changes(changes: list) -> str:
+    """近 12 月高管增减持表格渲染。"""
+    if not changes:
+        return "### 高管增减持(近 12 月)\n\n近 12 月无高管增减持记录。\n"
+    rows = sorted(changes, key=lambda c: c.end_date, reverse=True)
+    header = [
+        "日期",
+        "高管",
+        "职务",
+        "关系",
+        "变动股数",
+        "均价(元)",
+        "变动后持股",
+        "方式",
+    ]
+    body = []
+    for c in rows:
+        sign = "+" if c.change_num > 0 else ""
+        body.append(
+            [
+                c.end_date,
+                c.executive_name,
+                c.position or "—",
+                c.executive_relation or "—",
+                f"{sign}{c.change_num:,.0f}",
+                fmt_num(c.average_price, 2),
+                _fmt_int(c.change_after_holdnum),
+                c.trade_way or "—",
+            ]
+        )
+    return "### 高管增减持(近 12 月)\n\n" + md_table(header, body) + "\n"
+
+
+def build(
+    ref, *, store, stock_index=None, indicators=None, em_adapter=None, **_
+) -> str:
     top10 = _safe_query(store, "query_top10_holders", ref.code, latest_n_periods=2)
     top10_free = _safe_query(
         store, "query_top10_free_holders", ref.code, latest_n_periods=2
     )
     holder_count = _safe_query(store, "query_holder_count", ref.code)
+    hold_changes = _fetch_hold_changes(ref.code, em_adapter)
 
     parts = ["## §7 控股股东与管理层", ""]
     parts.append(_render_top10(top10, "十大股东", ratio_key="HOLD_NUM_RATIO"))
@@ -105,8 +183,10 @@ def build(ref, *, store, stock_index=None, indicators=None, **_) -> str:
         _render_top10(top10_free, "十大流通股东", ratio_key="FREE_HOLDNUM_RATIO")
     )
     parts.append(_render_holder_count(holder_count))
+    parts.append(_render_hold_changes(hold_changes))
     parts.append(
-        "### 股权质押 / 高管变动\n\n"
-        "> 数据待补 — EastMoney F10 暂无可用 reportName,后续单独接入数据源迭代。\n"
+        "### 股权质押\n\n"
+        "> 数据待补 — EastMoney F10 接口 reportName 全无命中,emweb PageAjax 返 302,"
+        "需独立 spike(`data.eastmoney.com/gpzy/` XHR)单独接入。\n"
     )
     return "\n".join(parts)
