@@ -100,43 +100,59 @@ data/qualitative/                       ← 新增缓存目录(进备份)
 
 ---
 
-### 阶段 2:6 维度真实实现(5-7 天,逐维 RED→GREEN)
+### 阶段 2:6 维度真实实现(3-5 天,逐维 RED→GREEN)
 
-**通用约定**:
-- 每维度签名:`async def assess_dN(ref, *, store, tavily, llm) -> DimensionReport`
-- 数据获取层:DuckDB(财务/股东)+ EastMoney F10(公告/研报)+ Tavily(行业舆情)
-- LLM 调用:用 `system_config.llm_routing` 取 `qualitative` channel(可与 `phase3_quant` 同源,允许独立配)
-- 失败降级:任一数据源不可用 → 该维度产出 `DimensionReport(narrative="⚠️ 数据不可用", params=None)`,**不抛异常**
+#### 数据源调研结论(2026-05-26)
 
-**逐维度任务**:
+**所有数据源已确认到位,零未知项**。三大来源:
 
-#### D1 商业模式(0.5 天)
-- 数据源:§3 利润表 / §4 资产负债 / §5 现金流(纯 DuckDB,无 search)
-- LLM 推理:从「应付/应收占比、预收账款、固定资产/总资产、研发投入、毛利率结构」拍 `capital_intensity` + `collection_mode`
-- 不需要 web search,token 成本最低
+| 来源 | 用法 | 已就绪 |
+|---|---|---|
+| **DuckDB** | 注册视图 `v_a_income / v_a_balance / v_a_cashflow / v_a_indicator` | ✅ 现有 |
+| **EastMoney F10 datacenter API** | `BASE_URL = https://datacenter.eastmoney.com/securities/api/data/v1/get`,沿用 `eastmoney_adapter._fetch_report(reportName, code)` 现成 helper | 现有 +**新增 2 个 reportName** |
+| **EastMoney F10 emweb PageAjax** | `https://emweb.eastmoney.com/PC_HSF10/<Section>/PageAjax?code=<MARKET><CODE>` | **新增 1 个 PageAjax** |
+| **Tavily** | `core/tavily_client.py` 已有 7 天文件缓存,无 key 优雅降级 | ✅ 现有 |
 
-#### D2 护城河(1.5 天,最复杂)
-- 数据源:§7 股东(EastMoney F10)+ Tavily 检索 `<公司名> 护城河 / 竞争优势 / 同行对比`
-- 需要识别**竞争对手列表**(`competitors`)— 用 LLM 从 Tavily 结果提取 + EastMoney 行业内同流通市值 top N 兜底
-- 缓存 Tavily 结果(沿用 `core/tavily_client.py` 7 天文件缓存)
+**新增 EastMoney 接口清单**(已用 603939 实测,字段 + 行数已知):
 
-#### D3 行业周期(1 天)
-- 数据源:EastMoney 行业(已有)+ Tavily `<行业名> 政策 / 周期 / 监管`
-- 周期判定靠 LLM 综合,`industry_keywords` 用于后续监控
+| 用途 | 类型 | 端点 | 字段 |
+|---|---|---|---|
+| **D5 经营评述全文** | datacenter RPT | `RPT_F10_OP_BUSINESSANALYSIS` | `REPORT_DATE / REPORT_NAME / BUSINESS_REVIEW`(28 期,年报 1.4-3.3k 字) |
+| **D4 高管表 + 持股变动** | emweb PageAjax | `CompanyManagement/PageAjax?code=SH603939` | `gglb`(16 行高管:`PERSON_NAME / POSITION / HOLD_NUM / SALARY`)+ `cgbd`(35 行变动) |
+| **D6 主营构成(已有 §8 复用)** | emweb PageAjax | `BusinessAnalysis/PageAjax` | `zygcfx`(200 行业务分部 `MAINOP_TYPE / ITEM_NAME / MBI_RATIO`,直接喂 SOTP) |
 
-#### D4 管理层(1 天)
-- 数据源:EastMoney F10 公告(高管变动 / 增减持 / 分红回购历史)+ Tavily `<公司名> 管理层 / 资本配置`
-- 评级 4 档:优秀 / 合格 / 损害价值 / 观察期
+**D6 重要确认**:F10 **没有**独立的"参控股公司"结构化端点(全 16 个 F10 子页已遍历)。但 D6 不需要它 — `zygcfx` + 已有十大股东(§7)+ D5 经营评述正文里的子公司提及,组合派生足够。
 
-#### D5 MD&A(1 天)
-- 数据源:EastMoney 历年公告全文(若可拉到)+ 历年财报关键摘要交叉校验
-- **简化版**:不做完整言行核查,先做"最近 1 年 MD&A 关键论断 vs 实际财务结果"对比,产出可信度评级
+#### 通用约定
 
-#### D6 控股结构(0.5 天,大多数票"不适用")
-- 数据源:EastMoney 子公司列表 + 股东表(已有 §7)
-- 大多数 A 股直接产出 `holding_structure=False`,跳过 SOTP
+- 每维度签名:`async def assess_dN(ref, *, store, tavily, llm, em_adapter) -> DimensionReport`
+- LLM 调用:`system_config.llm_routing` 取 `qualitative` channel(可与 `phase3_quant` 同源,允许独立配)
+- 失败降级:任一数据源不可用 → `DimensionReport(narrative="⚠️ 数据不可用", params=None)`,**不抛异常**
+- 新 EastMoney 接口的 fetch 函数加 `repositories/business_review_repo.py`(parquet 缓存按 `code/REPORT_DATE` 索引)+ `repositories/management_repo.py`(snapshot 缓存,7 天 TTL)
 
-**DoD**:`002594.SZ`(已端到端跑通的样本)的 6 维度真实输出 ≠ mock,人工 review 报告合理;每个维度独立单测 mock LLM 验证 prompt 解析逻辑。
+#### 逐维度数据源映射
+
+| 维度 | 主数据源 | 工时 |
+|---|---|---|
+| **D1** 商业模式 | DuckDB:`v_a_balance`(应付/应收/预收/固定资产)+ `v_a_indicator`(毛利率/研发占比)→ LLM 拍 `capital_intensity` + `collection_mode` | 0.5 天 |
+| **D2** 护城河 | Tavily:`<公司名> 护城河/竞争优势/同行对比` + DuckDB 行业内同市值 top N(兜底竞对)+ `zygcfx` 业务分部 → LLM 提 `competitors` + `moat_type/rating` | 1 天 |
+| **D3** 行业周期 | EastMoney 行业(已有)+ Tavily `<行业名> 政策/景气/监管` + DuckDB 历史营收/利润波动率 → LLM 拍 `cyclicality` + `cycle_position` | 0.5 天 |
+| **D4** 管理层 | **新接入** `CompanyManagement/PageAjax`(`gglb` 高管 + `cgbd` 持股变动)+ Tavily `<公司名> 管理层/资本配置/分红回购` → LLM 评级 4 档 | 1 天 |
+| **D5** MD&A | **新接入** `RPT_F10_OP_BUSINESSANALYSIS` 取最近 2 期年报 `BUSINESS_REVIEW` → LLM 做"去年承诺 vs 今年财报兑现"对比 → `mda_credibility` + `mda_impact` | 0.5-1 天 |
+| **D6** 控股结构 | 已有 `zygcfx`(主营构成)+ 已有 §7 十大股东 + D5 经营评述提子公司 → LLM 判 `holding_structure` + `sotp_discount_pct`(大多数票直接 False 跳过) | 0.5 天 |
+
+**新建文件**:
+
+- `backend/adapters/eastmoney_adapter.py` 加 2 个函数:`fetch_business_review(code)` / `fetch_management(code)`
+- `backend/repositories/business_review_repo.py` — parquet 持久化经营评述(按 `code` 文件 + REPORT_DATE 索引)
+- `backend/services/agent/core/qualitative/dimensions/d{1..6}.py` — 6 个 dimension 真实实现替换 mock
+- `backend/services/agent/core/qualitative/prompts/d{1..6}.md` — 重写 prompt(目前是占位)
+
+**DoD**:
+- `002594.SZ`(BYD,cpa 已端到端跑通的样本)+ `603939.SH`(益丰药房,数据源调研样本)6 维度真实输出 ≠ mock
+- 每维度独立单测,mock LLM 返回值验证 prompt 解析逻辑
+- EastMoney 新接口加 `tests/test_adapters.py` mock 单测
+- `business_review_repo` 加 parquet 读写单测
 
 ---
 
@@ -278,15 +294,15 @@ L3 实现后,在 `_classify_intent` 里增加 `business_analysis` 作为返回�
 
 ## 工时汇总
 
-| 阶段 | 工时 |
-|---|---|
-| 1. Schema + Service 骨架 | 2-3 天 |
-| 2. 6 维度真实实现 | 5-7 天 |
-| 3. agents/business_analysis 入口 | 1-2 天 |
-| 4a. 关键词路由 | 0.5 天 |
-| 5. cpa 集成 | 1-2 天 |
-| 6. 文档与回归 | 1 天 |
-| **合计** | **10.5-15.5 天** |
+| 阶段 | 原估 | 实际/重估 |
+|---|---|---|
+| 1. Schema + Service 骨架 | 2-3 天 | ✅ **已完成**(commit) |
+| 2. 6 维度真实实现 | 5-7 天 | **3-5 天**(数据源调研 2026-05-26 后下调,EastMoney 接口已确认无 PDF 解析需求) |
+| 3. agents/business_analysis 入口 | 1-2 天 | ✅ **已完成**(commit) |
+| 4a. 关键词路由 | 0.5 天 | ✅ **已完成**(commit) |
+| 5. cpa 集成 | 1-2 天 | ✅ **已完成**(commit) |
+| 6. 文档与回归 | 1 天 | 待做 |
+| **剩余合计** | — | **4-6 天**(Phase 2 + Phase 6) |
 
 > 4b(L3 协同)不计入本 plan,L3 落地后另行 0.5 天补丁。
 
@@ -303,4 +319,4 @@ L3 实现后,在 `_classify_intent` 里增加 `business_analysis` 作为返回�
 
 ---
 
-*Plan 版本 v1 · 2026-05-25 · 待 review*
+*Plan 版本 v2 · 2026-05-26 · Phase 1/3/4a/5 已落地,数据源调研完成,Phase 2 数据源映射定稿*
