@@ -69,6 +69,28 @@ def _market_update_job():
         logger.error(f"data_cache rebuild kickoff failed: {e}")
 
 
+def _financial_sync_job():
+    """每周日 02:00 同步全 A 股财务 4 表(EastMoney → parquet,append 去重)。
+
+    选 02:00 是为了在 03:00 备份任务前完成。EM 接口对全市场 ~5800 只股票
+    在 0.15s throttle 下约 30-60 分钟跑完。失败个股自动落 logs/<date>.failed.txt。
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("Scheduled financial sync started")
+    try:
+        from services.financial_sync import sync_a_share_financial
+
+        result = sync_a_share_financial()
+        logger.info(
+            f"financial_sync done: success={result['success']}/{result['total']} "
+            f"failed={result['failed']} elapsed={result['elapsed'] / 60:.1f}min"
+        )
+    except Exception as e:
+        logger.error(f"Scheduled financial sync failed: {e}")
+
+
 def _backup_job():
     """每周备份 data/market/ 到百度网盘"""
     import logging
@@ -112,6 +134,16 @@ def start_scheduler():
         hour=SCHEDULER_HOUR,
         minute=SCHEDULER_MINUTE + 10,
         id="daily_snapshot",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        _financial_sync_job,
+        "cron",
+        day_of_week="sun",
+        hour=2,
+        minute=0,
+        id="weekly_financial_sync",
         replace_existing=True,
         misfire_grace_time=3600,
     )
