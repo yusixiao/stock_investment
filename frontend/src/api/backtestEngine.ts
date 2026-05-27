@@ -7,7 +7,7 @@ export interface StrategyInfo {
   strategyType: string;
   frequency?: string;
   frequencyOverridable: boolean;
-  params?: Record<string, { default: unknown; description?: string }>;
+  params?: Record<string, { default: unknown; label?: string; description?: string; type?: string }>;
 }
 
 // Phase 5: 单策略扁平 payload

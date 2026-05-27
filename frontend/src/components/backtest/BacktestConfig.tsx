@@ -219,8 +219,8 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
           <div className="text-xs font-medium text-secondary-text">策略参数</div>
           {Object.entries(selectedStrategy.params).map(([key, def]) => (
             <div key={key} className="flex flex-col gap-1">
-              <label className="text-xs text-muted-text" title={def.description || key}>
-                {def.description || key}
+              <label className="text-xs text-muted-text" title={def.label || def.description || key}>
+                {def.label || def.description || key}
               </label>
               {typeof def.default === 'boolean' ? (
                 <label className="inline-flex items-center gap-2 text-sm">
