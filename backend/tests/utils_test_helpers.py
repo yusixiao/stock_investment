@@ -26,6 +26,12 @@ class MockContext:
         self._dividend = dividend or {}
         self._financial = financial or {}
         self._valuation = valuation or {}
+        self._balance: dict[str, dict] = {}
+        self._cashflow: dict[str, dict] = {}
+        # history mapping:{symbol: [年报1(最新), 年报2, ...]} 倒序,与真实 ctx 一致
+        self._financial_history: dict[str, list[dict]] = {}
+        self._balance_history: dict[str, list[dict]] = {}
+        self._cashflow_history: dict[str, list[dict]] = {}
         self._history = history or {}
         self._price = price or {}
         self.target_symbols = list(target_symbols or [])
@@ -71,6 +77,40 @@ class MockContext:
 
     def get_financial(self, symbol: str):
         return self._financial.get(symbol)
+
+    def get_financial_annual(self, symbol: str):
+        # MockContext 简化:financial / financial_annual 返回同一份 dict
+        return self._financial.get(symbol)
+
+    def get_balance(self, symbol: str):
+        return self._balance.get(symbol)
+
+    def get_balance_annual(self, symbol: str):
+        return self._balance.get(symbol)
+
+    def get_cashflow(self, symbol: str):
+        return self._cashflow.get(symbol)
+
+    def get_cashflow_annual(self, symbol: str):
+        return self._cashflow.get(symbol)
+
+    def get_financial_annual_history(self, symbol: str, n: int):
+        rows = self._financial_history.get(symbol)
+        if rows is None:
+            return None
+        return list(rows[:n])
+
+    def get_balance_annual_history(self, symbol: str, n: int):
+        rows = self._balance_history.get(symbol)
+        if rows is None:
+            return None
+        return list(rows[:n])
+
+    def get_cashflow_annual_history(self, symbol: str, n: int):
+        rows = self._cashflow_history.get(symbol)
+        if rows is None:
+            return None
+        return list(rows[:n])
 
     def get_valuation(self, symbol: str):
         return self._valuation.get(symbol)
@@ -151,6 +191,31 @@ class MockContext:
         for sym, roe in mapping.items():
             entry = self._financial.setdefault(sym, {})
             entry["ROEJQ"] = roe
+
+    def set_balance(self, mapping: dict[str, dict]) -> None:
+        """{symbol: {col: value}} → balance 字典(任意 EastMoney 字段)。"""
+        for sym, fields in mapping.items():
+            entry = self._balance.setdefault(sym, {})
+            entry.update(fields)
+
+    def set_cashflow(self, mapping: dict[str, dict]) -> None:
+        """{symbol: {col: value}} → cashflow 字典(任意 EastMoney 字段)。"""
+        for sym, fields in mapping.items():
+            entry = self._cashflow.setdefault(sym, {})
+            entry.update(fields)
+
+    def set_financial_history(self, mapping: dict[str, list[dict]]) -> None:
+        """{symbol: [年报1(最新), 年报2, ...]} 倒序排列。"""
+        for sym, rows in mapping.items():
+            self._financial_history[sym] = list(rows)
+
+    def set_balance_history(self, mapping: dict[str, list[dict]]) -> None:
+        for sym, rows in mapping.items():
+            self._balance_history[sym] = list(rows)
+
+    def set_cashflow_history(self, mapping: dict[str, list[dict]]) -> None:
+        for sym, rows in mapping.items():
+            self._cashflow_history[sym] = list(rows)
 
     def set_ma_tangle_breakout_hits(self, hits: set[str]) -> None:
         """记录 detect_ma_tangle_breakout 应命中的 symbols。

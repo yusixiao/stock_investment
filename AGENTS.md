@@ -347,6 +347,16 @@ backend/services/agent/
 - team agent 骨架(`agents/team/`,多角色协作)
 - §17.8 D&A → EV/EBITDA
 - Vite proxy / Nginx 长连超时验证
+- **金融股盲点**:cpa 框架 FCFF_BACK 不适用银行/保险/证券(资产负债表逻辑差异大),`ConservativeRoughStrategy` 已整类排除,后续若要覆盖金融股需单独建模
+
+## 现金流保守策略(粗算版)定位 — `ConservativeRoughStrategy`
+
+- **不等于 cpa 精算 KK**:cpa 11 步精算(V1-V5 非经常分类 / 6.X2 隐性必要支出 / 7 会计准则 / 8 AA 三选一)需 LLM 读年报附注做定性判断,**不可机械化**
+- **本策略只做粗算 R + 4 项 Layer 2 否决**:`R = NP × 近3年支付率均值 / 市值`,门槛 5.2%(II 4.7% + 安全边际 0.5pct);否决项=金融股/商誉占比>30%/净现金转负/FCF 持续 2 年负
+- **用途**:
+  1. 给 cpa Agent 提供候选股票池(5400+ → 几十)
+  2. 作为 cpa LLM 真实精算结果的回测基线对比
+- **代码位置**:`strategies/utils/conservative.py` + `strategies/examples/conservative_rough_strategy.py`,docstring 显式标注「粗算 / 不是 cpa 精算 KK」
 
 ## Project Timeline(claude-mem 摘要 · 2026-05-13 → 2026-05-26)
 

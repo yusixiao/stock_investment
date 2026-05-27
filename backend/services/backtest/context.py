@@ -98,6 +98,38 @@ class Context:
         用于 ROE 等需要年化口径的指标,避免季报累计值在年中拉低门槛。"""
         return self._market_data.get_financial_annual(symbol, date=self.current_date)
 
+    def get_balance(self, symbol: str):
+        """资产负债表最近一期(任何报告期)。"""
+        return self._market_data.get_balance(symbol, date=self.current_date)
+
+    def get_balance_annual(self, symbol: str):
+        """资产负债表最近一份年报(REPORT_DATE = -12-31)。"""
+        return self._market_data.get_balance_annual(symbol, date=self.current_date)
+
+    def get_cashflow(self, symbol: str):
+        """现金流量表最近一期(任何报告期)。"""
+        return self._market_data.get_cashflow(symbol, date=self.current_date)
+
+    def get_cashflow_annual(self, symbol: str):
+        """现金流量表最近一份年报(REPORT_DATE = -12-31)。"""
+        return self._market_data.get_cashflow_annual(symbol, date=self.current_date)
+
+    def get_financial_annual_history(self, symbol: str, n: int):
+        """近 n 期年报(列表倒序,最新在 [0])。"""
+        return self._market_data.get_financial_annual_history(
+            symbol, date=self.current_date, n=n
+        )
+
+    def get_balance_annual_history(self, symbol: str, n: int):
+        return self._market_data.get_balance_annual_history(
+            symbol, date=self.current_date, n=n
+        )
+
+    def get_cashflow_annual_history(self, symbol: str, n: int):
+        return self._market_data.get_cashflow_annual_history(
+            symbol, date=self.current_date, n=n
+        )
+
     def indicator(self, name: str, symbol: str, **kwargs):
         return self._market_data.indicator(name, symbol, idx=self.current_idx, **kwargs)
 
@@ -254,6 +286,33 @@ class ScreenContext:
         """仅取年报口径(REPORT_DATE = -12-31)。
         用于 ROE 等需要年化口径的指标,避免季报累计值。"""
         return self._market_data.get_financial_annual(symbol, date=self.current_date)
+
+    def get_balance(self, symbol: str):
+        return self._market_data.get_balance(symbol, date=self.current_date)
+
+    def get_balance_annual(self, symbol: str):
+        return self._market_data.get_balance_annual(symbol, date=self.current_date)
+
+    def get_cashflow(self, symbol: str):
+        return self._market_data.get_cashflow(symbol, date=self.current_date)
+
+    def get_cashflow_annual(self, symbol: str):
+        return self._market_data.get_cashflow_annual(symbol, date=self.current_date)
+
+    def get_financial_annual_history(self, symbol: str, n: int):
+        return self._market_data.get_financial_annual_history(
+            symbol, date=self.current_date, n=n
+        )
+
+    def get_balance_annual_history(self, symbol: str, n: int):
+        return self._market_data.get_balance_annual_history(
+            symbol, date=self.current_date, n=n
+        )
+
+    def get_cashflow_annual_history(self, symbol: str, n: int):
+        return self._market_data.get_cashflow_annual_history(
+            symbol, date=self.current_date, n=n
+        )
 
     def indicator(self, name: str, symbol: str, **kwargs):
         return self._market_data.indicator(name, symbol, idx=self.current_idx, **kwargs)

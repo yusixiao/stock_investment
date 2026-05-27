@@ -86,6 +86,8 @@ class MarketData:
         valuation: dict[str, pd.DataFrame] | None = None,
         dividend: dict[str, pd.DataFrame] | None = None,
         financial: dict[str, pd.DataFrame] | None = None,
+        balance: dict[str, pd.DataFrame] | None = None,
+        cashflow: dict[str, pd.DataFrame] | None = None,
         weekly_data: dict[str, pd.DataFrame] | None = None,
         monthly_data: dict[str, pd.DataFrame] | None = None,
     ):
@@ -96,6 +98,8 @@ class MarketData:
         self._valuation = valuation or {}
         self._dividend = dividend or {}
         self._financial = financial or {}
+        self._balance = balance or {}
+        self._cashflow = cashflow or {}
 
         # valuation/financial 的预编译表(走 searchsorted + 数组下标快速查询)
         self._valuation_cache: dict[str, _StaticTable] = {
@@ -117,6 +121,42 @@ class MarketData:
             if sub.empty:
                 continue
             self._financial_annual_cache[sym] = _build_static_table(
+                sub, date_col="REPORT_DATE", ffill=False
+            )
+
+        # balance / cashflow:同样拆 全期 + 仅年报 两个 cache
+        # 现金流保守策略 v1(2026-05-27):用于 Layer 2 否决项
+        self._balance_cache: dict[str, _StaticTable] = {
+            sym: _build_static_table(df, date_col="REPORT_DATE", ffill=False)
+            for sym, df in self._balance.items()
+            if df is not None and not df.empty and "REPORT_DATE" in df.columns
+        }
+        self._balance_annual_cache: dict[str, _StaticTable] = {}
+        for sym, df in self._balance.items():
+            if df is None or df.empty or "REPORT_DATE" not in df.columns:
+                continue
+            mask = df["REPORT_DATE"].astype(str).str.endswith("-12-31")
+            sub = df[mask]
+            if sub.empty:
+                continue
+            self._balance_annual_cache[sym] = _build_static_table(
+                sub, date_col="REPORT_DATE", ffill=False
+            )
+
+        self._cashflow_cache: dict[str, _StaticTable] = {
+            sym: _build_static_table(df, date_col="REPORT_DATE", ffill=False)
+            for sym, df in self._cashflow.items()
+            if df is not None and not df.empty and "REPORT_DATE" in df.columns
+        }
+        self._cashflow_annual_cache: dict[str, _StaticTable] = {}
+        for sym, df in self._cashflow.items():
+            if df is None or df.empty or "REPORT_DATE" not in df.columns:
+                continue
+            mask = df["REPORT_DATE"].astype(str).str.endswith("-12-31")
+            sub = df[mask]
+            if sub.empty:
+                continue
+            self._cashflow_annual_cache[sym] = _build_static_table(
                 sub, date_col="REPORT_DATE", ffill=False
             )
 
@@ -373,6 +413,22 @@ class MarketData:
         """
         return self._lookup_financial_table(self._financial_annual_cache, symbol, date)
 
+    def get_balance(self, symbol: str, date: str) -> dict | None:
+        """资产负债表最近一期(任何报告期,REPORT_DATE <= date)。"""
+        return self._lookup_financial_table(self._balance_cache, symbol, date)
+
+    def get_balance_annual(self, symbol: str, date: str) -> dict | None:
+        """资产负债表最近一份年报(REPORT_DATE = -12-31 且 <= date)。"""
+        return self._lookup_financial_table(self._balance_annual_cache, symbol, date)
+
+    def get_cashflow(self, symbol: str, date: str) -> dict | None:
+        """现金流量表最近一期(任何报告期,REPORT_DATE <= date)。"""
+        return self._lookup_financial_table(self._cashflow_cache, symbol, date)
+
+    def get_cashflow_annual(self, symbol: str, date: str) -> dict | None:
+        """现金流量表最近一份年报(REPORT_DATE = -12-31 且 <= date)。"""
+        return self._lookup_financial_table(self._cashflow_annual_cache, symbol, date)
+
     def _lookup_financial_table(
         self, cache: dict[str, _StaticTable], symbol: str, date: str
     ) -> dict | None:
@@ -389,6 +445,50 @@ class MarketData:
         for col, arr in table.obj_cols.items():
             result[col] = arr[pos]
         return result
+
+    def _lookup_financial_history(
+        self, cache: dict[str, _StaticTable], symbol: str, date: str, n: int
+    ) -> list[dict] | None:
+        """返回 REPORT_DATE <= date 的最近 n 期(按时间倒序,最新在 [0])。"""
+        table = cache.get(symbol)
+        if table is None or table.n == 0 or n <= 0:
+            return None
+        pos = int(np.searchsorted(table.dates, date, side="right")) - 1
+        if pos < 0:
+            return None
+        start = max(0, pos - n + 1)
+        results: list[dict] = []
+        for i in range(pos, start - 1, -1):
+            row: dict[str, Any] = {"REPORT_DATE": table.dates[i]}
+            for col, arr in table.num_cols.items():
+                v = arr[i]
+                row[col] = None if math.isnan(v) else float(v)
+            for col, arr in table.obj_cols.items():
+                row[col] = arr[i]
+            results.append(row)
+        return results
+
+    def get_financial_annual_history(
+        self, symbol: str, date: str, n: int
+    ) -> list[dict] | None:
+        """近 n 期年报(REPORT_DATE = -12-31 且 <= date),倒序。"""
+        return self._lookup_financial_history(
+            self._financial_annual_cache, symbol, date, n
+        )
+
+    def get_balance_annual_history(
+        self, symbol: str, date: str, n: int
+    ) -> list[dict] | None:
+        return self._lookup_financial_history(
+            self._balance_annual_cache, symbol, date, n
+        )
+
+    def get_cashflow_annual_history(
+        self, symbol: str, date: str, n: int
+    ) -> list[dict] | None:
+        return self._lookup_financial_history(
+            self._cashflow_annual_cache, symbol, date, n
+        )
 
     # ---------- 指标查表(get_indicator)----------
 

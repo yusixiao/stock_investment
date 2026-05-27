@@ -45,6 +45,10 @@ class MarketBundle:
     valuation_data: dict[str, pd.DataFrame] = field(default_factory=dict)
     dividend_data: dict[str, pd.DataFrame] = field(default_factory=dict)
     financial_data: dict[str, pd.DataFrame] = field(default_factory=dict)
+    # 现金流保守策略 v1(2026-05-27):balance/cashflow 用于 Layer 2 否决项
+    # (商誉占比 / 净现金转负 / FCF 持续为负)
+    balance_data: dict[str, pd.DataFrame] = field(default_factory=dict)
+    cashflow_data: dict[str, pd.DataFrame] = field(default_factory=dict)
     loaded_at: float = 0.0  # epoch seconds
 
     @property
@@ -64,6 +68,8 @@ class SlicedBundle:
     valuation_data: dict[str, pd.DataFrame]
     dividend_data: dict[str, pd.DataFrame]
     financial_data: dict[str, pd.DataFrame]
+    balance_data: dict[str, pd.DataFrame]
+    cashflow_data: dict[str, pd.DataFrame]
     iter_start_idx: int
     iter_end_idx: int  # inclusive
 
@@ -129,6 +135,34 @@ def _load_financial(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
         return out
     except Exception as e:
         logger.exception("_load_financial failed: %s", e)
+        return {}
+
+
+def _load_balance(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """资产负债表(English schema:REPORT_DATE / MONETARYFUNDS / GOODWILL /
+    TOTAL_ASSETS / TOTAL_LIABILITIES / TOTAL_PARENT_EQUITY / ...)。"""
+    try:
+        out = get_store().query_financial_bulk(market, symbols, fin_type="balance")
+        logger.info(
+            "_load_balance: market=%s in=%d out=%d", market, len(symbols), len(out)
+        )
+        return out
+    except Exception as e:
+        logger.exception("_load_balance failed: %s", e)
+        return {}
+
+
+def _load_cashflow(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
+    """现金流量表(English schema:REPORT_DATE / NETCASH_OPERATE /
+    CONSTRUCT_LONG_ASSET / NETCASH_INVEST / NETCASH_FINANCE / ...)。"""
+    try:
+        out = get_store().query_financial_bulk(market, symbols, fin_type="cashflow")
+        logger.info(
+            "_load_cashflow: market=%s in=%d out=%d", market, len(symbols), len(out)
+        )
+        return out
+    except Exception as e:
+        logger.exception("_load_cashflow failed: %s", e)
         return {}
 
 
@@ -218,13 +252,17 @@ def _load_market_blocking(market: str) -> MarketBundle:
         valuation_data = _load_valuation(market, symbols)
         dividend_data = _load_dividend(market, symbols)
         financial_data = _load_financial(market, symbols)
+        balance_data = _load_balance(market, symbols)
+        cashflow_data = _load_cashflow(market, symbols)
         logger.info(
-            "data_cache: [%s] 估值/分红/财务加载完成 — "
-            "valuation=%d / dividend=%d / financial=%d, 耗时 %.1fs",
+            "data_cache: [%s] 估值/分红/财务/资产负债/现金流加载完成 — "
+            "valuation=%d / dividend=%d / financial=%d / balance=%d / cashflow=%d, 耗时 %.1fs",
             market,
             len(valuation_data),
             len(dividend_data),
             len(financial_data),
+            len(balance_data),
+            len(cashflow_data),
             time.time() - t2,
         )
 
@@ -236,6 +274,8 @@ def _load_market_blocking(market: str) -> MarketBundle:
             valuation_data=valuation_data,
             dividend_data=dividend_data,
             financial_data=financial_data,
+            balance_data=balance_data,
+            cashflow_data=cashflow_data,
             loaded_at=time.time(),
         )
         with _lock:
@@ -244,7 +284,8 @@ def _load_market_blocking(market: str) -> MarketBundle:
         p.phase = (
             f"完成:K 线 {len(stock_data)} / 周 {len(weekly_data)} / "
             f"月 {len(monthly_data)} / 估值 {len(valuation_data)} / "
-            f"分红 {len(dividend_data)} / 财务 {len(financial_data)}"
+            f"分红 {len(dividend_data)} / 财务 {len(financial_data)} / "
+            f"资产负债 {len(balance_data)} / 现金流 {len(cashflow_data)}"
         )
         p.finished_at = time.time()
         logger.info(
@@ -321,6 +362,8 @@ def _status_dict(market: str) -> dict:
         "valuation_count": len(bundle.valuation_data) if bundle else 0,
         "dividend_count": len(bundle.dividend_data) if bundle else 0,
         "financial_count": len(bundle.financial_data) if bundle else 0,
+        "balance_count": len(bundle.balance_data) if bundle else 0,
+        "cashflow_count": len(bundle.cashflow_data) if bundle else 0,
         "loaded_at": bundle.loaded_at if bundle else 0.0,
         "progress": {
             "current": p.current,
@@ -367,6 +410,8 @@ def slice_bundle(
     val = _subset(bundle.valuation_data)
     div = _subset(bundle.dividend_data)
     fin = _subset(bundle.financial_data)
+    bal = _subset(bundle.balance_data)
+    cf = _subset(bundle.cashflow_data)
 
     if not stock:
         return SlicedBundle(
@@ -376,6 +421,8 @@ def slice_bundle(
             valuation_data=val,
             dividend_data=div,
             financial_data=fin,
+            balance_data=bal,
+            cashflow_data=cf,
             iter_start_idx=0,
             iter_end_idx=-1,
         )
@@ -409,6 +456,8 @@ def slice_bundle(
         valuation_data=val,
         dividend_data=div,
         financial_data=fin,
+        balance_data=bal,
+        cashflow_data=cf,
         iter_start_idx=iter_start,
         iter_end_idx=iter_end,
     )
