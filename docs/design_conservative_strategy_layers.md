@@ -1,6 +1,6 @@
 # 现金流保守策略 — 三层筛选模型(Roadmap)
 
-> **状态**:L1.R + L1.3 + L2 5 项硬否决 + L2.5 trap_rating + L3 仓位矩阵已落地(`ConservativeRoughStrategy`),Buyer 按 tier 加权分配待补。
+> **状态**:L1.R + L1.3 + L2 5 项硬否决 + L2.5 trap_rating + L3 仓位矩阵 + Buyer tier 加权全部落地(`ConservativeRoughStrategy`)。三层 Roadmap 完成。
 > **定位**:把 cpa Agent 的 11 步精算定性框架尽可能机械化,作为可全市场扫描的回测策略;**不等于** cpa LLM 精算 KK,只是其低成本近似。
 > **创建**:2026-05-27 · **维护**:有架构调整时同步更新
 
@@ -117,11 +117,13 @@ f(R_pct, credibility, trap_rating) → tier ∈ {full, half, observe, skip}
 - `include_observe`(默认 False):是否保留 observe tier
 - 启用后 `screen()` 末尾按 tier 筛除 skip / observe(可选保留 observe)
 
-#### L3.3 待补:Buyer tier 加权(未实现)
-当前 `MarketCapWeightedBatchBuyer` 按市值加权,**不区分 tier**。设计:
-- `full` 权重 2 / `half` 权重 1 → 在市值加权基础上叠加 tier 乘数
-- 改造点:`MarketCapWeightedBatchBuyer.step()` 读取 `position_tier` factor
-- 需要单独 spec(影响所有继承该 buyer 的策略)
+#### L3.3 Buyer tier 加权 ✅(2026-05-27 完成)
+`MarketCapWeightedBatchBuyer` 新增 `tier_weights: dict | None = None` 参数:
+- `None`(默认)→ 纯市值加权(向后兼容,其他 2 个使用该 buyer 的策略行为不变)
+- 启用 → `effective_mv = mv × tier_weights.get(tier, 1.0)`,tier 来自 `ctx.get_factors(sym)["position_tier"]`
+- factor 缺失 / 未知 tier → 权重 1.0(降级保守)
+- 权重 0 → `effective_mv = 0`,**软排除**不分配资金
+- `ConservativeRoughStrategy` 在 `use_position_tier=True` 时传 `{"full": 2.0, "half": 1.0}`
 
 ---
 
@@ -133,7 +135,8 @@ f(R_pct, credibility, trap_rating) → tier ∈ {full, half, observe, skip}
 | L1.3 | 三维信誉评级 | ✅ **已实现** | high/mid/low,记录 factor |
 | L2.1-L2.5 | 5 项 disqualifier | ✅ 5 项**硬否决**(默认) | L2.1 永远硬否决 |
 | L2.5 trap_rating | 聚合 0/1/≥2 → low/mid/high | ✅ **已实现**(可选软评分模式) | 通过策略 flag 启用 |
-| L3 工具+筛选 | 三维查表 + 4 档仓位 | ✅ **已实现**(可选模式) | Buyer 加权未做 |
+| L3 工具+筛选 | 三维查表 + 4 档仓位 | ✅ **已实现**(可选模式) | — |
+| L3.3 Buyer tier 加权 | full=2 / half=1 | ✅ **已实现** | tier_weights 可选,向后兼容 |
 
 ---
 

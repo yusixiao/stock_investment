@@ -13,9 +13,21 @@ from datetime import date as _date
 
 
 class MarketCapWeightedBatchBuyer:
-    def __init__(self, *, buy_weeks: int = 8, lot_size: int = 100):
+    def __init__(
+        self,
+        *,
+        buy_weeks: int = 8,
+        lot_size: int = 100,
+        tier_weights: dict | None = None,
+    ):
         self._buy_weeks = buy_weeks
         self._lot_size = lot_size
+        # tier_weights: {"full": 2.0, "half": 1.0, ...}
+        # None  → 不读 tier,纯市值加权(向后兼容)
+        # 启用 → effective_mv = mv × tier_weights.get(tier, 1.0)
+        #         tier 缺失或不在字典中 → 权重 1.0(降级保守)
+        #         权重 0 → effective_mv=0 → 软排除,不分配资金
+        self._tier_weights = tier_weights
         # {symbol: {"weekly_amount": float, "weeks_bought": int,
         #            "start_week_key": str, "last_buy_week_key": str|None,
         #            "market_cap": float}}
@@ -66,18 +78,34 @@ class MarketCapWeightedBatchBuyer:
             price = ctx.get_price(sym)
             close = price.get("close") if price else None
             if total_share and close:
-                mv_map[sym] = float(close) * float(total_share)
+                base_mv = float(close) * float(total_share)
             else:
-                mv_map[sym] = 1.0  # 无数据时等权
+                base_mv = 1.0  # 无数据时等权
+
+            # tier 加权(仅当显式传入 tier_weights 时启用)
+            if self._tier_weights is not None:
+                factors = (
+                    ctx.get_factors(sym) if hasattr(ctx, "get_factors") else {}
+                ) or {}
+                tier = factors.get("position_tier")
+                weight = self._tier_weights.get(tier, 1.0)
+                mv_map[sym] = base_mv * float(weight)
+            else:
+                mv_map[sym] = base_mv
 
         if not mv_map:
             return
 
         total_mv = sum(mv_map.values())
+        if total_mv <= 0:
+            return
         available = ctx.available_cash
         week_key = self._week_key(current_date)
 
         for sym, mv in mv_map.items():
+            if mv <= 0:
+                # 权重 0 软排除:不建立计划
+                continue
             ratio = mv / total_mv
             allocated_amount = available * ratio
             weekly_amount = allocated_amount / self._buy_weeks

@@ -89,7 +89,11 @@ class ConservativeRoughStrategy(Strategy):
 
     def __init__(self, param_overrides=None):
         super().__init__(param_overrides)
-        self._buyer = MarketCapWeightedBatchBuyer(buy_weeks=self.p.buy_weeks)
+        # use_position_tier=True 时:full 仓位股票获 2 倍权重(half 1 倍),其他 tier 已在 screen 阶段被过滤
+        buyer_kwargs = {"buy_weeks": self.p.buy_weeks}
+        if self.p.use_position_tier:
+            buyer_kwargs["tier_weights"] = {"full": 2.0, "half": 1.0}
+        self._buyer = MarketCapWeightedBatchBuyer(**buyer_kwargs)
 
     def screen(self, ctx, symbols):
         ctx.log_flow("strategy.screen.start", input=len(symbols))
