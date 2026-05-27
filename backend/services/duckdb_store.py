@@ -4,6 +4,7 @@ DuckDB 查询层 — 直接用 read_parquet() 查询现有 parquet 文件，不�
 """
 
 import logging
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -21,6 +22,11 @@ FINANCIAL_TYPES = ["income", "balance", "cashflow", "indicator"]
 class DuckDBStore:
     def __init__(self, db_path: str = ":memory:"):
         self._conn = duckdb.connect(db_path)
+        # DuckDB 单连接非线程安全:多线程并发 execute 会让 cursor 状态相互踩坏,
+        # fetchone()/fetchdf() 可能返回 None。data_cache 启动时三市并发 reload
+        # 必须串行。所有公共并发热点方法(bulk / for_section)入口加锁。RLock
+        # 允许同一线程重入(query_qfq_kline_bulk 内部又 query duckdb_views)。
+        self._lock = threading.RLock()
         self._setup_views()
 
     def _setup_views(self):
@@ -432,6 +438,16 @@ class DuckDBStore:
         - {symbol: DataFrame(date, open, high, low, close, volume, amount)},
           DataFrame 按日期升序,index 重置;空数据的 symbol 不会出现在 dict 中。
         """
+        with self._lock:
+            return self._query_qfq_kline_bulk_locked(market, symbols, start, end)
+
+    def _query_qfq_kline_bulk_locked(
+        self,
+        market: str,
+        symbols: Optional[list[str]],
+        start: Optional[str],
+        end: Optional[str],
+    ) -> dict[str, pd.DataFrame]:
         daily_view = f"v_{market.lower()}_daily"
         adj_view = f"v_{market.lower()}_adjust_factor"
 
@@ -527,22 +543,27 @@ class DuckDBStore:
         """批量取估值序列(date/peTTM/pbMRQ/psTTM/pcfNcfTTM)。
         A 股直接来自 v_a_daily 的估值列;HK/US daily 不含估值时返回空 dict。
         """
-        view = f"v_{market.lower()}_daily"
-        # 检查列是否存在(HK/US daily 可能没有估值列)
-        cols = self._conn.execute(f"DESCRIBE {view}").fetchdf()["column_name"].tolist()
-        val_cols = [c for c in ("peTTM", "pbMRQ", "psTTM", "pcfNcfTTM") if c in cols]
-        if not val_cols:
-            return {}
-        select = ", ".join(["_symbol", "date"] + val_cols)
-        params: list = []
-        where = ""
-        if symbols:
-            placeholders = ",".join(["?"] * len(symbols))
-            where = f"WHERE _symbol IN ({placeholders})"
-            params.extend(symbols)
-        sql = f"SELECT {select} FROM {view} {where} ORDER BY _symbol, date"
-        df = self._conn.execute(sql, params).fetchdf()
-        return self._bulk_split(df, sort_col="date")
+        with self._lock:
+            view = f"v_{market.lower()}_daily"
+            # 检查列是否存在(HK/US daily 可能没有估值列)
+            cols = (
+                self._conn.execute(f"DESCRIBE {view}").fetchdf()["column_name"].tolist()
+            )
+            val_cols = [
+                c for c in ("peTTM", "pbMRQ", "psTTM", "pcfNcfTTM") if c in cols
+            ]
+            if not val_cols:
+                return {}
+            select = ", ".join(["_symbol", "date"] + val_cols)
+            params: list = []
+            where = ""
+            if symbols:
+                placeholders = ",".join(["?"] * len(symbols))
+                where = f"WHERE _symbol IN ({placeholders})"
+                params.extend(symbols)
+            sql = f"SELECT {select} FROM {view} {where} ORDER BY _symbol, date"
+            df = self._conn.execute(sql, params).fetchdf()
+            return self._bulk_split(df, sort_col="date")
 
     def query_dividend_bulk(
         self,
@@ -550,18 +571,19 @@ class DuckDBStore:
         symbols: Optional[list[str]] = None,
     ) -> dict[str, pd.DataFrame]:
         """批量取分红事件序列。视图 v_{x}_dividend 不存在时返回空 dict。"""
-        view = f"v_{market.lower()}_dividend"
-        if not self._view_exists(view):
-            return {}
-        params: list = []
-        where = ""
-        if symbols:
-            placeholders = ",".join(["?"] * len(symbols))
-            where = f"WHERE _symbol IN ({placeholders})"
-            params.extend(symbols)
-        sql = f"SELECT * FROM {view} {where} ORDER BY _symbol, date"
-        df = self._conn.execute(sql, params).fetchdf()
-        return self._bulk_split(df, sort_col="date")
+        with self._lock:
+            view = f"v_{market.lower()}_dividend"
+            if not self._view_exists(view):
+                return {}
+            params: list = []
+            where = ""
+            if symbols:
+                placeholders = ",".join(["?"] * len(symbols))
+                where = f"WHERE _symbol IN ({placeholders})"
+                params.extend(symbols)
+            sql = f"SELECT * FROM {view} {where} ORDER BY _symbol, date"
+            df = self._conn.execute(sql, params).fetchdf()
+            return self._bulk_split(df, sort_col="date")
 
     def query_financial_bulk(
         self,
@@ -572,18 +594,19 @@ class DuckDBStore:
         """批量取财务序列(默认 indicator,REPORT_DATE 升序)。
         视图缺失返回 {}。
         """
-        view = f"v_{market.lower()}_{fin_type}"
-        if not self._view_exists(view):
-            return {}
-        params: list = []
-        where = ""
-        if symbols:
-            placeholders = ",".join(["?"] * len(symbols))
-            where = f"WHERE _symbol IN ({placeholders})"
-            params.extend(symbols)
-        sql = f"SELECT * FROM {view} {where} ORDER BY _symbol, REPORT_DATE"
-        df = self._conn.execute(sql, params).fetchdf()
-        return self._bulk_split(df, sort_col="REPORT_DATE")
+        with self._lock:
+            view = f"v_{market.lower()}_{fin_type}"
+            if not self._view_exists(view):
+                return {}
+            params: list = []
+            where = ""
+            if symbols:
+                placeholders = ",".join(["?"] * len(symbols))
+                where = f"WHERE _symbol IN ({placeholders})"
+                params.extend(symbols)
+            sql = f"SELECT * FROM {view} {where} ORDER BY _symbol, REPORT_DATE"
+            df = self._conn.execute(sql, params).fetchdf()
+            return self._bulk_split(df, sort_col="REPORT_DATE")
 
     def search_symbols(self, market: str, pattern: str) -> list[str]:
         """模糊搜索股票代码"""
