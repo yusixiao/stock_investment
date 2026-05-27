@@ -365,7 +365,7 @@ backend/services/agent/
 - **L1 估值因子**:R(粗算)/ KK(精算预留)+ **L1.3 信誉评级**(5年营收 CV / 利润调整幅度 / λ warning 三维 → high/mid/low)
 - **L2 价值陷阱**:4 项 disqualifier(行业/商誉/净现金/FCF)+ **L2.5 trap_rating** 软评分聚合(low/mid/high)
 - **L3 仓位矩阵**:`f(KK, credibility, trap_rating) → tier ∈ {full, half, observe, skip}` 三维查找表
-- **当前实现**:L1.R + L2 硬否决 ✅;**L1.3 / L2.5 / L3 仓位矩阵 + L2 第 5 项(ROE 三年下降>30%)未做**
+- **当前实现**:L1.R + L1.3 + L2 硬否决 ✅(L1.3 三维评级 high/mid/low,2026-05-27);**L2.5 / L3 仓位矩阵 + L2 第 5 项(ROE 三年下降>30%)未做**
 - **KK→R 退化决策**:2026-05-27 reset `ccd7b9a`+`d02d1d8`,KK 精算需 LLM 读年报附注不可机械化,粗算 R 即可作 cpa Agent 候选池筛选
 
 ## Project Timeline(claude-mem 摘要 · 2026-05-13 → 2026-05-26)

@@ -39,6 +39,7 @@ class BacktestEngine:
         financial_data: dict | None = None,
         balance_data: dict | None = None,
         cashflow_data: dict | None = None,
+        income_data: dict | None = None,
         weekly_data: dict | None = None,
         monthly_data: dict | None = None,
         iter_start: int | None = None,
@@ -67,6 +68,7 @@ class BacktestEngine:
             financial=financial_data,
             balance=balance_data,
             cashflow=cashflow_data,
+            income=income_data,
             weekly_data=weekly_data,
             monthly_data=monthly_data,
         )

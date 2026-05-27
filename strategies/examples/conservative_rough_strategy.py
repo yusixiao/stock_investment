@@ -8,7 +8,7 @@
 设计动机:
 cpa Agent 个股深度分析的精算 GG 不可机械化(每步都需 LLM 对会计政策、
 行业特征、附注披露做定性判断)。本策略退而求其次,用机械化可计算的
-**粗算 R + Layer 2 否决项**做股票池筛选,用于:
+**粗算 R + Layer 2 否决项 + L1.3 信誉评级**做股票池筛选,用于:
 1. 给 cpa Agent 提供候选股票池(reduce 全 A 股 5400+ → 几十只)
 2. 作为基线对比 cpa LLM 真实结果的差异
 
@@ -19,6 +19,7 @@ cpa Agent 个股深度分析的精算 GG 不可机械化(每步都需 LLM 对会
   4) 商誉 / 归母权益 <= max_goodwill_ratio(默认 30%)
   5) 净现金 = 货币资金 − 总负债 >= 0
   6) 近 2 年年报 FCF 不全为负
+  7) L1.3 信誉评级记录(不筛除,仅记录因子供 L3 仓位矩阵使用)
 
 买入:复用 MarketCapWeightedBatchBuyer(市值加权 N 周分批),与价值三因子
 策略保持公平对比口径。
@@ -37,6 +38,7 @@ class ConservativeRoughStrategy(Strategy):
     description = (
         "基于 cpa 框架因子2 粗算穿透回报率 R(机械化计算)+ 4 项 Layer 2 否决,"
         "排除金融股 / 高商誉 / 净现金转负 / FCF 持续为负;"
+        "L1.3 信誉评级记录(high/mid/low);"
         "命中后按市值加权分批买入。"
         "注意:不等于 cpa Agent 精算 KK,见模块文档。"
     )
@@ -86,6 +88,9 @@ class ConservativeRoughStrategy(Strategy):
         )
         pool = conservative.reject_negative_net_cash(ctx, pool)
         pool = conservative.reject_negative_fcf_2y(ctx, pool)
+
+        # 7) L1.3 信誉评级(仅记录因子,不筛除;供 L3 仓位矩阵使用)
+        conservative.record_credibility_factors(ctx, pool)
 
         for sym in pool:
             ctx.log_pass(sym, "strategy.screen.final")

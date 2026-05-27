@@ -1,4 +1,4 @@
-"""现金流保守策略 — 粗算回报率 R + Layer 2 否决项 utils。
+"""现金流保守策略 — 粗算回报率 R + Layer 2 否决项 + L1.3 信誉评级 utils。
 
 ⚠️ 重要边界(2026-05-27):
     本模块**只**实现 cpa Phase 3.1 因子2 "粗算 R"(R = NP × M × (1−Q) / 市值),
@@ -17,6 +17,12 @@ Layer 2 否决项弥补"粗算 R"的盲点:
     - 商誉 / 归母权益 > 30% → 减值高风险
     - 净现金转负 → 流动性恶化
     - 近 2 年年报 FCF 都 ≤ 0 → 现金流不健康
+
+L1.3 信誉评级(2026-05-27):
+    三维度聚合 → high / mid / low:
+    - 维度1: 5 年营收 CV(变异系数 = 标准差/均值,越低越稳)
+    - 维度2: 利润调整幅度(非经常损益占比 = |归母 − 扣非| / |归母|)
+    - 维度3: λ warning(高杠杆/商誉/净现金/FCF 四项检查命中数)
 """
 
 from __future__ import annotations
@@ -321,3 +327,168 @@ def reject_negative_fcf_2y(ctx, symbols: Iterable[str]) -> list[str]:
         result.append(sym)
     ctx.log_flow(stage, input=len(in_list), passed=len(result))
     return result
+
+
+# ---------- L1.3 信誉评级 ----------
+
+
+def _compute_revenue_cv_5y(ctx, symbol: str) -> float | None:
+    """5 年营收变异系数(CV = 标准差 / |均值|)。
+
+    数据源:income 年报 TOTAL_OPERATE_INCOME。
+    返回 None:数据不足(<3 年)或均值 ≈ 0。
+    """
+    history = ctx.get_income_annual_history(symbol, 5)
+    if not history or len(history) < 3:
+        return None
+    revenues: list[float] = []
+    for row in history:
+        v = _safe_float(row.get("TOTAL_OPERATE_INCOME"))
+        if v is not None:
+            revenues.append(v)
+    if len(revenues) < 3:
+        return None
+    mean_val = sum(revenues) / len(revenues)
+    if abs(mean_val) < 1e-8:
+        return None
+    variance = sum((v - mean_val) ** 2 for v in revenues) / len(revenues)
+    return variance**0.5 / abs(mean_val)
+
+
+def _compute_profit_adjustment_5y(ctx, symbol: str) -> float | None:
+    """5 年利润调整幅度(非经常损益占比均值)。
+
+    口径:每年 |PARENT_NETPROFIT − DEDUCT_PARENT_NETPROFIT| / |PARENT_NETPROFIT|
+    取近 5 年均值。越低说明利润质量越高(扣非与归母接近)。
+    返回 None:数据不足或归母净利润均值 ≈ 0。
+    """
+    history = ctx.get_income_annual_history(symbol, 5)
+    if not history or len(history) < 3:
+        return None
+    ratios: list[float] = []
+    for row in history:
+        parent = _safe_float(row.get("PARENT_NETPROFIT"))
+        deduct = _safe_float(row.get("DEDUCT_PARENT_NETPROFIT"))
+        if parent is None or deduct is None:
+            continue
+        if abs(parent) < 1e-8:
+            continue
+        ratios.append(abs(parent - deduct) / abs(parent))
+    if len(ratios) < 2:
+        return None
+    return sum(ratios) / len(ratios)
+
+
+def _count_lambda_warnings(ctx, symbol: str) -> int:
+    """λ warning 计数(对齐 §13 自检逻辑)。
+
+    四项检查:
+    1. 资产负债率 > 80%(高杠杆)
+    2. 商誉 > 归母权益 30%(减值风险)
+    3. 净现金 < 0(流动性恶化)
+    4. 近 2 年 FCF 持续为负
+    """
+    count = 0
+    # 1. 高杠杆
+    bal = ctx.get_balance(symbol)
+    if bal is not None:
+        debt_ratio = _safe_float(bal.get("DEBT_ASSET_RATIO"))
+        if debt_ratio is not None and debt_ratio > 80:
+            count += 1
+    # 2. 商誉占比
+    if bal is not None:
+        goodwill = _safe_float(bal.get("GOODWILL"))
+        equity = _safe_float(bal.get("TOTAL_PARENT_EQUITY"))
+        if goodwill is not None and equity is not None and equity > 0:
+            if goodwill / equity > 0.30:
+                count += 1
+    # 3. 净现金转负
+    if bal is not None:
+        cash = _safe_float(bal.get("MONETARYFUNDS"))
+        liab = _safe_float(bal.get("TOTAL_LIABILITIES"))
+        if cash is not None and liab is not None and cash - liab < 0:
+            count += 1
+    # 4. FCF 持续为负
+    history = ctx.get_cashflow_annual_history(symbol, 2)
+    if history and len(history) >= 2:
+        fcfs: list[float] = []
+        for row in history:
+            op = _safe_float(row.get("NETCASH_OPERATE"))
+            capex = _safe_float(row.get("CONSTRUCT_LONG_ASSET"))
+            if op is not None:
+                cap = capex if capex is not None else 0.0
+                fcfs.append(op - cap)
+        if len(fcfs) >= 2 and all(f <= 0 for f in fcfs):
+            count += 1
+    return count
+
+
+def compute_credibility_rating(ctx, symbol: str) -> str:
+    """L1.3 信誉评级 → "high" / "mid" / "low"。
+
+    三维度评分规则:
+    - 维度1(营收 CV):< 0.15 → A, 0.15~0.30 → B, > 0.30 → C
+    - 维度2(利润调整幅度):< 0.10 → A, 0.10~0.25 → B, > 0.25 → C
+    - 维度3(λ warning):0 → A, 1 → B, ≥ 2 → C
+
+    聚合:3 个 A → high, 含 C → low, 其余 → mid。
+    数据缺失维度计为 B(中性)。
+    """
+    scores: list[str] = []
+
+    cv = _compute_revenue_cv_5y(ctx, symbol)
+    if cv is None:
+        scores.append("B")
+    elif cv < 0.15:
+        scores.append("A")
+    elif cv <= 0.30:
+        scores.append("B")
+    else:
+        scores.append("C")
+
+    adj = _compute_profit_adjustment_5y(ctx, symbol)
+    if adj is None:
+        scores.append("B")
+    elif adj < 0.10:
+        scores.append("A")
+    elif adj <= 0.25:
+        scores.append("B")
+    else:
+        scores.append("C")
+
+    warnings = _count_lambda_warnings(ctx, symbol)
+    if warnings == 0:
+        scores.append("A")
+    elif warnings == 1:
+        scores.append("B")
+    else:
+        scores.append("C")
+
+    if all(s == "A" for s in scores):
+        rating = "high"
+    elif "C" in scores:
+        rating = "low"
+    else:
+        rating = "mid"
+
+    ctx.record_factor(symbol, "credibility_rating", rating)
+    ctx.record_factor(symbol, "revenue_cv", round(cv, 4) if cv is not None else None)
+    ctx.record_factor(
+        symbol, "profit_adjustment", round(adj, 4) if adj is not None else None
+    )
+    ctx.record_factor(symbol, "lambda_warnings", warnings)
+    return rating
+
+
+def record_credibility_factors(ctx, symbols: Iterable[str]) -> None:
+    """批量记录 L1.3 信誉评级因子(不筛除,只记录)。
+
+    供策略 screen() 调用,因子值在雷达扫描结果中展示。
+    stage = "conservative.credibility"
+    """
+    stage = "conservative.credibility"
+    in_list = list(symbols)
+    for sym in in_list:
+        rating = compute_credibility_rating(ctx, sym)
+        ctx.log_pass(sym, stage, rating=rating)
+    ctx.log_flow(stage, input=len(in_list))

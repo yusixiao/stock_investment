@@ -28,10 +28,12 @@ class MockContext:
         self._valuation = valuation or {}
         self._balance: dict[str, dict] = {}
         self._cashflow: dict[str, dict] = {}
+        self._income: dict[str, dict] = {}
         # history mapping:{symbol: [年报1(最新), 年报2, ...]} 倒序,与真实 ctx 一致
         self._financial_history: dict[str, list[dict]] = {}
         self._balance_history: dict[str, list[dict]] = {}
         self._cashflow_history: dict[str, list[dict]] = {}
+        self._income_history: dict[str, list[dict]] = {}
         self._history = history or {}
         self._price = price or {}
         self.target_symbols = list(target_symbols or [])
@@ -108,6 +110,12 @@ class MockContext:
 
     def get_cashflow_annual_history(self, symbol: str, n: int):
         rows = self._cashflow_history.get(symbol)
+        if rows is None:
+            return None
+        return list(rows[:n])
+
+    def get_income_annual_history(self, symbol: str, n: int):
+        rows = self._income_history.get(symbol)
         if rows is None:
             return None
         return list(rows[:n])
@@ -216,6 +224,16 @@ class MockContext:
     def set_cashflow_history(self, mapping: dict[str, list[dict]]) -> None:
         for sym, rows in mapping.items():
             self._cashflow_history[sym] = list(rows)
+
+    def set_income(self, mapping: dict[str, dict]) -> None:
+        """{symbol: {col: value}} → income 字典(任意 EastMoney 字段)。"""
+        for sym, fields in mapping.items():
+            entry = self._income.setdefault(sym, {})
+            entry.update(fields)
+
+    def set_income_history(self, mapping: dict[str, list[dict]]) -> None:
+        for sym, rows in mapping.items():
+            self._income_history[sym] = list(rows)
 
     def set_ma_tangle_breakout_hits(self, hits: set[str]) -> None:
         """记录 detect_ma_tangle_breakout 应命中的 symbols。

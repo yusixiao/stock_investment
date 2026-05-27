@@ -130,6 +130,11 @@ class Context:
             symbol, date=self.current_date, n=n
         )
 
+    def get_income_annual_history(self, symbol: str, n: int):
+        return self._market_data.get_income_annual_history(
+            symbol, date=self.current_date, n=n
+        )
+
     def indicator(self, name: str, symbol: str, **kwargs):
         return self._market_data.indicator(name, symbol, idx=self.current_idx, **kwargs)
 
@@ -311,6 +316,11 @@ class ScreenContext:
 
     def get_cashflow_annual_history(self, symbol: str, n: int):
         return self._market_data.get_cashflow_annual_history(
+            symbol, date=self.current_date, n=n
+        )
+
+    def get_income_annual_history(self, symbol: str, n: int):
+        return self._market_data.get_income_annual_history(
             symbol, date=self.current_date, n=n
         )
 

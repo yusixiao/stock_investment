@@ -88,6 +88,7 @@ class MarketData:
         financial: dict[str, pd.DataFrame] | None = None,
         balance: dict[str, pd.DataFrame] | None = None,
         cashflow: dict[str, pd.DataFrame] | None = None,
+        income: dict[str, pd.DataFrame] | None = None,
         weekly_data: dict[str, pd.DataFrame] | None = None,
         monthly_data: dict[str, pd.DataFrame] | None = None,
     ):
@@ -100,6 +101,7 @@ class MarketData:
         self._financial = financial or {}
         self._balance = balance or {}
         self._cashflow = cashflow or {}
+        self._income = income or {}
 
         # valuation/financial 的预编译表(走 searchsorted + 数组下标快速查询)
         self._valuation_cache: dict[str, _StaticTable] = {
@@ -157,6 +159,24 @@ class MarketData:
             if sub.empty:
                 continue
             self._cashflow_annual_cache[sym] = _build_static_table(
+                sub, date_col="REPORT_DATE", ffill=False
+            )
+
+        # L1.3 信誉评级(2026-05-27):income 用于营收 CV + 利润调整幅度
+        self._income_cache: dict[str, _StaticTable] = {
+            sym: _build_static_table(df, date_col="REPORT_DATE", ffill=False)
+            for sym, df in self._income.items()
+            if df is not None and not df.empty and "REPORT_DATE" in df.columns
+        }
+        self._income_annual_cache: dict[str, _StaticTable] = {}
+        for sym, df in self._income.items():
+            if df is None or df.empty or "REPORT_DATE" not in df.columns:
+                continue
+            mask = df["REPORT_DATE"].astype(str).str.endswith("-12-31")
+            sub = df[mask]
+            if sub.empty:
+                continue
+            self._income_annual_cache[sym] = _build_static_table(
                 sub, date_col="REPORT_DATE", ffill=False
             )
 
@@ -488,6 +508,13 @@ class MarketData:
     ) -> list[dict] | None:
         return self._lookup_financial_history(
             self._cashflow_annual_cache, symbol, date, n
+        )
+
+    def get_income_annual_history(
+        self, symbol: str, date: str, n: int
+    ) -> list[dict] | None:
+        return self._lookup_financial_history(
+            self._income_annual_cache, symbol, date, n
         )
 
     # ---------- 指标查表(get_indicator)----------
