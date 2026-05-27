@@ -19,6 +19,11 @@ Layer 2 否决项弥补"粗算 R"的盲点:
     - 近 2 年年报 FCF 都 ≤ 0 → 现金流不健康
     - ROE 三年下降 > 30% → 盈利能力恶化(L2 第 5 项,2026-05-27)
 
+L2.5 trap_rating 软评分(2026-05-27):
+    把 L2.2-L2.5 四项(商誉/净现金/FCF/ROE 下降)从硬否决聚合为 low/mid/high
+    金融股(L2.1)仍硬否决,不参与软评分(cpa 框架方法论盲点)
+    触发 0 → low,1 → mid,≥2 → high;数据缺失 = 未触发(保守语义)
+
 L1.3 信誉评级(2026-05-27):
     三维度聚合 → high / mid / low:
     - 维度1: 5 年营收 CV(变异系数 = 标准差/均值,越低越稳)
@@ -387,6 +392,136 @@ def reject_roe_decline_3y(
         result.append(sym)
     ctx.log_flow(stage, input=len(in_list), passed=len(result))
     return result
+
+
+# ---------- L2.5 trap_rating 软评分 ----------
+
+
+def _is_goodwill_triggered(ctx, symbol: str) -> bool:
+    """商誉占比 > 30% 或归母权益 ≤ 0 → True。数据完全缺失 → False。"""
+    bal = ctx.get_balance(symbol)
+    if bal is None:
+        return False
+    goodwill = _safe_float(bal.get("GOODWILL"))
+    equity = _safe_float(bal.get("TOTAL_PARENT_EQUITY"))
+    if goodwill is None and equity is None:
+        return False
+    if equity is not None and equity <= 0:
+        return True
+    if equity is None or equity == 0:
+        return False
+    gw = goodwill if goodwill is not None else 0.0
+    return (gw / equity) > 0.30
+
+
+def _is_net_cash_triggered(ctx, symbol: str) -> bool:
+    """净现金 < 0 → True。任一字段缺失 → False。"""
+    bal = ctx.get_balance(symbol)
+    if bal is None:
+        return False
+    cash = _safe_float(bal.get("MONETARYFUNDS"))
+    liab = _safe_float(bal.get("TOTAL_LIABILITIES"))
+    if cash is None or liab is None:
+        return False
+    return (cash - liab) < 0
+
+
+def _is_fcf_negative_2y_triggered(ctx, symbol: str) -> bool:
+    """近 2 年 FCF 都 ≤ 0 → True。数据不足 2 年 → False。"""
+    history = ctx.get_cashflow_annual_history(symbol, 2)
+    if not history or len(history) < 2:
+        return False
+    fcfs: list[float] = []
+    for row in history:
+        op = _safe_float(row.get("NETCASH_OPERATE"))
+        capex = _safe_float(row.get("CONSTRUCT_LONG_ASSET"))
+        if op is None:
+            continue
+        cap = capex if capex is not None else 0.0
+        fcfs.append(op - cap)
+    if len(fcfs) < 2:
+        return False
+    return all(f <= 0 for f in fcfs)
+
+
+def _is_roe_decline_3y_triggered(ctx, symbol: str, max_decline: float = 0.30) -> bool:
+    """近 3 年 ROEJQ 相对降幅 > max_decline → True。数据不足/起始 ROE ≤ 0 → False。"""
+    history = ctx.get_financial_annual_history(symbol, 3)
+    if not history or len(history) < 3:
+        return False
+    roes: list[float] = []
+    for row in history:
+        v = _safe_float(row.get("ROEJQ"))
+        if v is not None:
+            roes.append(v)
+    if len(roes) < 3:
+        return False
+    latest, oldest = roes[0], roes[-1]
+    if oldest <= 0:
+        return False
+    return ((oldest - latest) / abs(oldest)) > max_decline
+
+
+def compute_trap_rating(
+    ctx, symbol: str, *, max_roe_decline: float = 0.30
+) -> tuple[str, list[str]]:
+    """L2.5 trap_rating 软评分聚合 → ("low"/"mid"/"high", triggered_keys)。
+
+    检查 4 项(金融股不参与,L2.1 仍走硬否决):
+      - "goodwill"     — 商誉 / 归母权益 > 30%
+      - "net_cash"     — 货币资金 < 总负债
+      - "fcf"          — 近 2 年年报 FCF 都 ≤ 0
+      - "roe_decline"  — 近 3 年 ROE 相对降幅 > max_roe_decline
+
+    聚合规则:
+      触发 0 → low(健康)
+      触发 1 → mid(警惕)
+      触发 ≥2 → high(高风险)
+
+    数据缺失维度计为"未触发"(对齐保守放行语义)。
+    """
+    triggered: list[str] = []
+    if _is_goodwill_triggered(ctx, symbol):
+        triggered.append("goodwill")
+    if _is_net_cash_triggered(ctx, symbol):
+        triggered.append("net_cash")
+    if _is_fcf_negative_2y_triggered(ctx, symbol):
+        triggered.append("fcf")
+    if _is_roe_decline_3y_triggered(ctx, symbol, max_decline=max_roe_decline):
+        triggered.append("roe_decline")
+
+    n = len(triggered)
+    if n == 0:
+        rating = "low"
+    elif n == 1:
+        rating = "mid"
+    else:
+        rating = "high"
+    return rating, triggered
+
+
+def record_trap_rating(
+    ctx, symbols: Iterable[str], *, max_roe_decline: float = 0.30
+) -> None:
+    """批量记录 L2.5 trap_rating(不筛除,只记录因子)。
+
+    供 L3 仓位矩阵作为输入维度;策略层可通过单独开关决定是否启用软评分模式
+    替代硬否决。
+    stage = "conservative.trap_rating"
+    """
+    stage = "conservative.trap_rating"
+    in_list = list(symbols)
+    for sym in in_list:
+        rating, triggered = compute_trap_rating(
+            ctx, sym, max_roe_decline=max_roe_decline
+        )
+        ctx.record_factor(sym, "trap_rating", rating)
+        ctx.record_factor(sym, "trap_triggered_count", len(triggered))
+        ctx.record_factor(
+            sym, "trap_triggered", ",".join(triggered) if triggered else ""
+        )
+        ctx.log_pass(sym, stage, rating=rating, triggered=triggered)
+    ctx.log_flow(stage, input=len(in_list))
 
 
 # ---------- L1.3 信誉评级 ----------

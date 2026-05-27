@@ -13,14 +13,14 @@ cpa Agent 个股深度分析的精算 GG 不可机械化(每步都需 LLM 对会
 2. 作为基线对比 cpa LLM 真实结果的差异
 
 选股管线(顺序优化:廉价数据先,昂贵 history 后):
-  1) 金融股排除(直接整类排除,cpa 框架对金融业有方法论盲点)
+  1) 金融股排除(直接整类排除,cpa 框架对金融业有方法论盲点;**始终硬否决**)
   2) 连续分红年限 >= min_dividend_years(稳定派息文化)
   3) 粗算 R >= r_threshold_pct(默认 4.7+0.5=5.2pct)
-  4) 商誉 / 归母权益 <= max_goodwill_ratio(默认 30%)
-  5) 净现金 = 货币资金 − 总负债 >= 0
-  6) 近 2 年年报 FCF 不全为负
-  7) ROE 三年下降 <= max_roe_decline(默认 30%)
-  8) L1.3 信誉评级记录(不筛除,仅记录因子供 L3 仓位矩阵使用)
+  4-7) Layer 2 商誉/净现金/FCF/ROE 下降 — **两种模式**:
+      use_trap_rating_soft=False(默认,硬否决):4 项任一命中即出局
+      use_trap_rating_soft=True(软评分):聚合为 trap_rating,只剔除 high
+  8) L2.5 trap_rating 记录(不筛除,记录因子供 L3 仓位矩阵)
+  9) L1.3 信誉评级记录(不筛除,记录因子供 L3 仓位矩阵)
 
 买入:复用 MarketCapWeightedBatchBuyer(市值加权 N 周分批),与价值三因子
 策略保持公平对比口径。
@@ -65,6 +65,11 @@ class ConservativeRoughStrategy(Strategy):
             "type": "float",
             "label": "ROE 三年相对降幅上限",
         },
+        "use_trap_rating_soft": {
+            "default": False,
+            "type": "bool",
+            "label": "L2.5 软评分模式(剔除 high 而非逐项硬否决)",
+        },
         # ===== 仓位 / 买入参数 =====
         "buy_weeks": {"default": 4, "type": "int", "label": "分批周数"},
         "max_holdings": {"default": 15, "type": "int", "label": "最大持仓只数"},
@@ -88,17 +93,50 @@ class ConservativeRoughStrategy(Strategy):
         # 3) 粗算 R(需要 history + price,稍贵)
         pool = conservative.filter_by_r(ctx, pool, threshold_pct=self.p.r_threshold_pct)
 
-        # 4-6) Layer 2 否决项
-        pool = conservative.reject_high_goodwill(
-            ctx, pool, max_ratio=self.p.max_goodwill_ratio
-        )
-        pool = conservative.reject_negative_net_cash(ctx, pool)
-        pool = conservative.reject_negative_fcf_2y(ctx, pool)
-        pool = conservative.reject_roe_decline_3y(
-            ctx, pool, max_decline=self.p.max_roe_decline
+        # 4-7) Layer 2 否决 — 硬否决 vs 软评分双模式
+        if self.p.use_trap_rating_soft:
+            # 软评分:聚合 trap_rating,只剔除 high(2+ 项触发)
+            soft_pool: list[str] = []
+            for sym in pool:
+                rating, triggered = conservative.compute_trap_rating(
+                    ctx, sym, max_roe_decline=self.p.max_roe_decline
+                )
+                if rating == "high":
+                    ctx.log_reject(
+                        sym,
+                        "conservative.trap_soft",
+                        "trap_rating_high",
+                        triggered=triggered,
+                    )
+                else:
+                    ctx.log_pass(
+                        sym,
+                        "conservative.trap_soft",
+                        rating=rating,
+                        triggered=triggered,
+                    )
+                    soft_pool.append(sym)
+            ctx.log_flow(
+                "conservative.trap_soft", input=len(pool), passed=len(soft_pool)
+            )
+            pool = soft_pool
+        else:
+            # 硬否决:4 项任一命中即出局
+            pool = conservative.reject_high_goodwill(
+                ctx, pool, max_ratio=self.p.max_goodwill_ratio
+            )
+            pool = conservative.reject_negative_net_cash(ctx, pool)
+            pool = conservative.reject_negative_fcf_2y(ctx, pool)
+            pool = conservative.reject_roe_decline_3y(
+                ctx, pool, max_decline=self.p.max_roe_decline
+            )
+
+        # 8) L2.5 trap_rating 记录(供 L3 仓位矩阵)
+        conservative.record_trap_rating(
+            ctx, pool, max_roe_decline=self.p.max_roe_decline
         )
 
-        # 8) L1.3 信誉评级(仅记录因子,不筛除;供 L3 仓位矩阵使用)
+        # 9) L1.3 信誉评级(仅记录因子,不筛除;供 L3 仓位矩阵使用)
         conservative.record_credibility_factors(ctx, pool)
 
         for sym in pool:
