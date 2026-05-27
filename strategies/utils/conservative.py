@@ -17,6 +17,7 @@ Layer 2 否决项弥补"粗算 R"的盲点:
     - 商誉 / 归母权益 > 30% → 减值高风险
     - 净现金转负 → 流动性恶化
     - 近 2 年年报 FCF 都 ≤ 0 → 现金流不健康
+    - ROE 三年下降 > 30% → 盈利能力恶化(L2 第 5 项,2026-05-27)
 
 L1.3 信誉评级(2026-05-27):
     三维度聚合 → high / mid / low:
@@ -324,6 +325,65 @@ def reject_negative_fcf_2y(ctx, symbols: Iterable[str]) -> list[str]:
             ctx.log_reject(sym, stage, "fcf_persistent_negative", fcfs=fcfs)
             continue
         ctx.log_pass(sym, stage, fcfs=fcfs)
+        result.append(sym)
+    ctx.log_flow(stage, input=len(in_list), passed=len(result))
+    return result
+
+
+def reject_roe_decline_3y(
+    ctx, symbols: Iterable[str], *, max_decline: float = 0.30
+) -> list[str]:
+    """近 3 年 ROEJQ 相对降幅 > max_decline → 否决(L2 第 5 项)。
+
+    口径:
+      取近 3 年年报 ROEJQ(百分比单位,如 15.0 = 15%)
+      相对降幅 = (ROE_oldest − ROE_latest) / |ROE_oldest|
+      > max_decline(默认 30%)→ 否决,否则记录因子并通过
+
+    保守放行情形:
+      - financial history 不可达 / 不足 3 个有效样本
+      - 起始 ROE ≤ 0(亏损或扭亏,降幅口径失真)
+    stage = "conservative.roe_decline"
+    """
+    stage = "conservative.roe_decline"
+    result: list[str] = []
+    in_list = list(symbols)
+    for sym in in_list:
+        history = ctx.get_financial_annual_history(sym, 3)
+        if not history or len(history) < 3:
+            ctx.log_pass(sym, stage, reason="no_data")
+            result.append(sym)
+            continue
+        # history 按日期降序,index 0 = 最新
+        roes: list[float] = []
+        for row in history:
+            v = _safe_float(row.get("ROEJQ"))
+            if v is not None:
+                roes.append(v)
+        if len(roes) < 3:
+            ctx.log_pass(sym, stage, reason="no_data")
+            result.append(sym)
+            continue
+        latest = roes[0]
+        oldest = roes[-1]
+        if oldest <= 0:
+            ctx.log_pass(sym, stage, reason="non_positive_oldest", oldest=oldest)
+            result.append(sym)
+            continue
+        decline = (oldest - latest) / abs(oldest)
+        if decline > max_decline:
+            ctx.log_reject(
+                sym,
+                stage,
+                "roe_decline_exceeds",
+                decline=decline,
+                threshold=max_decline,
+                latest=latest,
+                oldest=oldest,
+            )
+            continue
+        ctx.record_factor(sym, "roe_decline_pct", round(decline, 4))
+        ctx.log_pass(sym, stage, decline=decline, threshold=max_decline)
         result.append(sym)
     ctx.log_flow(stage, input=len(in_list), passed=len(result))
     return result

@@ -1,6 +1,6 @@
 # 现金流保守策略 — 三层筛选模型(Roadmap)
 
-> **状态**:L1.R + L1.3 + L2 硬否决已落地(`ConservativeRoughStrategy`),L2.5 / L3 仓位矩阵待补。
+> **状态**:L1.R + L1.3 + L2 完整 5 项硬否决已落地(`ConservativeRoughStrategy`),L2.5 / L3 仓位矩阵待补。
 > **定位**:把 cpa Agent 的 11 步精算定性框架尽可能机械化,作为可全市场扫描的回测策略;**不等于** cpa LLM 精算 KK,只是其低成本近似。
 > **创建**:2026-05-27 · **维护**:有架构调整时同步更新
 
@@ -49,7 +49,7 @@ cpa Agent 的 phase3 流程(`phase3_quantitative.md` 11 步精算 + `phase3_valu
 
 ### Layer 2 — 价值陷阱识别
 
-#### L2.1-L2.4 四项 disqualifier(已实现,**当前为硬否决**)
+#### L2.1-L2.5 五项 disqualifier(已实现,**当前为硬否决**)
 
 | 检查项 | 公式 | 否决条件 | 缺失策略 |
 |---|---|---|---|
@@ -57,8 +57,7 @@ cpa Agent 的 phase3 流程(`phase3_quantitative.md` 11 步精算 + `phase3_valu
 | 商誉占比 | `GOODWILL / TOTAL_PARENT_EQUITY` | > 30% | 缺失保守放行;权益≤0 直接否决 |
 | 净现金转负 | `MONETARYFUNDS − TOTAL_LIABILITIES` | < 0 | 缺失保守放行 |
 | FCF 持续负 | 年报 `NETCASH_OPERATE − CONSTRUCT_LONG_ASSET` | 近 2 年都 ≤ 0 | 单年异常不算 |
-
-> ⚠️ 原 Roadmap 还有第 5 项 **ROE 三年下降 > 30%**,本会话粗算版未实现,可在 L2.5 补全时一起加。
+| ROE 三年下降 | `(ROE_oldest − ROE_latest) / \|ROE_oldest\|`(`ROEJQ`,3 年年报) | > 30% | 缺失/不足 3 年/起始 ROE ≤ 0 → 放行 |
 
 #### L2.5 trap_rating 聚合(未实现)
 把 4(或 5)项检查从「硬否决」改为「软评分」:
@@ -114,8 +113,8 @@ f(KK, credibility, trap_rating) → tier ∈ {full, half, observe, skip}
 |---|---|---|---|
 | L1 主因子 | KK(精算 + 周期修正) | **R**(粗算) | 退化原因见下 |
 | L1.3 | 三维信誉评级 | ✅ **已实现** | high/mid/low,记录 factor |
-| L2.1-L2.4 | 4 项 + 软评分 | 4 项**硬否决** | 命中即出局 |
-| L2.5 | trap_rating 聚合 | **未实现** | 阻塞 L3 |
+| L2.1-L2.5 | 5 项 + 软评分 | 5 项**硬否决** | 命中即出局 |
+| L2.5 trap_rating | 聚合 0/1/≥2 → low/mid/high | **未实现** | 阻塞 L3 |
 | L3 | 三维查表 + 4 档仓位 | **未实现**(等权满仓) | 阻塞最终选股质量 |
 
 ---
@@ -138,9 +137,9 @@ f(KK, credibility, trap_rating) → tier ∈ {full, half, observe, skip}
 
 | 优先级 | 任务 | 说明 | 依赖 |
 |---|---|---|---|
-| P0 | L2 加 ROE 三年下降 disqualifier | 补齐 5 项检查 | 无 |
+| ✅ | L2 加 ROE 三年下降 disqualifier | 补齐 5 项检查 | 2026-05-27 完成 |
 | ✅ | L1.3 信誉评级实现 | 三维度计算 + 聚合 high/mid/low | 2026-05-27 完成 |
-| P1 | L2.5 trap_rating 聚合 | 把硬否决改为软评分 | L2 完整 5 项 |
+| P1 | L2.5 trap_rating 聚合 | 把硬否决改为软评分 | L2 完整 5 项已就绪 |
 | P2 | L3 三维查表实现 | 工具函数 `compute_position_tier(R, cred, trap)` | L1.3 + L2.5 |
 | P2 | Buyer 接收 tier 做权重分配 | 改造 `MarketCapWeightedBatchBuyer` | L3 |
 | P3 | KK 精算路径(可选) | 如果有办法用 LLM batch 离线打标后入库 | LLM 离线管道 |
@@ -152,9 +151,10 @@ f(KK, credibility, trap_rating) → tier ∈ {full, half, observe, skip}
 ## 相关文件
 
 ### 已实现(粗算版)
-- `strategies/utils/conservative.py` — 粗算 R + 4 项 disqualifier + L1.3 信誉评级
+- `strategies/utils/conservative.py` — 粗算 R + 5 项 disqualifier + L1.3 信誉评级
 - `strategies/examples/conservative_rough_strategy.py` — `ConservativeRoughStrategy` 类(monthly,frequency_overridable)
-- `backend/tests/test_utils_conservative.py` — 18 测试(R + L2)
+- `backend/tests/test_utils_conservative.py` — 18 测试(R + L2.1-L2.4)
+- `backend/tests/test_utils_conservative_roe_decline.py` — 13 测试(L2.5 ROE 下降)
 - `backend/tests/test_utils_conservative_credibility.py` — 23 测试(L1.3)
 - `backend/tests/test_conservative_rough_strategy.py` — 7 测试(策略集成)
 - `backend/services/backtest/{data_cache,market_data,context,engine}.py` — 扩 balance/cashflow/income API

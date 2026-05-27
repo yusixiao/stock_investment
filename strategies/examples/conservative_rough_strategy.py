@@ -19,7 +19,8 @@ cpa Agent 个股深度分析的精算 GG 不可机械化(每步都需 LLM 对会
   4) 商誉 / 归母权益 <= max_goodwill_ratio(默认 30%)
   5) 净现金 = 货币资金 − 总负债 >= 0
   6) 近 2 年年报 FCF 不全为负
-  7) L1.3 信誉评级记录(不筛除,仅记录因子供 L3 仓位矩阵使用)
+  7) ROE 三年下降 <= max_roe_decline(默认 30%)
+  8) L1.3 信誉评级记录(不筛除,仅记录因子供 L3 仓位矩阵使用)
 
 买入:复用 MarketCapWeightedBatchBuyer(市值加权 N 周分批),与价值三因子
 策略保持公平对比口径。
@@ -36,8 +37,8 @@ from strategies.utils.composite.market_cap_weighted_batch_buyer import (
 class ConservativeRoughStrategy(Strategy):
     name = "现金流保守策略(粗算)"
     description = (
-        "基于 cpa 框架因子2 粗算穿透回报率 R(机械化计算)+ 4 项 Layer 2 否决,"
-        "排除金融股 / 高商誉 / 净现金转负 / FCF 持续为负;"
+        "基于 cpa 框架因子2 粗算穿透回报率 R(机械化计算)+ 5 项 Layer 2 否决,"
+        "排除金融股 / 高商誉 / 净现金转负 / FCF 持续为负 / ROE 三年下降>30%;"
         "L1.3 信誉评级记录(high/mid/low);"
         "命中后按市值加权分批买入。"
         "注意:不等于 cpa Agent 精算 KK,见模块文档。"
@@ -58,6 +59,11 @@ class ConservativeRoughStrategy(Strategy):
             "default": 0.30,
             "type": "float",
             "label": "商誉/归母权益 上限",
+        },
+        "max_roe_decline": {
+            "default": 0.30,
+            "type": "float",
+            "label": "ROE 三年相对降幅上限",
         },
         # ===== 仓位 / 买入参数 =====
         "buy_weeks": {"default": 4, "type": "int", "label": "分批周数"},
@@ -88,8 +94,11 @@ class ConservativeRoughStrategy(Strategy):
         )
         pool = conservative.reject_negative_net_cash(ctx, pool)
         pool = conservative.reject_negative_fcf_2y(ctx, pool)
+        pool = conservative.reject_roe_decline_3y(
+            ctx, pool, max_decline=self.p.max_roe_decline
+        )
 
-        # 7) L1.3 信誉评级(仅记录因子,不筛除;供 L3 仓位矩阵使用)
+        # 8) L1.3 信誉评级(仅记录因子,不筛除;供 L3 仓位矩阵使用)
         conservative.record_credibility_factors(ctx, pool)
 
         for sym in pool:
