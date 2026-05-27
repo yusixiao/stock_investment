@@ -19,6 +19,14 @@ Layer 2 否决项弥补"粗算 R"的盲点:
     - 近 2 年年报 FCF 都 ≤ 0 → 现金流不健康
     - ROE 三年下降 > 30% → 盈利能力恶化(L2 第 5 项,2026-05-27)
 
+L3 仓位矩阵(2026-05-27):
+    三维查找表 f(R, credibility, trap_rating) → tier ∈ {full, half, observe, skip}
+    粗算版用 R 替代 cpa 精算 KK,门槛 5.2pct(II + 安全边际),full 加成 +2pct
+    优先级:cred==low → skip;R<门槛 → skip;trap==high → observe;
+            R≥门槛+2 + cred=high + trap=low → full;
+            R≥门槛+2 + cred=mid + trap=low → half;
+            R≥门槛 + cred=high + trap∈{low,mid} → half;其他 → observe
+
 L2.5 trap_rating 软评分(2026-05-27):
     把 L2.2-L2.5 四项(商誉/净现金/FCF/ROE 下降)从硬否决聚合为 low/mid/high
     金融股(L2.1)仍硬否决,不参与软评分(cpa 框架方法论盲点)
@@ -687,3 +695,110 @@ def record_credibility_factors(ctx, symbols: Iterable[str]) -> None:
         rating = compute_credibility_rating(ctx, sym)
         ctx.log_pass(sym, stage, rating=rating)
     ctx.log_flow(stage, input=len(in_list))
+
+
+# ---------- L3 仓位矩阵 ----------
+
+# 默认门槛与粗算 R 的 filter_by_r 一致
+_DEFAULT_TIER_THRESHOLD_PCT: float = THRESHOLD_A_PCT + DEFAULT_SAFETY_MARGIN_PCT  # 5.2
+_DEFAULT_TIER_FULL_BONUS_PCT: float = 2.0  # full 加成
+
+
+def compute_position_tier(
+    r_pct: float | None,
+    credibility: str | None,
+    trap_rating: str | None,
+    *,
+    threshold_pct: float = _DEFAULT_TIER_THRESHOLD_PCT,
+    full_bonus_pct: float = _DEFAULT_TIER_FULL_BONUS_PCT,
+) -> str:
+    """三维查表 → "full" / "half" / "observe" / "skip"。
+
+    优先级(自上而下,首个命中即返回):
+      1. credibility == "low"           → skip(信誉差,直接拒绝)
+      2. r_pct 缺失 / < threshold_pct   → skip(估值不达标)
+      3. trap_rating == "high"           → observe(陷阱风险高,只观察)
+      4. R ≥ threshold+full_bonus + cred=high + trap=low → full
+      5. R ≥ threshold+full_bonus + cred=mid  + trap=low → half
+      6. R ≥ threshold              + cred=high + trap∈{low,mid} → half
+      7. 其他                                → observe
+
+    未知 credibility / trap_rating 字符串退化为 mid(防御式)。
+    """
+    # 规范化输入
+    cred = (credibility or "").lower()
+    trap = (trap_rating or "").lower()
+    if cred not in ("high", "mid", "low"):
+        cred = "mid"
+    if trap not in ("high", "mid", "low"):
+        trap = "mid"
+
+    # 1. cred=low 直接 skip
+    if cred == "low":
+        return "skip"
+    # 2. R 缺失 / 不达标
+    if r_pct is None or r_pct < threshold_pct:
+        return "skip"
+    # 3. trap=high → observe
+    if trap == "high":
+        return "observe"
+
+    full_threshold = threshold_pct + full_bonus_pct
+    # 4. full
+    if r_pct >= full_threshold and cred == "high" and trap == "low":
+        return "full"
+    # 5. half(高 R + 中 cred + 低 trap)
+    if r_pct >= full_threshold and cred == "mid" and trap == "low":
+        return "half"
+    # 6. half(基线 R + 高 cred + 低/中 trap)
+    if r_pct >= threshold_pct and cred == "high" and trap in ("low", "mid"):
+        return "half"
+    # 7. fallback
+    return "observe"
+
+
+def record_position_tier(
+    ctx,
+    symbols: Iterable[str],
+    *,
+    threshold_pct: float = _DEFAULT_TIER_THRESHOLD_PCT,
+    full_bonus_pct: float = _DEFAULT_TIER_FULL_BONUS_PCT,
+    include_observe: bool = False,
+) -> list[str]:
+    """L3 批量打 tier + 默认筛除 skip / observe(可选保留 observe)。
+
+    依赖前置 factor:R_pct / credibility_rating / trap_rating
+    任一缺失 → tier = "skip"(无估值依据,默认拒绝)。
+    stage = "conservative.position_tier"
+    """
+    stage = "conservative.position_tier"
+    in_list = list(symbols)
+    pool: list[str] = []
+    counters = {"full": 0, "half": 0, "observe": 0, "skip": 0}
+    for sym in in_list:
+        factors = ctx.get_factors(sym) if hasattr(ctx, "get_factors") else {}
+        r_pct = factors.get("R_pct") if factors else None
+        cred = factors.get("credibility_rating") if factors else None
+        trap = factors.get("trap_rating") if factors else None
+        # 前置因子缺失 → 直接 skip(无估值依据)
+        if r_pct is None or cred is None or trap is None:
+            tier = "skip"
+        else:
+            tier = compute_position_tier(
+                _safe_float(r_pct),
+                cred,
+                trap,
+                threshold_pct=threshold_pct,
+                full_bonus_pct=full_bonus_pct,
+            )
+        ctx.record_factor(sym, "position_tier", tier)
+        counters[tier] = counters.get(tier, 0) + 1
+
+        keep = tier in ("full", "half") or (include_observe and tier == "observe")
+        if keep:
+            ctx.log_pass(sym, stage, tier=tier)
+            pool.append(sym)
+        else:
+            ctx.log_reject(sym, stage, "tier_excluded", tier=tier)
+    ctx.log_flow(stage, input=len(in_list), passed=len(pool), **counters)
+    return pool

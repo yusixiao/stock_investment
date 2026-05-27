@@ -21,6 +21,8 @@ cpa Agent 个股深度分析的精算 GG 不可机械化(每步都需 LLM 对会
       use_trap_rating_soft=True(软评分):聚合为 trap_rating,只剔除 high
   8) L2.5 trap_rating 记录(不筛除,记录因子供 L3 仓位矩阵)
   9) L1.3 信誉评级记录(不筛除,记录因子供 L3 仓位矩阵)
+ 10) L3 仓位矩阵(可选):use_position_tier=True 时按 tier 最终筛选
+     仅保留 full / half(可选 include_observe);skip / observe 出局
 
 买入:复用 MarketCapWeightedBatchBuyer(市值加权 N 周分批),与价值三因子
 策略保持公平对比口径。
@@ -69,6 +71,16 @@ class ConservativeRoughStrategy(Strategy):
             "default": False,
             "type": "bool",
             "label": "L2.5 软评分模式(剔除 high 而非逐项硬否决)",
+        },
+        "use_position_tier": {
+            "default": False,
+            "type": "bool",
+            "label": "L3 仓位矩阵(按 tier 最终筛选,只保留 full/half)",
+        },
+        "include_observe": {
+            "default": False,
+            "type": "bool",
+            "label": "L3 是否保留 observe tier(默认只 full+half)",
         },
         # ===== 仓位 / 买入参数 =====
         "buy_weeks": {"default": 4, "type": "int", "label": "分批周数"},
@@ -136,8 +148,14 @@ class ConservativeRoughStrategy(Strategy):
             ctx, pool, max_roe_decline=self.p.max_roe_decline
         )
 
-        # 9) L1.3 信誉评级(仅记录因子,不筛除;供 L3 仓位矩阵使用)
+        # 9) L1.3 信誉评级(供 L3 仓位矩阵)
         conservative.record_credibility_factors(ctx, pool)
+
+        # 10) L3 仓位矩阵(可选:按 tier 最终筛选)
+        if self.p.use_position_tier:
+            pool = conservative.record_position_tier(
+                ctx, pool, include_observe=self.p.include_observe
+            )
 
         for sym in pool:
             ctx.log_pass(sym, "strategy.screen.final")
