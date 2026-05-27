@@ -353,6 +353,59 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
         hold_changes = _cgbd_to_hold_changes(data.get("cgbd") or [])
         return executives, hold_changes
 
+    # ---------- §17.8 D&A 折旧摊销明细(GCASHFLOW) ----------
+    # 2026-05-26 spike 验证(600519/2024):RPT_F10_FINANCE_GCASHFLOW 提供
+    # FA_IR_DEPR + IA_AMORTIZE + LPE_AMORTIZE + USERIGHT_ASSET_AMORTIZE +
+    # DEFER_INCOME_AMORTIZE 五项,合并即 D&A,可推导真实 EBITDA。
+    # RPT_DMSK_FN_CASHFLOW(主缓存表)无此字段,故走单独接口实时拉。
+    DA_FIELDS = (
+        "FA_IR_DEPR",
+        "IA_AMORTIZE",
+        "LPE_AMORTIZE",
+        "USERIGHT_ASSET_AMORTIZE",
+        "DEFER_INCOME_AMORTIZE",
+    )
+
+    def fetch_da_breakdown(self, code: str, report_date: str) -> dict | None:
+        """取指定 report_date(YYYY-MM-DD)的 D&A 五项明细。
+
+        失败 / 非 A 股 / 该期无数据 → None。
+        返回 dict 仅含 DA_FIELDS 五个键(None 占位 → 0 由调用方决定)+ REPORT_DATE。
+        """
+        if "." not in code:
+            return None
+        suffix = code.split(".")[1].upper()
+        if suffix not in ("SH", "SZ", "BJ"):
+            return None
+        security_code = code.split(".")[0]
+        params = {
+            "reportName": "RPT_F10_FINANCE_GCASHFLOW",
+            "columns": "ALL",
+            "filter": (
+                f"(SECURITY_CODE=\"{security_code}\")(REPORT_DATE='{report_date}')"
+            ),
+            "pageNumber": 1,
+            "pageSize": 1,
+            "source": "HSF10",
+            "client": "PC",
+        }
+        try:
+            resp = requests.get(BASE_URL, params=params, timeout=DEFAULT_TIMEOUT)
+            data = resp.json()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"D&A GCASHFLOW 失败 {code} {report_date}: {exc}")
+            return None
+        if not data.get("success") or not data.get("result"):
+            return None
+        rows = data["result"].get("data") or []
+        if not rows:
+            return None
+        row = rows[0]
+        out = {"REPORT_DATE": row.get("REPORT_DATE", report_date)[:10]}
+        for k in self.DA_FIELDS:
+            out[k] = _to_float_or_none(row.get(k))
+        return out
+
     # ---------- §7 股权质押(中证登周频) ----------
     # 2026-05-26 spike 验证(600519):RPT_CSDC_LIST 返 weekly snapshots,
     # A 股全样本(2014 至今 ~586 条茅台)。字段:TRADE_DATE / PLEDGE_RATIO /

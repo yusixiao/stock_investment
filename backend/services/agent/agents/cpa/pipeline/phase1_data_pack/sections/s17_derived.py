@@ -6,12 +6,17 @@
     * 扣除现金 PE = (市值 − 货币资金) / 归母净利润(年报最新)
     * FCF Yield = (经营现金流净额 − 资本开支) / 市值
     * 净负债/权益 = (总负债 − 货币资金) / 股东权益
-    * EV/EBIT(代理 EBITDA)= (市值 + 总负债 − 现金) / 经营利润
+    * EV/EBITDA = (市值 + 总负债 − 现金) / (经营利润 + D&A) ← 真实值,
+      D&A 来自 EastMoneyAdapter.fetch_da_breakdown(GCASHFLOW 接口),A 股专用
+    * EV/EBIT = (市值 + 总负债 − 现金) / 经营利润 ← 参考值;D&A 不可得时为唯一估值
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _f(snap: dict, key: str, digits: int = 2) -> str:
@@ -133,7 +138,58 @@ def _latest_annual(rows: list) -> dict:
     return rows[0] or {}
 
 
-def _build_valuation_subsection(store, code: str) -> str:
+def _is_a_share(code: str) -> bool:
+    upper = (code or "").upper()
+    return upper.endswith((".SH", ".SZ", ".BJ"))
+
+
+def _resolve_em_adapter(em_adapter, code: str):
+    if em_adapter is not None:
+        return em_adapter
+    try:
+        from adapters.eastmoney_adapter import EastMoneyAdapter
+
+        return EastMoneyAdapter()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"§17 EastMoneyAdapter 初始化失败 {code}: {exc}")
+        return None
+
+
+def _fetch_da(code: str, report_date: Optional[str], em_adapter) -> Optional[dict]:
+    """获取指定报告期的 D&A 五项明细。失败 / 非 A 股 → None。"""
+    if not report_date or not _is_a_share(code):
+        return None
+    adapter = _resolve_em_adapter(em_adapter, code)
+    if adapter is None:
+        return None
+    fn = getattr(adapter, "fetch_da_breakdown", None)
+    if fn is None:
+        return None
+    try:
+        return fn(code, str(report_date)[:10])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"§17 D&A 获取失败 {code} {report_date}: {exc}")
+        return None
+
+
+def _da_total(da: Optional[dict]) -> Optional[float]:
+    """五项 D&A 加总。全 None → None;部分 None 视为 0。"""
+    if not da:
+        return None
+    fields = (
+        "FA_IR_DEPR",
+        "IA_AMORTIZE",
+        "LPE_AMORTIZE",
+        "USERIGHT_ASSET_AMORTIZE",
+        "DEFER_INCOME_AMORTIZE",
+    )
+    vals = [da.get(k) for k in fields]
+    if all(v is None for v in vals):
+        return None
+    return float(sum((v or 0) for v in vals))
+
+
+def _build_valuation_subsection(store, code: str, em_adapter=None) -> str:
     """§17.8 绝对估值预计算 — 从 store 实时拉数。"""
     if store is None:
         return "\n### §17.8 绝对估值预计算\n\n_数据缺失:store 不可用_\n"
@@ -204,6 +260,40 @@ def _build_valuation_subsection(store, code: str) -> str:
         ev = market_cap + float(total_liab) - float(cash)
     ev_to_ebit = _safe_div(ev, operate_profit)
 
+    # D&A → 真实 EBITDA(GCASHFLOW 接口,A 股专用,失败降级)
+    da_payload = _fetch_da(code, balance.get("REPORT_DATE"), em_adapter)
+    da_total = _da_total(da_payload)
+    ebitda: Optional[float] = None
+    if operate_profit is not None and da_total is not None:
+        ebitda = float(operate_profit) + da_total
+    ev_to_ebitda = _safe_div(ev, ebitda)
+
+    da_block = ""
+    if da_total is not None and da_payload is not None:
+        da_block = (
+            f"- D&A 明细(报告期 {da_payload.get('REPORT_DATE', '—')}):"
+            f"固定资产折旧 {_fmt_yi(da_payload.get('FA_IR_DEPR'))} + "
+            f"无形资产摊销 {_fmt_yi(da_payload.get('IA_AMORTIZE'))} + "
+            f"长期待摊 {_fmt_yi(da_payload.get('LPE_AMORTIZE'))} + "
+            f"使用权资产摊销 {_fmt_yi(da_payload.get('USERIGHT_ASSET_AMORTIZE'))} + "
+            f"递延收益摊销 {_fmt_yi(da_payload.get('DEFER_INCOME_AMORTIZE'))} = "
+            f"**{_fmt_yi(da_total)}**\n"
+            f"- EBITDA = 经营利润 + D&A = {_fmt_yi(ebitda)}\n"
+        )
+        ebitda_line = (
+            f"- EV / EBITDA(标准估值倍数):{_fmt_num(ev_to_ebitda)}x\n"
+            f"- EV / EBIT(参考):{_fmt_num(ev_to_ebit)}x\n"
+        )
+        note = ""
+    else:
+        ebitda_line = (
+            f"- EV / EBIT(**EBITDA 代理值,D&A 数据不可得**):{_fmt_num(ev_to_ebit)}x\n"
+        )
+        note = (
+            "\n_注:标准 EV/EBITDA 需 D&A 数据,当前(非 A 股 / GCASHFLOW 接口失败 / "
+            '该报告期无明细)不可得,以 EV/EBIT 代理;引用请明确标注"代理值"。_\n'
+        )
+
     return (
         "\n### §17.8 绝对估值预计算\n\n"
         f"- 数据基准:报告期 {report_date},最新收盘价 {_fmt_num(close)},"
@@ -214,19 +304,24 @@ def _build_valuation_subsection(store, code: str) -> str:
         f"- 归母净利润:{_fmt_yi(netprofit)} | 经营利润:{_fmt_yi(operate_profit)}\n"
         f"- 经营现金流:{_fmt_yi(netcash_op)} | 资本开支:{_fmt_yi(capex)} | "
         f"自由现金流:{_fmt_yi(fcf)}\n"
-        "\n**估值倍数(请按字段名原样引用,不要重命名):**\n\n"
+        + da_block
+        + "\n**估值倍数(请按字段名原样引用,不要重命名):**\n\n"
         f"- 扣除现金 PE(Cash-Adjusted PE):{_fmt_num(cash_adj_pe)}x\n"
         f"- FCF Yield(自由现金流收益率):{_fmt_pct(fcf_yield)}\n"
         f"- 净负债权益比(Net Debt / Equity,**不是** Net Debt / EBITDA):"
-        f"{_fmt_pct(net_debt_to_equity)}\n"
-        f"- EV / EBIT(**EBITDA 代理值,EBITDA 当前不可计算**):"
-        f"{_fmt_num(ev_to_ebit)}x\n"
-        "\n_注:标准 EV/EBITDA 需折旧摊销(D&A)字段,当前 EastMoney cashflow "
-        '视图未抽取 DEPRECIATION_FA,故以 EV/EBIT 代理;若引用请明确标注"代理值"。_\n'
+        f"{_fmt_pct(net_debt_to_equity)}\n" + ebitda_line + note
     )
 
 
-def build(ref, *, store=None, stock_index=None, indicators=None, **_) -> str:
+def build(
+    ref,
+    *,
+    store=None,
+    stock_index=None,
+    indicators=None,
+    em_adapter=None,
+    **_,
+) -> str:
     legacy = _build_legacy_header_with_code(indicators, ref.code)
-    valuation = _build_valuation_subsection(store, ref.code)
+    valuation = _build_valuation_subsection(store, ref.code, em_adapter=em_adapter)
     return "## §17 衍生指标(技术 + 估值分位)\n\n" + legacy + valuation
