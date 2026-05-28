@@ -56,6 +56,8 @@ class MockContext:
 
         # 下单记录(测试可断言)
         self.orders: list[tuple[str, int]] = []
+        # 目标仓位百分比下单记录(供 CpaTierBatchBuyer 使用)
+        self.target_pct_orders: list[tuple[str, float]] = []
 
         # 持仓与累计池移除(策略 on_sell 测试用)
         # _positions: {symbol: SimpleNamespace(shares=N)} 兼容真实 PositionInfo.shares 接口
@@ -175,6 +177,10 @@ class MockContext:
     # ===== 下单 =====
     def order_shares(self, symbol: str, shares: int) -> None:
         self.orders.append((symbol, shares))
+
+    def order_target_percent(self, symbol: str, target_pct: float) -> None:
+        """记录目标仓位百分比下单(供 CpaTierBatchBuyer 等 buyer 使用)。"""
+        self.target_pct_orders.append((symbol, target_pct))
 
     # ===== 持仓 / 累计池移除(策略 on_sell 用)=====
     def get_positions(self) -> dict[str, Any]:
