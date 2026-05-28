@@ -8,32 +8,40 @@
 设计动机:
 cpa Agent 个股深度分析的精算 GG 不可机械化(每步都需 LLM 对会计政策、
 行业特征、附注披露做定性判断)。本策略退而求其次,用机械化可计算的
-**粗算 R + Layer 2 否决项 + L1.3 信誉评级**做股票池筛选,用于:
+**粗算 R + Layer 2 否决项 + L1.3 信誉评级 + L3 仓位矩阵**做股票池筛选,
+用于:
 1. 给 cpa Agent 提供候选股票池(reduce 全 A 股 5400+ → 几十只)
 2. 作为基线对比 cpa LLM 真实结果的差异
 
 选股管线(顺序优化:廉价数据先,昂贵 history 后):
-  1) 金融股排除(直接整类排除,cpa 框架对金融业有方法论盲点;**始终硬否决**)
-  2) 连续分红年限 >= min_dividend_years(稳定派息文化)
+  1) 金融股排除(始终硬否决)
+  2) 连续分红年限 >= min_dividend_years
   3) 粗算 R >= r_threshold_pct(默认 4.7+0.5=5.2pct)
-  4-7) Layer 2 商誉/净现金/FCF/ROE 下降 — **两种模式**:
-      use_trap_rating_soft=False(默认,硬否决):4 项任一命中即出局
-      use_trap_rating_soft=True(软评分):聚合为 trap_rating,只剔除 high
-  8) L2.5 trap_rating 记录(不筛除,记录因子供 L3 仓位矩阵)
-  9) L1.3 信誉评级记录(不筛除,记录因子供 L3 仓位矩阵)
- 10) L3 仓位矩阵(可选):use_position_tier=True 时按 tier 最终筛选
-     仅保留 full / half(可选 include_observe);skip / observe 出局
+  4-7) Layer 2 否决 — 硬否决 vs 软评分双模式(use_trap_rating_soft)
+  8) L2.5 trap_rating 记录(供 L3 仓位矩阵)
+  9) L1.3 信誉评级记录(供 L3 仓位矩阵)
+ 10) L3 仓位矩阵:始终启用,只保留 full / p70 tier,observe / skip 出局
 
-买入:复用 MarketCapWeightedBatchBuyer(市值加权 N 周分批),与价值三因子
-策略保持公平对比口径。
+买入(2026-05-28 重写为 CPA 原口径):
+  CpaTierBatchBuyer 按 tier 分配单股目标仓位:
+    full → max_per_stock_pct × 100%
+    p70  → max_per_stock_pct × 70%
+  N 周等额爬坡,逐周 order_target_percent 到累积目标。
+  抛弃了 MarketCapWeightedBatchBuyer 的市值加权机制,改用 CPA tier-based 单股配比。
+
+卖出(2026-05-28 重写为 CPA 原口径):
+  CPA 7 条结构化止损规则(`phase3_valuation.md` §10.2):
+    critical → 清仓(净现金<0 / FCF yield<5% / FCF 连负 2 期)
+    warning  → 减仓到 50%(D/E恶化 / 营收同比<-20% / 毛利率恶化 / 支付率降>30%)
+  warning 类按"每个 reason 触发一次减半"(避免每根 bar 都减半导致流氓清仓)。
+  入场时记录 baseline(D/E、毛利率、payout)供规则 4/6/7 对比。
 """
 
 from strategies.base import Strategy
-from strategies.utils import dividend
 from strategies.utils import conservative
-from strategies.utils.composite.market_cap_weighted_batch_buyer import (
-    MarketCapWeightedBatchBuyer,
-)
+from strategies.utils import conservative_sell
+from strategies.utils import dividend
+from strategies.utils.composite.cpa_tier_batch_buyer import CpaTierBatchBuyer
 
 
 class ConservativeRoughStrategy(Strategy):
@@ -41,8 +49,8 @@ class ConservativeRoughStrategy(Strategy):
     description = (
         "基于 cpa 框架因子2 粗算穿透回报率 R(机械化计算)+ 5 项 Layer 2 否决,"
         "排除金融股 / 高商誉 / 净现金转负 / FCF 持续为负 / ROE 三年下降>30%;"
-        "L1.3 信誉评级记录(high/mid/low);"
-        "命中后按市值加权分批买入。"
+        "L1.3 信誉评级 + L2.5 trap_rating + L3 仓位矩阵(full/p70 tier);"
+        "CPA tier-based 单股配比分批买入 + CPA 7 条基本面止损。"
         "注意:不等于 cpa Agent 精算 KK,见模块文档。"
     )
     frequency = "monthly"
@@ -72,46 +80,43 @@ class ConservativeRoughStrategy(Strategy):
             "type": "bool",
             "label": "L2.5 软评分模式(剔除 high 而非逐项硬否决)",
         },
-        "use_position_tier": {
-            "default": False,
-            "type": "bool",
-            "label": "L3 仓位矩阵(按 tier 最终筛选,只保留 full/half)",
-        },
-        "include_observe": {
-            "default": False,
-            "type": "bool",
-            "label": "L3 是否保留 observe tier(默认只 full+half)",
-        },
         # ===== 仓位 / 买入参数 =====
+        "max_per_stock_pct": {
+            "default": 0.20,
+            "type": "float",
+            "label": "单股仓位绝对上限(full tier 100% × 此值)",
+        },
         "buy_weeks": {"default": 4, "type": "int", "label": "分批周数"},
         "max_holdings": {"default": 15, "type": "int", "label": "最大持仓只数"},
     }
 
     def __init__(self, param_overrides=None):
         super().__init__(param_overrides)
-        # use_position_tier=True 时:full 仓位股票获 2 倍权重(half 1 倍),其他 tier 已在 screen 阶段被过滤
-        buyer_kwargs = {"buy_weeks": self.p.buy_weeks}
-        if self.p.use_position_tier:
-            buyer_kwargs["tier_weights"] = {"full": 2.0, "half": 1.0}
-        self._buyer = MarketCapWeightedBatchBuyer(**buyer_kwargs)
+        self._buyer = CpaTierBatchBuyer(
+            max_per_stock_pct=self.p.max_per_stock_pct,
+            buy_weeks=self.p.buy_weeks,
+        )
+        # 入场时点 baseline:{symbol: {"debt_equity", "gross_margin", "payout"}}
+        self._entry_baselines: dict[str, dict] = {}
+        # 已触发 warning 的规则集合:{symbol: set(reason_id)},去重避免每根 bar 重复减仓
+        self._warning_seen: dict[str, set[str]] = {}
 
     def screen(self, ctx, symbols):
         ctx.log_flow("strategy.screen.start", input=len(symbols))
 
-        # 1) 金融股排除(O(N) 单字段读取,最廉价)
+        # 1) 金融股排除
         pool = conservative.reject_financial_industry(ctx, symbols)
 
-        # 2) 连续分红年限(分红表已 memoize,廉价)
+        # 2) 连续分红年限
         pool = dividend.filter_by_dividend_years(
             ctx, pool, min_years=self.p.min_dividend_years
         )
 
-        # 3) 粗算 R(需要 history + price,稍贵)
+        # 3) 粗算 R
         pool = conservative.filter_by_r(ctx, pool, threshold_pct=self.p.r_threshold_pct)
 
         # 4-7) Layer 2 否决 — 硬否决 vs 软评分双模式
         if self.p.use_trap_rating_soft:
-            # 软评分:聚合 trap_rating,只剔除 high(2+ 项触发)
             soft_pool: list[str] = []
             for sym in pool:
                 rating, triggered = conservative.compute_trap_rating(
@@ -137,7 +142,6 @@ class ConservativeRoughStrategy(Strategy):
             )
             pool = soft_pool
         else:
-            # 硬否决:4 项任一命中即出局
             pool = conservative.reject_high_goodwill(
                 ctx, pool, max_ratio=self.p.max_goodwill_ratio
             )
@@ -147,52 +151,63 @@ class ConservativeRoughStrategy(Strategy):
                 ctx, pool, max_decline=self.p.max_roe_decline
             )
 
-        # 8) L2.5 trap_rating 记录(供 L3 仓位矩阵)
+        # 8) L2.5 trap_rating 记录
         conservative.record_trap_rating(
             ctx, pool, max_roe_decline=self.p.max_roe_decline
         )
 
-        # 9) L1.3 信誉评级(供 L3 仓位矩阵)
+        # 9) L1.3 信誉评级
         conservative.record_credibility_factors(ctx, pool)
 
-        # 10) L3 仓位矩阵(可选:按 tier 最终筛选)
-        if self.p.use_position_tier:
-            pool = conservative.record_position_tier(
-                ctx, pool, include_observe=self.p.include_observe
-            )
+        # 10) L3 仓位矩阵 — 始终启用,只保留 full + p70
+        pool = conservative.record_position_tier(ctx, pool, include_observe=False)
 
         for sym in pool:
             ctx.log_pass(sym, "strategy.screen.final")
         ctx.log_flow("strategy.screen.done", input=len(symbols), passed=len(pool))
-        # 记录最新 pool 供 on_sell 使用(选项 3:screen pool 动态白名单)
-        self._last_screen_pool = set(pool)
         return pool
 
     def on_buy(self, ctx):
+        # 1) 为新晋 symbols 记录入场 baseline(去重)
+        for sym in getattr(ctx, "new_symbols", []) or []:
+            if sym not in self._entry_baselines:
+                self._entry_baselines[sym] = conservative_sell.record_entry_baseline(
+                    ctx, sym
+                )
+        # 2) 执行分批买入
         self._buyer.step(ctx, max_holdings=self.p.max_holdings)
 
     def on_sell(self, ctx):
-        """选项 3:screen pool 动态白名单卖出。
+        """CPA 7 条基本面止损规则:critical → 清仓;warning → 减仓到 50%。
 
-        持仓不在最新一次 `screen()` 输出的 pool 中 → 全部清仓 + 从累计池移除。
-        语义:cpa 框架"价值消失即退出"— 任何因子失效(R 跌破 / 商誉爆雷 /
-        FCF 持续负 / ROE 三年下降 / trap_rating 升高 / tier 降级 ...)
-        都会让该股掉出 pool,触发清仓。
-
-        变体 v2(待对比):仅 R 跌破阈值才卖出(单因子 exit),见 AGENTS.md TODO。
+        warning 仅在新规则首次触发时减半(`_warning_seen[sym]` 去重),
+        避免每根 bar 都减半导致 runaway 清仓。
         """
-        # 首根 bar 时 screen 可能还没跑过 → noop
-        last_pool = getattr(self, "_last_screen_pool", None)
-        if last_pool is None:
-            return
-
         positions = ctx.get_positions()
-        # list() 拷贝 — 避免迭代中修改
         for sym, pos in list(positions.items()):
-            if sym in last_pool:
-                continue
             shares = getattr(pos, "shares", 0)
             if shares <= 0:
                 continue
-            ctx.order_shares(sym, -shares)
-            ctx.remove_target(sym)
+
+            baseline = self._entry_baselines.get(sym)
+            severity, reasons = conservative_sell.cpa_fundamental_stop_loss(
+                ctx, sym, baseline
+            )
+
+            if severity == "critical":
+                ctx.order_shares(sym, -shares)
+                ctx.remove_target(sym)
+                self._entry_baselines.pop(sym, None)
+                self._warning_seen.pop(sym, None)
+                continue
+
+            if severity == "warning":
+                seen = self._warning_seen.setdefault(sym, set())
+                new_reasons = [r for r in reasons if r not in seen]
+                if not new_reasons:
+                    continue  # 全部规则都已减半过,本 bar 不再动作
+                # 出现新 warning reason → 再减半一次(每个 reason 触发一次)
+                halved = shares // 2
+                if halved > 0:
+                    ctx.order_shares(sym, -halved)
+                seen.update(new_reasons)
