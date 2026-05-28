@@ -226,6 +226,12 @@ class MockContext:
             entry = self._financial.setdefault(sym, {})
             entry["ROEJQ"] = roe
 
+    def set_financial(self, mapping: dict[str, dict]) -> None:
+        """{symbol: {col: value}} → financial 字典(任意 EastMoney 字段)。"""
+        for sym, fields in mapping.items():
+            entry = self._financial.setdefault(sym, {})
+            entry.update(fields)
+
     def set_balance(self, mapping: dict[str, dict]) -> None:
         """{symbol: {col: value}} → balance 字典(任意 EastMoney 字段)。"""
         for sym, fields in mapping.items():
