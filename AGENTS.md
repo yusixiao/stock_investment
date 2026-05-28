@@ -348,6 +348,7 @@ backend/services/agent/
 - §17.8 D&A → EV/EBITDA
 - Vite proxy / Nginx 长连超时验证
 - **金融股盲点**:cpa 框架 FCFF_BACK 不适用银行/保险/证券(资产负债表逻辑差异大),`ConservativeRoughStrategy` 已整类排除,后续若要覆盖金融股需单独建模
+- **`ConservativeRoughStrategy` 卖出策略变体 v2(待对比)**:仅 R 跌破阈值才卖出(单因子 exit),与当前 v3「screen pool 动态白名单 — 掉出即卖出」(全因子 exit)做超额收益对比。v2 实现思路:`on_sell` 里逐个持仓重算 `compute_r`,低于 `r_threshold_pct` 就清仓;不依赖 screen pool。预期 v2 持仓周转更慢、容忍度更高,适合验证"R 单因子是否足够"
 
 ## 现金流保守策略(粗算版)定位 — `ConservativeRoughStrategy`
 

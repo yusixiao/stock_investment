@@ -57,6 +57,11 @@ class MockContext:
         # 下单记录(测试可断言)
         self.orders: list[tuple[str, int]] = []
 
+        # 持仓与累计池移除(策略 on_sell 测试用)
+        # _positions: {symbol: SimpleNamespace(shares=N)} 兼容真实 PositionInfo.shares 接口
+        self._positions: dict[str, Any] = {}
+        self.removed_targets: list[str] = []
+
         # 因子记录(策略雷达使用):{symbol: {factor_name: value}}
         self._factors: dict[str, dict[str, Any]] = {}
 
@@ -170,6 +175,21 @@ class MockContext:
     # ===== 下单 =====
     def order_shares(self, symbol: str, shares: int) -> None:
         self.orders.append((symbol, shares))
+
+    # ===== 持仓 / 累计池移除(策略 on_sell 用)=====
+    def get_positions(self) -> dict[str, Any]:
+        return self._positions
+
+    def set_positions(self, mapping: dict[str, int]) -> None:
+        """{symbol: shares} → 模拟 PositionInfo(.shares 字段)。"""
+        from types import SimpleNamespace
+
+        self._positions = {sym: SimpleNamespace(shares=n) for sym, n in mapping.items()}
+
+    def remove_target(self, symbol: str) -> None:
+        self.removed_targets.append(symbol)
+        if symbol in self.target_symbols:
+            self.target_symbols.remove(symbol)
 
     # ===== 集成测便捷 setter(Phase 2.4) =====
     # 将简单的 mapping 转成各 utils 函数所需的真实数据结构,便于策略集成测一次性铺数据。

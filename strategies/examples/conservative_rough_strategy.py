@@ -164,11 +164,35 @@ class ConservativeRoughStrategy(Strategy):
         for sym in pool:
             ctx.log_pass(sym, "strategy.screen.final")
         ctx.log_flow("strategy.screen.done", input=len(symbols), passed=len(pool))
+        # 记录最新 pool 供 on_sell 使用(选项 3:screen pool 动态白名单)
+        self._last_screen_pool = set(pool)
         return pool
 
     def on_buy(self, ctx):
         self._buyer.step(ctx, max_holdings=self.p.max_holdings)
 
     def on_sell(self, ctx):
-        # v1 永久持有(回测期内不主动卖出)。后续可加 R 跌破阈值退出。
-        return
+        """选项 3:screen pool 动态白名单卖出。
+
+        持仓不在最新一次 `screen()` 输出的 pool 中 → 全部清仓 + 从累计池移除。
+        语义:cpa 框架"价值消失即退出"— 任何因子失效(R 跌破 / 商誉爆雷 /
+        FCF 持续负 / ROE 三年下降 / trap_rating 升高 / tier 降级 ...)
+        都会让该股掉出 pool,触发清仓。
+
+        变体 v2(待对比):仅 R 跌破阈值才卖出(单因子 exit),见 AGENTS.md TODO。
+        """
+        # 首根 bar 时 screen 可能还没跑过 → noop
+        last_pool = getattr(self, "_last_screen_pool", None)
+        if last_pool is None:
+            return
+
+        positions = ctx.get_positions()
+        # list() 拷贝 — 避免迭代中修改
+        for sym, pos in list(positions.items()):
+            if sym in last_pool:
+                continue
+            shares = getattr(pos, "shares", 0)
+            if shares <= 0:
+                continue
+            ctx.order_shares(sym, -shares)
+            ctx.remove_target(sym)
