@@ -13,6 +13,8 @@ export interface MarketCacheStatus {
   dividend_count: number;
   financial_count: number;
   loaded_at: number;
+  /** 数据截止日 YYYY-MM-DD;未加载时为 null */
+  last_date: string | null;
   progress: { current: number; total: number; phase: string };
   error: string | null;
   elapsed: number;

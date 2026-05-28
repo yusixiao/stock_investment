@@ -3,7 +3,6 @@ import { useState, useCallback, useEffect } from 'react';
 import { cn } from '../../utils/cn';
 import BacktestConfig from './BacktestConfig';
 import BacktestResult from './BacktestResult';
-import DataCacheModal from './DataCacheModal';
 import { backtestCacheApi, type CacheStatusMap } from '../../api/backtestCache';
 
 export type BacktestMode = 'single' | 'market';
@@ -80,9 +79,8 @@ const BacktestAnalysis: React.FC = () => {
   const [view, setView] = useState<ViewTab>('single');
   const [currentTask, setCurrentTask] = useState<BacktestTask | null>(null);
 
-  // 数据缓存:状态条 + 加载弹窗
+  // 数据缓存状态:仅用于 BacktestConfig 判断是否允许运行(加载弹窗已迁移到全局浮动条)
   const [cacheStatus, setCacheStatus] = useState<CacheStatusMap | null>(null);
-  const [cacheModalOpen, setCacheModalOpen] = useState(false);
 
   const refreshStatus = useCallback(() => {
     backtestCacheApi.status().then(setCacheStatus).catch(() => {});
@@ -141,52 +139,8 @@ const BacktestAnalysis: React.FC = () => {
             </button>
           ))}
         </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            refreshStatus();
-            setCacheModalOpen(true);
-          }}
-          className="rounded-md border border-border/50 bg-elevated/50 px-3 py-1.5 text-xs font-medium text-secondary-text transition-colors hover:text-foreground"
-        >
-          加载数据
-        </button>
-
-        <div className="ml-auto flex items-center gap-3 text-xs">
-          {(['A', 'HK', 'US'] as const).map((m) => {
-            const s = cacheStatus?.[m];
-            const label = m === 'A' ? 'A' : m === 'HK' ? 'H' : 'US';
-            const text = s?.status === 'loaded'
-              ? `已加载 ${s.symbols}`
-              : s?.status === 'loading'
-                ? '加载中…'
-                : s?.status === 'failed'
-                  ? '失败'
-                  : '未加载';
-            const color = s?.status === 'loaded'
-              ? 'text-emerald-400'
-              : s?.status === 'loading'
-                ? 'text-amber-400'
-                : s?.status === 'failed'
-                  ? 'text-rose-400'
-                  : 'text-muted-text';
-            return (
-              <span key={m} className="tabular-nums">
-                <span className="text-secondary-text">{label}</span>
-                <span className={`ml-1 ${color}`}>{text}</span>
-              </span>
-            );
-          })}
-        </div>
+        {/* 数据缓存加载入口已迁移到全局左下角浮动条(DataCacheStatusBar) */}
       </div>
-
-      <DataCacheModal
-        isOpen={cacheModalOpen}
-        status={cacheStatus}
-        onClose={() => setCacheModalOpen(false)}
-        onRefresh={refreshStatus}
-      />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="w-80 flex-shrink-0 overflow-y-auto border-r border-border/30 bg-card/20">

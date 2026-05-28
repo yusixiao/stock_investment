@@ -6,6 +6,7 @@ import { Drawer } from '../common/Drawer';
 import { SidebarNav } from './SidebarNav';
 import { cn } from '../../utils/cn';
 import { ThemeToggle } from '../theme/ThemeToggle';
+import DataCacheStatusBar from './DataCacheStatusBar';
 
 type ShellProps = {
   children?: React.ReactNode;
@@ -75,6 +76,8 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
       >
         <SidebarNav onNavigate={() => setMobileOpen(false)} />
       </Drawer>
+
+      <DataCacheStatusBar />
     </div>
   );
 };

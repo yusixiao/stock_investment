@@ -57,6 +57,28 @@ class MarketBundle:
     def symbols_count(self) -> int:
         return len(self.stock_data)
 
+    @property
+    def last_date(self) -> str | None:
+        """数据截止日(YYYY-MM-DD):取若干样本股的最后一行 date 取 max。
+
+        cache 加载时 df 已按 date 升序(_aggregate_and_compute line 205),
+        最后一行是最新交易日。同市场各股理论应对齐到同一交易日,但保险起见
+        取多只 sample 取 max,避免某只股票数据缺失影响判定。
+        """
+        if not self.stock_data:
+            return None
+        latest = None
+        for i, df in enumerate(self.stock_data.values()):
+            if i >= 20:  # 采样上限
+                break
+            if df is None or df.empty or "date" not in df.columns:
+                continue
+            d = df["date"].iloc[-1]
+            d_str = str(d)[:10]
+            if latest is None or d_str > latest:
+                latest = d_str
+        return latest
+
 
 @dataclass
 class SlicedBundle:
@@ -386,6 +408,7 @@ def _status_dict(market: str) -> dict:
         "cashflow_count": len(bundle.cashflow_data) if bundle else 0,
         "income_count": len(bundle.income_data) if bundle else 0,
         "loaded_at": bundle.loaded_at if bundle else 0.0,
+        "last_date": bundle.last_date if bundle else None,
         "progress": {
             "current": p.current,
             "total": p.total,
