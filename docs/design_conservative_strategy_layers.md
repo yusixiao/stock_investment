@@ -1,8 +1,13 @@
 # 现金流保守策略 — 三层筛选模型(Roadmap)
 
-> **状态**:L1.R + L1.3 + L2 5 项硬否决 + L2.5 trap_rating + L3 仓位矩阵 + Buyer tier 加权全部落地(`ConservativeRoughStrategy`)。三层 Roadmap 完成。
+> **状态**:三层 Roadmap 完成 + **CPA 原口径 buyer/seller 全部落地**(2026-05-28)
+> - L1.R + L1.3 信誉评级 + L2 5 项 + L2.5 trap_rating + L3 仓位矩阵(4 档:full/p70/observe/skip)
+> - **Buyer**:`CpaTierBatchBuyer`(tier-based 单股配比,N 周爬坡 `order_target_percent`)
+> - **Seller**:CPA 7 条基本面止损(critical 清仓 / warning 减仓 50%)+ 入场 baseline
+>
 > **定位**:把 cpa Agent 的 11 步精算定性框架尽可能机械化,作为可全市场扫描的回测策略;**不等于** cpa LLM 精算 KK,只是其低成本近似。
-> **创建**:2026-05-27 · **维护**:有架构调整时同步更新
+>
+> **创建**:2026-05-27 · **重大更新**:2026-05-28(L3 矩阵改 CPA 原口径 + 新 buyer/seller)· **维护**:有架构调整时同步更新
 
 ---
 
@@ -81,49 +86,95 @@ cpa Agent 的 phase3 流程(`phase3_quantitative.md` 11 步精算 + `phase3_valu
 
 ---
 
-### Layer 3 — 仓位决策矩阵(✅ 工具+集成已实现 2026-05-27;Buyer 加权未做)
+### Layer 3 — 仓位决策矩阵(✅ 2026-05-28 重写为 CPA 原口径 4 档)
 
 #### L3.1 三维查找表
 
 ```
-f(R_pct, credibility, trap_rating) → tier ∈ {full, half, observe, skip}
+f(R_pct, credibility, trap_rating) → tier ∈ {full, p70, observe, skip}
 ```
 
-> 粗算版用 R 替代 cpa 精算 KK,口径与 `filter_by_r` 一致。
+> 粗算版用 R 替代 cpa 精算 KK,把"粗算安全边际"= R − threshold 对标 CPA 的 KK,口径与 `filter_by_r` 一致。
 
-**仓位等级语义**:
-- `full` — 满仓买入(策略权重最高)
-- `half` — 半仓买入(估值便宜但有瑕疵)
+**仓位等级语义**(对齐 CPA 原文 `phase3_valuation.md` 仓位矩阵):
+- `full` — 满仓买入(单股目标 = `max_per_stock_pct × 100%`)
+- `p70` — 70% 仓位(估值便宜但信誉/陷阱有瑕疵,单股目标 = `max_per_stock_pct × 70%`)
 - `observe` — 不买入,加观察池
 - `skip` — 完全跳过
 
-**实现的查表规则**(优先级自上而下,首个命中即返回):
+**用户口径(2026-05-28)**:KK 0.5~1.5pct 区间一律归 observe,**不再有 50% 这一档**。所以从原 5 档矩阵简化为 4 档(full / p70 / observe / skip)。`full_bonus = 1.5pct`(对齐 CPA 原文 KK ≥ 1.5pct 阈值)。
+
+**查表规则**(优先级自上而下,首个命中即返回):
 
 | 优先级 | 条件 | tier |
 |---|---|---|
 | 1 | `credibility == low` | **skip** |
-| 2 | `R_pct < threshold_pct`(默认 5.2)| **skip** |
+| 2 | `R_pct < threshold_pct`(默认 5.2,对应 KK<0)| **skip** |
 | 3 | `trap_rating == high` | **observe** |
-| 4 | `R ≥ threshold + full_bonus`(默认 7.2)+ `cred=high` + `trap=low` | **full** |
-| 5 | `R ≥ threshold + full_bonus` + `cred=mid` + `trap=low` | **half** |
-| 6 | `R ≥ threshold` + `cred=high` + `trap ∈ {low,mid}` | **half** |
-| 7 | 其他(估值合格但有瑕疵) | **observe** |
+| 4 | `R ≥ threshold + 1.5`(KK≥1.5)+ `cred=high` + `trap=low` | **full**(100%) |
+| 5 | `R ≥ threshold + 1.5` + `cred=high` + `trap=mid` | **p70**(70%) |
+| 6 | `R ≥ threshold + 1.5` + `cred=mid` + `trap=low` | **p70**(70%) |
+| 7 | 其他(含 KK 0~1.5pct 区间) | **observe** |
 
-**实现位置**:`compute_position_tier(r_pct, credibility, trap_rating)` + `record_position_tier(ctx, symbols, *, include_observe=False)`。
+**实现位置**:`strategies/utils/conservative.py::compute_position_tier` + `record_position_tier(ctx, symbols, *, include_observe=False)` + `TIER_PCT = {"full": 1.0, "p70": 0.7, "observe": 0.0, "skip": 0.0}` 常量。
 
-#### L3.2 策略接入
-`ConservativeRoughStrategy` 三个新参数:
-- `use_position_tier`(默认 False):启用 L3 最终筛选
-- `include_observe`(默认 False):是否保留 observe tier
-- 启用后 `screen()` 末尾按 tier 筛除 skip / observe(可选保留 observe)
+#### L3.2 策略接入(2026-05-28 简化)
+`ConservativeRoughStrategy` 现在**始终启用**仓位矩阵(buyer 需要 tier),不再有 `use_position_tier` / `include_observe` 开关。`screen()` 末尾固定调 `record_position_tier(include_observe=False)`,只保留 full + p70。
 
-#### L3.3 Buyer tier 加权 ✅(2026-05-27 完成)
-`MarketCapWeightedBatchBuyer` 新增 `tier_weights: dict | None = None` 参数:
-- `None`(默认)→ 纯市值加权(向后兼容,其他 2 个使用该 buyer 的策略行为不变)
-- 启用 → `effective_mv = mv × tier_weights.get(tier, 1.0)`,tier 来自 `ctx.get_factors(sym)["position_tier"]`
-- factor 缺失 / 未知 tier → 权重 1.0(降级保守)
-- 权重 0 → `effective_mv = 0`,**软排除**不分配资金
-- `ConservativeRoughStrategy` 在 `use_position_tier=True` 时传 `{"full": 2.0, "half": 1.0}`
+#### L3.3 Buyer:`CpaTierBatchBuyer`(2026-05-28 替换 MarketCapWeightedBatchBuyer)
+
+**抛弃市值加权**,改用 CPA 原口径"绝对上限 + tier 按比例缩减":
+- 单股目标仓位 = `max_per_stock_pct × TIER_PCT[tier]`
+- 默认 `max_per_stock_pct = 0.20` → full=20% / p70=14% / observe=skip=0
+- N 周等额爬坡:逐周 `order_target_percent(sym, target_pct × week_idx / buy_weeks)`
+- tier 缺失 / observe / skip → 不分配
+- seller 已平仓(`sym ∉ ctx.target_symbols`)→ 计划终止
+
+**实现位置**:`strategies/utils/composite/cpa_tier_batch_buyer.py`。
+
+> 注意:`MarketCapWeightedBatchBuyer.tier_weights` 参数**保留不删** — 其他价值策略(三因子等)仍使用 MarketCapWeightedBatchBuyer + tier_weights={"full":2,"half":1}。本策略独占新 buyer。
+
+---
+
+### Layer 4 — CPA 7 条基本面止损(✅ 2026-05-28 新增)
+
+#### L4.1 入场 baseline 记录
+`on_buy` 中首次见到 `ctx.new_symbols` 中的 sym 时调 `record_entry_baseline(ctx, sym)`,存入 `self._entry_baselines: dict[sym, dict]`:
+
+| 字段 | 数据源 | 用途 |
+|---|---|---|
+| `debt_equity` | `TOTAL_LIABILITIES / TOTAL_PARENT_EQUITY`(balance) | 规则 4 对比 |
+| `gross_margin` | `XSMLL`(financial annual,百分比) | 规则 6 对比 |
+| `payout` | `compute_payout_ratio_3y`(0-1) | 规则 7 对比 |
+
+任一字段缺失 → 该字段为 None,对应规则跳过(保守:不让数据缺失误杀持仓)。
+
+#### L4.2 7 条止损规则(`phase3_valuation.md` §10.2 表格)
+
+| # | 指标 | 触发条件 | 严重度 | reason_id |
+|---|---|---|---|---|
+| 1 | 净现金 | < 0 | critical | `net_cash_negative` |
+| 2 | FCF yield | < 5% | critical | `fcf_yield_below_5pct` |
+| 3 | FCF | 连续 2 期 < 0 | critical | `fcf_negative_2y` |
+| 4 | 债务权益比 | > max(baseline×1.5, 1.0) | warning | `debt_equity_above_1.5x_baseline` |
+| 5 | 营收同比 | < -20% | warning | `revenue_yoy_below_-20pct` |
+| 6 | 毛利率 | < baseline × 0.8 | warning | `gross_margin_below_0.8x_baseline` |
+| 7 | 支付率 | 较 baseline 相对降幅 > 30% | warning | `payout_decline_above_30pct` |
+
+> 规则 4 兜底:baseline 缺失或 baseline × 1.5 < 1.0 时,使用绝对阈值 1.0。
+>
+> 规则 6/7:baseline 缺失 → 整条规则跳过(无对比基准)。
+
+#### L4.3 严重度处理(用户口径)
+- **critical**(任一触发)→ **清仓**(`order_shares(sym, -shares)` + `remove_target` + 清 baseline / warning 状态)
+- **warning** → 减仓到当前持仓的 50%,且**每个 reason_id 只触发一次**(`_warning_seen[sym]: set[reason]` 去重)
+  - 避免每根 bar runaway 减半导致流氓清仓
+  - 新 reason 出现 → 再减一次半;同 reason 重复触发 → noop
+- 全部未触发 → noop
+
+**实现位置**:
+- `strategies/utils/conservative_sell.py::cpa_fundamental_stop_loss(ctx, sym, baseline) → (severity, reasons)`
+- `ConservativeRoughStrategy.on_sell` 集成 critical/warning 分支
 
 ---
 
@@ -132,11 +183,12 @@ f(R_pct, credibility, trap_rating) → tier ∈ {full, half, observe, skip}
 | 层 | Roadmap 设计 | 当前实现(粗算版) | 备注 |
 |---|---|---|---|
 | L1 主因子 | KK(精算 + 周期修正) | **R**(粗算) | 退化原因见下 |
-| L1.3 | 三维信誉评级 | ✅ **已实现** | high/mid/low,记录 factor |
+| L1.3 | 三维信誉评级 | ✅ **已实现**(2026-05-27) | high/mid/low,记录 factor |
 | L2.1-L2.5 | 5 项 disqualifier | ✅ 5 项**硬否决**(默认) | L2.1 永远硬否决 |
-| L2.5 trap_rating | 聚合 0/1/≥2 → low/mid/high | ✅ **已实现**(可选软评分模式) | 通过策略 flag 启用 |
-| L3 工具+筛选 | 三维查表 + 4 档仓位 | ✅ **已实现**(可选模式) | — |
-| L3.3 Buyer tier 加权 | full=2 / half=1 | ✅ **已实现** | tier_weights 可选,向后兼容 |
+| L2.5 trap_rating | 聚合 0/1/≥2 → low/mid/high | ✅ **已实现**(2026-05-27,可选软评分) | 通过策略 flag 启用 |
+| L3 工具+筛选 | 三维查表 + 4 档仓位 | ✅ **已实现**(2026-05-28 改 CPA 原口径 4 档) | full/p70/observe/skip,默认启用 |
+| L3.3 Buyer | tier 加权 | ✅ **CpaTierBatchBuyer**(2026-05-28) | 抛弃市值加权,改 tier 按比例缩减 |
+| L4 卖出 | CPA 7 条基本面止损 | ✅ **已实现**(2026-05-28) | critical 清仓 / warning 减半 + 入场 baseline |
 
 ---
 
@@ -162,7 +214,11 @@ f(R_pct, credibility, trap_rating) → tier ∈ {full, half, observe, skip}
 | ✅ | L1.3 信誉评级实现 | 三维度计算 + 聚合 high/mid/low | 2026-05-27 完成 |
 | ✅ | L2.5 trap_rating 聚合 | 把硬否决改为软评分(可选模式) | 2026-05-27 完成 |
 | ✅ | L3 三维查表实现 | `compute_position_tier` + `record_position_tier` | 2026-05-27 完成 |
-| P1 | Buyer 接收 tier 做权重分配 | 改造 `MarketCapWeightedBatchBuyer`(full=2,half=1) | L3 |
+| ✅ | Buyer tier 加权(MarketCap) | `MarketCapWeightedBatchBuyer.tier_weights` | 2026-05-27 完成 |
+| ✅ | L3 矩阵改 CPA 原口径 4 档 | full/p70/observe/skip,full_bonus 1.5pct | 2026-05-28 完成 |
+| ✅ | `CpaTierBatchBuyer` | tier-based 单股配比,N 周 `order_target_percent` 爬坡 | 2026-05-28 完成 |
+| ✅ | L4 CPA 7 条基本面止损 | critical/warning 严重度 + 入场 baseline | 2026-05-28 完成 |
+| P2 | 真实回测验证 | 全市场跑 v3 → 与旧 MarketCap 版本对比超额收益 | 完整链路稳定后 |
 | P3 | KK 精算路径(可选) | 如果有办法用 LLM batch 离线打标后入库 | LLM 离线管道 |
 
 每个 P 阶段独立 commit 并跑全量回归,符合 TDD 铁律。
@@ -171,16 +227,21 @@ f(R_pct, credibility, trap_rating) → tier ∈ {full, half, observe, skip}
 
 ## 相关文件
 
-### 已实现(粗算版)
-- `strategies/utils/conservative.py` — 粗算 R + 5 项 disqualifier + L1.3 信誉评级 + L2.5 trap_rating + L3 仓位矩阵
-- `strategies/examples/conservative_rough_strategy.py` — `ConservativeRoughStrategy` 类(monthly,frequency_overridable;`use_trap_rating_soft` / `use_position_tier` / `include_observe` 开关)
-- `backend/tests/test_utils_conservative.py` — 18 测试(R + L2.1-L2.4)
-- `backend/tests/test_utils_conservative_roe_decline.py` — 13 测试(L2 第 5 项 ROE 下降)
-- `backend/tests/test_utils_conservative_credibility.py` — 23 测试(L1.3)
-- `backend/tests/test_utils_conservative_trap_rating.py` — 11 测试(L2.5)
-- `backend/tests/test_utils_conservative_position_tier.py` — 18 测试(L3)
-- `backend/tests/test_conservative_rough_strategy.py` — 7 测试(策略集成)
-- `backend/services/backtest/{data_cache,market_data,context,engine}.py` — 扩 balance/cashflow/income API
+### 已实现(粗算版,2026-05-28 状态)
+- `strategies/utils/conservative.py` — 粗算 R + 5 项 disqualifier + L1.3 信誉评级 + L2.5 trap_rating + L3 仓位矩阵 4 档 + `TIER_PCT` 常量
+- `strategies/utils/conservative_sell.py` — CPA 7 条基本面止损 + 入场 baseline 记录
+- `strategies/utils/composite/cpa_tier_batch_buyer.py` — tier-based 单股配比分批买入器
+- `strategies/examples/conservative_rough_strategy.py` — `ConservativeRoughStrategy`(monthly,frequency_overridable=False;参数:`min_dividend_years` / `r_threshold_pct` / `max_goodwill_ratio` / `max_roe_decline` / `use_trap_rating_soft` / `max_per_stock_pct` / `buy_weeks` / `max_holdings`)
+- `backend/tests/test_utils_conservative.py` — R + L2.1-L2.4
+- `backend/tests/test_utils_conservative_roe_decline.py` — L2 第 5 项
+- `backend/tests/test_utils_conservative_credibility.py` — L1.3
+- `backend/tests/test_utils_conservative_trap_rating.py` — L2.5
+- `backend/tests/test_utils_conservative_position_tier.py` — L3 矩阵 4 档
+- `backend/tests/test_utils_conservative_sell.py` — 25 测试(CPA 7 条止损规则 + baseline)
+- `backend/tests/test_utils_cpa_tier_batch_buyer.py` — 13 测试(buyer)
+- `backend/tests/test_conservative_rough_strategy.py` — 策略 screen 集成
+- `backend/tests/test_conservative_rough_sell.py` — 9 测试(策略 on_sell + on_buy 集成)
+- `backend/services/backtest/{data_cache,market_data,context,engine}.py` — 扩 balance/cashflow/income API + `order_target_percent`
 
 ### cpa 框架原文(只读参考)
 - `backend/services/agent/agents/cpa/prompts/references/shared_tables.md` — R/II/Q 公式 + 税率表

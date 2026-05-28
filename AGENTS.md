@@ -348,7 +348,7 @@ backend/services/agent/
 - §17.8 D&A → EV/EBITDA
 - Vite proxy / Nginx 长连超时验证
 - **金融股盲点**:cpa 框架 FCFF_BACK 不适用银行/保险/证券(资产负债表逻辑差异大),`ConservativeRoughStrategy` 已整类排除,后续若要覆盖金融股需单独建模
-- **`ConservativeRoughStrategy` 卖出策略变体 v2(待对比)**:仅 R 跌破阈值才卖出(单因子 exit),与当前 v3「screen pool 动态白名单 — 掉出即卖出」(全因子 exit)做超额收益对比。v2 实现思路:`on_sell` 里逐个持仓重算 `compute_r`,低于 `r_threshold_pct` 就清仓;不依赖 screen pool。预期 v2 持仓周转更慢、容忍度更高,适合验证"R 单因子是否足够"
+- **`ConservativeRoughStrategy` 真实回测验证**(2026-05-28 重写后):L3 矩阵改 CPA 4 档 + `CpaTierBatchBuyer` + CPA 7 条止损全部落地,需要在真实历史区间(全市场 / 至少 5 年)跑一次端到端回测,与旧"市值加权 + screen pool 白名单"版本对比超额收益,验证 CPA 原口径是否真的更优
 
 ## 现金流保守策略(粗算版)定位 — `ConservativeRoughStrategy`
 
@@ -365,8 +365,10 @@ backend/services/agent/
 
 - **L1 估值因子**:R(粗算)/ KK(精算预留)+ **L1.3 信誉评级**(5年营收 CV / 利润调整幅度 / λ warning 三维 → high/mid/low)
 - **L2 价值陷阱**:5 项 disqualifier(行业/商誉/净现金/FCF/ROE 三年下降)+ **L2.5 trap_rating** 软评分聚合(low/mid/high)
-- **L3 仓位矩阵**:`f(KK, credibility, trap_rating) → tier ∈ {full, half, observe, skip}` 三维查找表
-- **当前实现**:L1.R + L1.3 + L2 5 项 + L2.5 trap_rating + L3 仓位矩阵 + L3.3 Buyer tier 加权(full=2/half=1)✅(2026-05-27);三层 Roadmap 全部落地
+- **L3 仓位矩阵**(2026-05-28 改 CPA 原口径):`f(R, credibility, trap_rating) → tier ∈ {full, p70, observe, skip}` 4 档(用户口径:KK 0.5~1.5pct 一律 observe,无 50% 档),`full_bonus=1.5pct`
+- **L3.3 Buyer**(2026-05-28 重写):`CpaTierBatchBuyer` 抛弃市值加权,改 tier-based 单股配比(`max_per_stock_pct × TIER_PCT[tier]`,默认 full=20%/p70=14%),N 周 `order_target_percent` 等额爬坡
+- **L4 卖出**(2026-05-28 新增):CPA 7 条基本面止损(`phase3_valuation.md` §10.2 表),critical 清仓 / warning 减仓 50%(per-reason 去重),入场时记录 D/E、毛利率、payout 三个 baseline
+- **当前实现**:L1.R + L1.3 + L2 5 项 + L2.5 trap_rating + L3 矩阵 4 档 + `CpaTierBatchBuyer` + CPA 7 条止损全部落地 ✅
 - **KK→R 退化决策**:2026-05-27 reset `ccd7b9a`+`d02d1d8`,KK 精算需 LLM 读年报附注不可机械化,粗算 R 即可作 cpa Agent 候选池筛选
 
 ## Project Timeline(claude-mem 摘要 · 2026-05-13 → 2026-05-26)
