@@ -61,7 +61,168 @@ class DuckDBStore:
         for market in ("HK", "US"):
             self._override_daily_with_derived_valuation(market)
 
+        # 业务视图层:v_{market}_periodic_report
+        # 把 indicator + income + balance + cashflow 按 (_symbol, REPORT_DATE) LEFT JOIN
+        # 同义字段 COALESCE 统一(MONETARYFUNDS / CAPEX),
+        # A 股独有字段在 HK/US 视图中显式 SELECT NULL 占位,保持三市场列对齐。
+        for market in MARKETS:
+            self._setup_periodic_report_view(market)
+
         logger.info("DuckDB views created for all market parquet data")
+
+    def _setup_periodic_report_view(self, market: str):
+        """构建 v_{market}_periodic_report 业务视图。
+
+        语义:把 4 张周期性 raw 视图(indicator/income/balance/cashflow)按
+        (_symbol, REPORT_DATE) LEFT JOIN 成单一视图,屏蔽三市场 schema 差异。
+
+        字段策略:
+          - 三市场共有的「业务列」直接保留原名(EPSJB/ROEJQ/PARENT_NETPROFIT 等)
+          - 同义字段 COALESCE 统一输出名:
+              * MONETARYFUNDS = balance.MONETARYFUNDS (A) 或 balance.CASH_EQUIVALENTS (HK/US)
+              * CAPEX = cashflow.CONSTRUCT_LONG_ASSET (A) 或 cashflow.CAPEX (HK/US)
+          - A 股独有字段(HK/US 物理表无)在 HK/US 视图中 SELECT NULL 占位
+            (TOTAL_SHARE / FCFF_BACK / PARENTNETPROFIT / PARENTNETPROFITTZ /
+             INDUSTRY_NAME / TOTAL_OPERATE_INCOME / DEDUCT_PARENT_NETPROFIT)
+
+        消费端:strategies/utils 通过 ctx.get_financial / get_balance / get_cashflow
+        访问该视图;A 股独有字段在 HK/US 上得到 NULL,业务代码须容错(已实现)。
+        """
+        view = f"v_{market.lower()}_periodic_report"
+        ind = f"v_{market.lower()}_indicator"
+        inc = f"v_{market.lower()}_income"
+        bal = f"v_{market.lower()}_balance"
+        cf = f"v_{market.lower()}_cashflow"
+        for v in (ind, inc, bal, cf):
+            if not self._view_exists(v):
+                logger.info(f"Skip {view}: prerequisite {v} missing")
+                return
+
+        # ── A 独有字段在三市场的物理映射 ──
+        # 用 IS / IS NOT 判断列存在性,生成对应 SELECT 表达式
+        ind_cols = set(
+            self._conn.execute(f"DESCRIBE {ind}").fetchdf()["column_name"].tolist()
+        )
+        inc_cols = set(
+            self._conn.execute(f"DESCRIBE {inc}").fetchdf()["column_name"].tolist()
+        )
+        bal_cols = set(
+            self._conn.execute(f"DESCRIBE {bal}").fetchdf()["column_name"].tolist()
+        )
+        cf_cols = set(
+            self._conn.execute(f"DESCRIBE {cf}").fetchdf()["column_name"].tolist()
+        )
+
+        def col_or_null(
+            table_alias: str, col: str, present: set, dtype: str = "DOUBLE"
+        ) -> str:
+            """列存在则 SELECT 该列,否则 NULL 占位。"""
+            if col in present:
+                return f"{table_alias}.{col}"
+            return f"NULL::{dtype} AS {col}"
+
+        # MONETARYFUNDS 同义统一
+        if "MONETARYFUNDS" in bal_cols:
+            monetary = "b.MONETARYFUNDS"
+        elif "CASH_EQUIVALENTS" in bal_cols:
+            monetary = "b.CASH_EQUIVALENTS AS MONETARYFUNDS"
+        else:
+            monetary = "NULL::DOUBLE AS MONETARYFUNDS"
+
+        # CAPEX 同义统一(A 用 CONSTRUCT_LONG_ASSET,HK/US 用 CAPEX)
+        # 同时保留 CONSTRUCT_LONG_ASSET 别名(strategies/utils 现仍引用)
+        if "CONSTRUCT_LONG_ASSET" in cf_cols:
+            capex_expr = (
+                "c.CONSTRUCT_LONG_ASSET AS CAPEX, "
+                "c.CONSTRUCT_LONG_ASSET AS CONSTRUCT_LONG_ASSET"
+            )
+        elif "CAPEX" in cf_cols:
+            capex_expr = "c.CAPEX AS CAPEX, c.CAPEX AS CONSTRUCT_LONG_ASSET"
+        else:
+            capex_expr = "NULL::DOUBLE AS CAPEX, NULL::DOUBLE AS CONSTRUCT_LONG_ASSET"
+
+        sql = f"""
+            CREATE OR REPLACE VIEW {view} AS
+            SELECT
+                i._symbol,
+                i.REPORT_DATE,
+
+                -- ── indicator: 三市场共有 14 列 ──
+                {col_or_null("i", "EPSJB", ind_cols)},
+                {col_or_null("i", "ROEJQ", ind_cols)},
+                {col_or_null("i", "ROA", ind_cols)},
+                {col_or_null("i", "ROIC", ind_cols)},
+                {col_or_null("i", "BPS", ind_cols)},
+                {col_or_null("i", "DILUTED_EPS", ind_cols)},
+                {col_or_null("i", "XSMLL", ind_cols)},
+                {col_or_null("i", "XSJLL", ind_cols)},
+                {col_or_null("i", "ZCFZL", ind_cols)},
+                {col_or_null("i", "LD", ind_cols)},
+                {col_or_null("i", "GROSS_PROFIT_YOY", ind_cols)},
+                {col_or_null("i", "OPERATE_INCOME_YOY", ind_cols)},
+                {col_or_null("i", "PARENT_NETPROFIT_YOY", ind_cols)},
+
+                -- ── indicator: A 股独有(HK/US NULL) ──
+                {col_or_null("i", "PARENTNETPROFIT", ind_cols)},
+                {col_or_null("i", "TOTAL_SHARE", ind_cols)},
+                {col_or_null("i", "FCFF_BACK", ind_cols)},
+                {col_or_null("i", "PARENTNETPROFITTZ", ind_cols)},
+
+                -- ── income: 三市场共有 ──
+                {col_or_null("inc", "PARENT_NETPROFIT", inc_cols)},
+                {col_or_null("inc", "NETPROFIT", inc_cols)},
+                {col_or_null("inc", "OPERATE_INCOME", inc_cols)},
+                {col_or_null("inc", "OPERATE_PROFIT", inc_cols)},
+                {col_or_null("inc", "TOTAL_PROFIT", inc_cols)},
+                {col_or_null("inc", "BASIC_EPS", inc_cols)},
+                {col_or_null("inc", "OPERATE_EXPENSE", inc_cols)},
+                {col_or_null("inc", "FINANCE_EXPENSE", inc_cols)},
+                {col_or_null("inc", "INCOME_TAX", inc_cols)},
+
+                -- ── income: A 股独有 / 部分市场缺失 ──
+                {col_or_null("inc", "TOTAL_OPERATE_INCOME", inc_cols)},
+                {col_or_null("inc", "DEDUCT_PARENT_NETPROFIT", inc_cols)},
+
+                -- ── balance: 三市场共有 ──
+                {col_or_null("b", "TOTAL_ASSETS", bal_cols)},
+                {col_or_null("b", "TOTAL_LIABILITIES", bal_cols)},
+                {col_or_null("b", "TOTAL_EQUITY", bal_cols)},
+                {col_or_null("b", "TOTAL_PARENT_EQUITY", bal_cols)},
+                {col_or_null("b", "FIXED_ASSET", bal_cols)},
+                {col_or_null("b", "INTANGIBLE_ASSET", bal_cols)},
+                {col_or_null("b", "INVENTORY", bal_cols)},
+                {col_or_null("b", "ACCOUNTS_RECE", bal_cols)},
+                {col_or_null("b", "SHARE_CAPITAL", bal_cols)},
+
+                -- ── balance: 同义统一 + A 独有 ──
+                {monetary},
+                {col_or_null("b", "GOODWILL", bal_cols)},
+                {col_or_null("b", "INDUSTRY_NAME", bal_cols, dtype="VARCHAR")},
+
+                -- ── cashflow: 三市场共有 ──
+                {col_or_null("c", "NETCASH_OPERATE", cf_cols)},
+                {col_or_null("c", "NETCASH_INVEST", cf_cols)},
+                {col_or_null("c", "NETCASH_FINANCE", cf_cols)},
+                {col_or_null("c", "BEGIN_CCE", cf_cols)},
+                {col_or_null("c", "END_CCE", cf_cols)},
+                {col_or_null("c", "CCE_ADD", cf_cols)},
+
+                -- ── cashflow: 同义统一(CAPEX / CONSTRUCT_LONG_ASSET 互为别名) ──
+                {capex_expr}
+
+            FROM {ind} i
+            LEFT JOIN {inc} inc
+              ON inc._symbol = i._symbol AND inc.REPORT_DATE = i.REPORT_DATE
+            LEFT JOIN {bal} b
+              ON b._symbol = i._symbol AND b.REPORT_DATE = i.REPORT_DATE
+            LEFT JOIN {cf} c
+              ON c._symbol = i._symbol AND c.REPORT_DATE = i.REPORT_DATE
+        """
+        try:
+            self._conn.execute(sql)
+            logger.info(f"View created: {view} (4 表 LEFT JOIN + 同义字段统一)")
+        except Exception as e:
+            logger.warning(f"Failed to create {view}: {e}")
 
     def _override_daily_with_derived_valuation(self, market: str):
         """用 ASOF LEFT JOIN 把 indicator(EPSJB / BPS)派生的 peTTM/pbMRQ 覆盖到 daily 视图。
