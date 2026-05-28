@@ -179,8 +179,31 @@ class Context:
         return self.order_shares(symbol, shares) if shares >= 100 else None
 
     def order_target_percent(self, symbol: str, target_pct: float):
-        equity = self._broker.portfolio.equity(self.current_date)
-        return self.order_value(symbol, equity * target_pct)
+        # 语义:把 symbol 持仓**调整到** equity × target_pct,而非每次绝对加仓。
+        # equity = cash + 所有持仓按当前 bar 收盘价的市值
+        portfolio = self._broker.portfolio
+        current_prices: dict[str, float] = {}
+        for sym in portfolio.get_positions():
+            price = self.get_price(sym)
+            if price is not None:
+                current_prices[sym] = price["close"]
+        equity = portfolio.get_total_value(current_prices)
+
+        price = self.get_price(symbol)
+        if price is None:
+            return None
+        # 目标股数(整百)
+        target_shares = int(equity * target_pct / price["close"]) // 100 * 100
+        # 当前持仓股数
+        pos = portfolio.get_position(symbol)
+        held = pos["shares"] if pos else 0
+        delta = target_shares - held
+        if delta == 0:
+            return None
+        # delta < 100 股时不下单(同 order_value 的 100 股整手约束)
+        if abs(delta) < 100:
+            return None
+        return self.order_shares(symbol, delta)
 
     # ===== 日志(代理 sink) =====
     def _common_log_kwargs(self) -> dict[str, Any]:

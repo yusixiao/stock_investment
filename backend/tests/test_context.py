@@ -201,13 +201,51 @@ def test_order_value_no_price_returns_none(ctx):
 
 
 def test_order_target_percent_uses_equity(ctx):
-    ctx._broker.portfolio.equity.return_value = 1_000_000
+    # equity = cash + 持仓市值;Mock portfolio 返回空持仓 + total_value=100w
+    ctx._broker.portfolio.get_positions.return_value = []
+    ctx._broker.portfolio.get_total_value.return_value = 1_000_000
+    ctx._broker.portfolio.get_position.return_value = None
     ctx._market_data.get_price.return_value = {"close": 10.0}
-    # 10% × 100w = 10w → 10000 股 → 取整百仍是 10000
+    # 10% × 100w = 10w → 目标 10000 股,当前 0 → delta 10000(buy)
     ctx.order_target_percent("000001", 0.1)
-    ctx._broker.portfolio.equity.assert_called_once_with("2024-03-29")
+    ctx._broker.portfolio.get_total_value.assert_called_once_with({})
     kwargs = ctx._broker.submit_order.call_args.kwargs
     assert kwargs["shares"] == 10000
+    assert kwargs["direction"] == "buy"
+
+
+def test_order_target_percent_delta_semantics(ctx):
+    # 已持 6000 股,目标 10000 → 只下 4000 股 delta(整百)
+    ctx._broker.portfolio.get_positions.return_value = ["000001"]
+    ctx._broker.portfolio.get_total_value.return_value = 1_000_000
+    ctx._broker.portfolio.get_position.return_value = {"shares": 6000, "cost": 10.0}
+    ctx._market_data.get_price.return_value = {"close": 10.0}
+    ctx.order_target_percent("000001", 0.1)
+    kwargs = ctx._broker.submit_order.call_args.kwargs
+    assert kwargs["shares"] == 4000
+    assert kwargs["direction"] == "buy"
+
+
+def test_order_target_percent_at_target_no_op(ctx):
+    # 已持 10000 股,目标 10000 → delta=0,不下单
+    ctx._broker.portfolio.get_positions.return_value = ["000001"]
+    ctx._broker.portfolio.get_total_value.return_value = 1_000_000
+    ctx._broker.portfolio.get_position.return_value = {"shares": 10000, "cost": 10.0}
+    ctx._market_data.get_price.return_value = {"close": 10.0}
+    ctx.order_target_percent("000001", 0.1)
+    ctx._broker.submit_order.assert_not_called()
+
+
+def test_order_target_percent_reduce_position(ctx):
+    # 已持 10000 股,目标 5% × 100w / 10 = 5000 → delta -5000 → sell 5000
+    ctx._broker.portfolio.get_positions.return_value = ["000001"]
+    ctx._broker.portfolio.get_total_value.return_value = 1_000_000
+    ctx._broker.portfolio.get_position.return_value = {"shares": 10000, "cost": 10.0}
+    ctx._market_data.get_price.return_value = {"close": 10.0}
+    ctx.order_target_percent("000001", 0.05)
+    kwargs = ctx._broker.submit_order.call_args.kwargs
+    assert kwargs["shares"] == 5000
+    assert kwargs["direction"] == "sell"
 
 
 # ===== 因子收集(策略雷达 / 选股回测) =====
