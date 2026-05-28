@@ -46,35 +46,44 @@ const DataCacheStatusBar: React.FC = () => {
     return () => window.clearInterval(t);
   }, [status, refresh]);
 
-  const renderPill = (m: CacheMarket) => {
+  const renderBlock = (m: CacheMarket) => {
     const s = status?.[m];
-    let text: string;
+    let statusText: string;
+    let dateText: string;
     let color: string;
     if (s?.status === 'loaded') {
-      text = `已加载 ${s.symbols} 只 · ${s.last_date ?? '-'}`;
+      statusText = `已加载 ${s.symbols} 只`;
+      dateText = s.last_date ?? '-';
       color = 'text-emerald-400';
     } else if (s?.status === 'loading') {
-      text = '加载中…';
+      statusText = '加载中…';
+      dateText = '-';
       color = 'text-amber-400';
     } else if (s?.status === 'failed') {
-      text = '失败';
+      statusText = '失败';
+      dateText = '-';
       color = 'text-rose-400';
     } else {
-      text = '未加载';
+      statusText = '未加载';
+      dateText = '-';
       color = 'text-muted-text';
     }
     return (
-      <span key={m} className="whitespace-nowrap tabular-nums">
-        <span className="text-secondary-text">{MARKET_LABELS[m]}</span>
-        <span className={`ml-1 ${color}`}>{text}</span>
-      </span>
+      <div
+        key={m}
+        className="flex flex-col items-center gap-0.5 py-1 text-center leading-tight tabular-nums"
+      >
+        <span className="whitespace-nowrap text-sm font-medium text-secondary-text">{MARKET_LABELS[m]}</span>
+        <span className={`whitespace-nowrap text-sm ${color}`}>{statusText}</span>
+        <span className={`whitespace-nowrap text-sm ${color}`}>{dateText}</span>
+      </div>
     );
   };
 
   return (
     <>
       <div
-        className="pointer-events-auto fixed bottom-3 left-3 z-30 hidden items-center gap-2 rounded-xl border border-border/60 bg-card/85 px-2.5 py-1.5 text-[11px] shadow-soft-card backdrop-blur-md lg:flex"
+        className="pointer-events-auto fixed bottom-3 left-3 z-30 hidden w-[132px] flex-col items-stretch gap-1.5 rounded-2xl border border-border/60 bg-card/85 px-2 py-2 text-sm shadow-soft-card backdrop-blur-md lg:flex"
         aria-label="数据缓存状态"
       >
         <button
@@ -83,14 +92,14 @@ const DataCacheStatusBar: React.FC = () => {
             refresh();
             setModalOpen(true);
           }}
-          className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-elevated/60 px-2 py-1 text-xs font-medium text-secondary-text transition-colors hover:text-foreground"
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border/60 bg-elevated/60 px-3 text-sm font-medium text-secondary-text transition-all hover:border-border hover:bg-hover hover:text-foreground"
           aria-label="打开数据缓存加载弹窗"
         >
-          <Database className="h-3.5 w-3.5" />
-          <span>数据</span>
+          <Database className="h-5 w-5" />
+          <span>加载</span>
         </button>
-        <div className="flex items-center gap-3 pr-1">
-          {(['A', 'HK', 'US'] as CacheMarket[]).map(renderPill)}
+        <div className="flex flex-col">
+          {(['A', 'HK', 'US'] as CacheMarket[]).map(renderBlock)}
         </div>
       </div>
 
