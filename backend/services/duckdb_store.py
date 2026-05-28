@@ -754,6 +754,11 @@ class DuckDBStore:
     ) -> dict[str, pd.DataFrame]:
         """批量取财务序列(默认 indicator,REPORT_DATE 升序)。
         视图缺失返回 {}。
+
+        ⚠️ 该方法返回 raw view 的**全部列**(A=176/HK=16/US=27 不对齐),
+        三市场 schema 不一致。回测/strategies 应改用 query_periodic_report_bulk
+        拿统一 50 列;本方法保留给需要原始列的消费者(如 DataPackBuilder
+        Phase 1 数据包,某些 section 依赖 raw 拼音字段)。
         """
         with self._lock:
             view = f"v_{market.lower()}_{fin_type}"
@@ -766,6 +771,107 @@ class DuckDBStore:
                 where = f"WHERE _symbol IN ({placeholders})"
                 params.extend(symbols)
             sql = f"SELECT * FROM {view} {where} ORDER BY _symbol, REPORT_DATE"
+            df = self._conn.execute(sql, params).fetchdf()
+            return self._bulk_split(df, sort_col="REPORT_DATE")
+
+    # 业务视图层(v_{market}_periodic_report)的 fin_type → 列子集投影
+    # 与 _setup_periodic_report_view 输出 50 列严格对齐;新增字段需双侧同步
+    _PERIODIC_COLS = {
+        "indicator": [
+            # 三市场共有
+            "EPSJB",
+            "ROEJQ",
+            "ROA",
+            "ROIC",
+            "BPS",
+            "DILUTED_EPS",
+            "XSMLL",
+            "XSJLL",
+            "ZCFZL",
+            "LD",
+            "GROSS_PROFIT_YOY",
+            "OPERATE_INCOME_YOY",
+            "PARENT_NETPROFIT_YOY",
+            # A 股独有(HK/US 视图填 NULL,strategies 已容错)
+            "PARENTNETPROFIT",
+            "TOTAL_SHARE",
+            "FCFF_BACK",
+            "PARENTNETPROFITTZ",
+        ],
+        "income": [
+            "PARENT_NETPROFIT",
+            "NETPROFIT",
+            "OPERATE_INCOME",
+            "OPERATE_PROFIT",
+            "TOTAL_PROFIT",
+            "BASIC_EPS",
+            "OPERATE_EXPENSE",
+            "FINANCE_EXPENSE",
+            "INCOME_TAX",
+            "TOTAL_OPERATE_INCOME",
+            "DEDUCT_PARENT_NETPROFIT",
+        ],
+        "balance": [
+            "TOTAL_ASSETS",
+            "TOTAL_LIABILITIES",
+            "TOTAL_EQUITY",
+            "TOTAL_PARENT_EQUITY",
+            "FIXED_ASSET",
+            "INTANGIBLE_ASSET",
+            "INVENTORY",
+            "ACCOUNTS_RECE",
+            "SHARE_CAPITAL",
+            # 同义统一 + A 独有
+            "MONETARYFUNDS",
+            "GOODWILL",
+            "INDUSTRY_NAME",
+        ],
+        "cashflow": [
+            "NETCASH_OPERATE",
+            "NETCASH_INVEST",
+            "NETCASH_FINANCE",
+            "BEGIN_CCE",
+            "END_CCE",
+            "CCE_ADD",
+            # 同义统一(双别名,strategies 现仍引用 CONSTRUCT_LONG_ASSET)
+            "CAPEX",
+            "CONSTRUCT_LONG_ASSET",
+        ],
+    }
+
+    def query_periodic_report_bulk(
+        self,
+        market: str,
+        symbols: Optional[list[str]] = None,
+        fin_type: str = "indicator",
+    ) -> dict[str, pd.DataFrame]:
+        """批量取业务视图字段子集(三市场 schema 统一)。
+
+        相对 query_financial_bulk 的差异:
+        - 数据源 = v_{market}_periodic_report(4 表 LEFT JOIN + 同义统一)
+        - 列输出 = _PERIODIC_COLS[fin_type] + REPORT_DATE,不含 raw 视图独有的
+          冗余列(A 股 indicator 拼音指标 100+ 列等)
+        - HK/US 上 A 独有字段(MONETARYFUNDS via CASH_EQUIVALENTS,CAPEX via 物理
+          CAPEX,PARENTNETPROFIT NULL fill)语义已统一,strategies 透明跨市
+
+        视图缺失或 fin_type 非法返回 {}。
+        """
+        if fin_type not in self._PERIODIC_COLS:
+            logger.warning(f"query_periodic_report_bulk: unknown fin_type={fin_type}")
+            return {}
+        view = f"v_{market.lower()}_periodic_report"
+        with self._lock:
+            if not self._view_exists(view):
+                return {}
+            cols = self._PERIODIC_COLS[fin_type]
+            select = ", ".join(["_symbol", "REPORT_DATE"] + cols)
+            params: list = []
+            where = ""
+            if symbols:
+                placeholders = ",".join(["?"] * len(symbols))
+                where = f"WHERE _symbol IN ({placeholders})"
+                params.extend(symbols)
+            sql = f"SELECT {select} FROM {view} {where} ORDER BY _symbol, REPORT_DATE"
             df = self._conn.execute(sql, params).fetchdf()
             return self._bulk_split(df, sort_col="REPORT_DATE")
 

@@ -151,9 +151,14 @@ def _load_dividend(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 
 def _load_financial(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """财务指标(English schema:REPORT_DATE / ROEJQ / EPSJB / BPS / TOTAL_SHARE / ...)。"""
+    """财务指标 — 走业务视图 v_{market}_periodic_report 的 indicator 列子集
+    (REPORT_DATE / ROEJQ / EPSJB / BPS / 三市场共有 + A 独有 NULL 占位)。
+    Phase 2(2026-05-28):从 raw view 切到业务视图,HK/US schema 自动统一。
+    """
     try:
-        out = get_store().query_financial_bulk(market, symbols, fin_type="indicator")
+        out = get_store().query_periodic_report_bulk(
+            market, symbols, fin_type="indicator"
+        )
         logger.info(
             "_load_financial: market=%s in=%d out=%d", market, len(symbols), len(out)
         )
@@ -164,10 +169,14 @@ def _load_financial(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 
 def _load_balance(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """资产负债表(English schema:REPORT_DATE / MONETARYFUNDS / GOODWILL /
-    TOTAL_ASSETS / TOTAL_LIABILITIES / TOTAL_PARENT_EQUITY / ...)。"""
+    """资产负债表 — 走业务视图 balance 列子集(MONETARYFUNDS 已从 HK/US 的
+    CASH_EQUIVALENTS 同义统一,GOODWILL/INDUSTRY_NAME 在 HK NULL fill)。
+    Phase 2(2026-05-28)切业务视图。
+    """
     try:
-        out = get_store().query_financial_bulk(market, symbols, fin_type="balance")
+        out = get_store().query_periodic_report_bulk(
+            market, symbols, fin_type="balance"
+        )
         logger.info(
             "_load_balance: market=%s in=%d out=%d", market, len(symbols), len(out)
         )
@@ -178,10 +187,14 @@ def _load_balance(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 
 def _load_cashflow(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """现金流量表(English schema:REPORT_DATE / NETCASH_OPERATE /
-    CONSTRUCT_LONG_ASSET / NETCASH_INVEST / NETCASH_FINANCE / ...)。"""
+    """现金流量表 — 走业务视图 cashflow 列子集(CAPEX / CONSTRUCT_LONG_ASSET
+    互为别名,HK/US 物理 CAPEX 自动暴露到 CONSTRUCT_LONG_ASSET 兼容旧引用)。
+    Phase 2(2026-05-28)切业务视图。
+    """
     try:
-        out = get_store().query_financial_bulk(market, symbols, fin_type="cashflow")
+        out = get_store().query_periodic_report_bulk(
+            market, symbols, fin_type="cashflow"
+        )
         logger.info(
             "_load_cashflow: market=%s in=%d out=%d", market, len(symbols), len(out)
         )
@@ -192,10 +205,12 @@ def _load_cashflow(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
 
 
 def _load_income(market: str, symbols: list[str]) -> dict[str, pd.DataFrame]:
-    """利润表(English schema:REPORT_DATE / TOTAL_OPERATE_INCOME / PARENT_NETPROFIT /
-    DEDUCT_PARENT_NETPROFIT / ...)。用于 L1.3 信誉评级(营收 CV + 利润调整幅度)。"""
+    """利润表 — 走业务视图 income 列子集(PARENT_NETPROFIT 三市场共有,
+    TOTAL_OPERATE_INCOME 仅 A 股,HK/US NULL fill)。L1.3 信誉评级用。
+    Phase 2(2026-05-28)切业务视图。
+    """
     try:
-        out = get_store().query_financial_bulk(market, symbols, fin_type="income")
+        out = get_store().query_periodic_report_bulk(market, symbols, fin_type="income")
         logger.info(
             "_load_income: market=%s in=%d out=%d", market, len(symbols), len(out)
         )
