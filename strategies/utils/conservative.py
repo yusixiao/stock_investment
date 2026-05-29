@@ -162,7 +162,13 @@ def compute_r(ctx, symbol: str) -> float | None:
     fin = ctx.get_financial_annual(symbol)
     if fin is None:
         return None
+    # PARENTNETPROFIT 来自 indicator 表,A 股专有;HK/US NULL fill
+    # 退化到 income 表 PARENT_NETPROFIT(三市场共有,Phase 3 跨市兼容)
     np_value = _safe_float(fin.get("PARENTNETPROFIT"))
+    if np_value is None:
+        inc_hist = ctx.get_income_annual_history(symbol, 1)
+        if inc_hist:
+            np_value = _safe_float(inc_hist[0].get("PARENT_NETPROFIT"))
     total_share = _safe_float(fin.get("TOTAL_SHARE"))
     if np_value is None or np_value <= 0:
         return None
@@ -619,7 +625,10 @@ def _compute_revenue_cv_5y(ctx, symbol: str) -> float | None:
         return None
     revenues: list[float] = []
     for row in history:
+        # A 股优先 TOTAL_OPERATE_INCOME(含其他业务收入),HK/US 退化 OPERATE_INCOME
         v = _safe_float(row.get("TOTAL_OPERATE_INCOME"))
+        if v is None:
+            v = _safe_float(row.get("OPERATE_INCOME"))
         if v is not None:
             revenues.append(v)
     if len(revenues) < 3:
