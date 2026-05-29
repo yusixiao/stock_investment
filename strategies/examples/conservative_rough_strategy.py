@@ -115,12 +115,31 @@ class ConservativeRoughStrategy(Strategy):
         # 3) 粗算 R
         pool = conservative.filter_by_r(ctx, pool, threshold_pct=self.p.r_threshold_pct)
 
-        # 4-7) Layer 2 否决 — 硬否决 vs 软评分双模式
+        # 4-6) CPA critical 三条 — 始终硬过滤(soft 也不豁免)
+        # 入场后 on_sell critical 规则 1/2/3 会立即清仓,screen 必须先过滤
+        # 否则注定买入即清仓,产生"持仓 1 天"的虚假交易
+        pool = conservative.reject_negative_net_cash(ctx, pool)
+        pool = conservative.reject_negative_fcf_2y(ctx, pool)
+        pool = conservative.reject_low_fcf_yield(ctx, pool)
+
+        # 7-8) Layer 2 软陷阱(高商誉 / ROE 退坡)— 硬否决 vs 软评分双模式
+        # 这两项 CPA 7 条原文无对应止损规则,作为价值陷阱辅助信号,允许 soft 放宽
         if self.p.use_trap_rating_soft:
             soft_pool: list[str] = []
             for sym in pool:
-                rating, triggered = conservative.compute_trap_rating(
-                    ctx, sym, max_roe_decline=self.p.max_roe_decline
+                triggered: list[str] = []
+                # NOTE: _is_goodwill_triggered 内部硬编码 30% 阈值,与默认 param 对齐
+                if conservative._is_goodwill_triggered(ctx, sym):
+                    triggered.append("goodwill")
+                if conservative._is_roe_decline_3y_triggered(
+                    ctx, sym, max_decline=self.p.max_roe_decline
+                ):
+                    triggered.append("roe_decline")
+                # 2 项里命中 ≥2(全部)→ high 拒;≤1 → 通过
+                rating = (
+                    "high"
+                    if len(triggered) >= 2
+                    else ("mid" if len(triggered) == 1 else "low")
                 )
                 if rating == "high":
                     ctx.log_reject(
@@ -145,8 +164,6 @@ class ConservativeRoughStrategy(Strategy):
             pool = conservative.reject_high_goodwill(
                 ctx, pool, max_ratio=self.p.max_goodwill_ratio
             )
-            pool = conservative.reject_negative_net_cash(ctx, pool)
-            pool = conservative.reject_negative_fcf_2y(ctx, pool)
             pool = conservative.reject_roe_decline_3y(
                 ctx, pool, max_decline=self.p.max_roe_decline
             )
@@ -199,6 +216,13 @@ class ConservativeRoughStrategy(Strategy):
                 ctx.remove_target(sym)
                 self._entry_baselines.pop(sym, None)
                 self._warning_seen.pop(sym, None)
+                ctx.log_reject(
+                    sym,
+                    "conservative.stop_loss",
+                    "critical",
+                    reasons=reasons,
+                    shares=shares,
+                )
                 continue
 
             if severity == "warning":
@@ -211,3 +235,11 @@ class ConservativeRoughStrategy(Strategy):
                 if halved > 0:
                     ctx.order_shares(sym, -halved)
                 seen.update(new_reasons)
+                ctx.log_reject(
+                    sym,
+                    "conservative.stop_loss",
+                    "warning",
+                    reasons=new_reasons,
+                    shares=shares,
+                    halved=halved,
+                )

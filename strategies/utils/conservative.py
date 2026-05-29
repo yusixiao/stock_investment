@@ -352,6 +352,70 @@ def reject_negative_fcf_2y(ctx, symbols: Iterable[str]) -> list[str]:
     return result
 
 
+def reject_low_fcf_yield(
+    ctx, symbols: Iterable[str], *, threshold: float = 0.05
+) -> list[str]:
+    """最新年报 FCF / 当前市值 < threshold(默认 5%)→ 否决。
+
+    对齐 CPA on_sell 规则 2(critical):FCF yield < 5% → 清仓。
+    若入场时已 < 5%,会立即被 on_sell 清仓 → 此处必须硬过滤。
+
+    口径:
+      FCF = NETCASH_OPERATE − CONSTRUCT_LONG_ASSET(最新年报)
+      market_cap = close(当前 bar)× TOTAL_SHARE(最新年报)
+      yield = FCF / market_cap
+
+    保守放行情形:
+      - cashflow / financial / price 任一不可达 → 通过(no_data)
+      - market_cap ≤ 0 → 通过
+    stage = "conservative.fcf_yield"
+    """
+    stage = "conservative.fcf_yield"
+    result: list[str] = []
+    in_list = list(symbols)
+    for sym in in_list:
+        cf = ctx.get_cashflow_annual(sym)
+        if cf is None:
+            ctx.log_pass(sym, stage, reason="no_data")
+            result.append(sym)
+            continue
+        op = _safe_float(cf.get("NETCASH_OPERATE"))
+        capex = _safe_float(cf.get("CONSTRUCT_LONG_ASSET"))
+        if op is None:
+            ctx.log_pass(sym, stage, reason="no_data")
+            result.append(sym)
+            continue
+        fcf = op - (capex if capex is not None else 0.0)
+
+        fin = ctx.get_financial_annual(sym)
+        total_share = _safe_float(fin.get("TOTAL_SHARE")) if fin else None
+        price = ctx.get_price(sym)
+        close = _safe_float(price.get("close")) if isinstance(price, dict) else None
+        if total_share is None or total_share <= 0 or close is None or close <= 0:
+            ctx.log_pass(sym, stage, reason="no_data")
+            result.append(sym)
+            continue
+        market_cap = close * total_share
+        if market_cap <= 0:
+            ctx.log_pass(sym, stage, reason="no_data")
+            result.append(sym)
+            continue
+        fcf_yield = fcf / market_cap
+        if fcf_yield < threshold:
+            ctx.log_reject(
+                sym,
+                stage,
+                "fcf_yield_below_threshold",
+                fcf_yield=fcf_yield,
+                threshold=threshold,
+            )
+            continue
+        ctx.log_pass(sym, stage, fcf_yield=fcf_yield)
+        result.append(sym)
+    ctx.log_flow(stage, input=len(in_list), passed=len(result))
+    return result
+
+
 def reject_roe_decline_3y(
     ctx, symbols: Iterable[str], *, max_decline: float = 0.30
 ) -> list[str]:

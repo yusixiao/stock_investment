@@ -21,6 +21,7 @@ from strategies.utils.conservative import (
     filter_by_r,
     reject_financial_industry,
     reject_high_goodwill,
+    reject_low_fcf_yield,
     reject_negative_fcf_2y,
     reject_negative_net_cash,
 )
@@ -308,3 +309,53 @@ def test_reject_negative_fcf_2y_missing_history_passes():
     """history 不可达 → 保守放行。"""
     ctx = MockContext()
     assert reject_negative_fcf_2y(ctx, ["MISSING"]) == ["MISSING"]
+
+
+# ---------- reject_low_fcf_yield ----------
+
+
+def test_reject_low_fcf_yield_below_threshold_rejected():
+    """FCF yield < 5% → 拒。FCF=1e7,market_cap=1e9 → yield=1% < 5%。"""
+    ctx = MockContext(
+        price={"BAD": {"daily": {"close": 10.0}}},
+    )
+    ctx.set_cashflow({"BAD": {"NETCASH_OPERATE": 2e7, "CONSTRUCT_LONG_ASSET": 1e7}})
+    ctx.set_financial({"BAD": {"TOTAL_SHARE": 1e8}})  # market_cap = 10 × 1e8 = 1e9
+    assert reject_low_fcf_yield(ctx, ["BAD"]) == []
+
+
+def test_reject_low_fcf_yield_above_threshold_passes():
+    """FCF yield ≥ 5% → 通过。FCF=8e7,market_cap=1e9 → yield=8%。"""
+    ctx = MockContext(
+        price={"OK": {"daily": {"close": 10.0}}},
+    )
+    ctx.set_cashflow({"OK": {"NETCASH_OPERATE": 1e8, "CONSTRUCT_LONG_ASSET": 2e7}})
+    ctx.set_financial({"OK": {"TOTAL_SHARE": 1e8}})
+    assert reject_low_fcf_yield(ctx, ["OK"]) == ["OK"]
+
+
+def test_reject_low_fcf_yield_missing_data_passes():
+    """cashflow / financial / price 任一不可达 → 保守放行。"""
+    ctx = MockContext()
+    assert reject_low_fcf_yield(ctx, ["MISSING"]) == ["MISSING"]
+
+
+def test_reject_low_fcf_yield_negative_fcf_rejected():
+    """负 FCF 必然 < 5% threshold → 拒。"""
+    ctx = MockContext(
+        price={"NEG": {"daily": {"close": 10.0}}},
+    )
+    ctx.set_cashflow({"NEG": {"NETCASH_OPERATE": 1e7, "CONSTRUCT_LONG_ASSET": 5e7}})
+    ctx.set_financial({"NEG": {"TOTAL_SHARE": 1e8}})
+    assert reject_low_fcf_yield(ctx, ["NEG"]) == []
+
+
+def test_reject_low_fcf_yield_custom_threshold():
+    """支持自定义阈值。"""
+    ctx = MockContext(
+        price={"X": {"daily": {"close": 10.0}}},
+    )
+    ctx.set_cashflow({"X": {"NETCASH_OPERATE": 4e7, "CONSTRUCT_LONG_ASSET": 0}})
+    ctx.set_financial({"X": {"TOTAL_SHARE": 1e8}})  # yield=4%
+    assert reject_low_fcf_yield(ctx, ["X"], threshold=0.03) == ["X"]
+    assert reject_low_fcf_yield(ctx, ["X"], threshold=0.05) == []
