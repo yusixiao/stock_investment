@@ -50,7 +50,7 @@ class ValueFactorBreakoutStrategy(Strategy):
         },
         # ===== 仓位 / 买入参数 =====
         "buy_weeks": {"default": 4, "type": "int", "label": "分批周数"},
-        "max_holdings": {"default": 15, "type": "int", "label": "最大持仓只数"},
+        "max_holdings": {"default": 15, "type": "int", "label": "最大持股只数"},
         # ===== 卖出参数 =====
         "sell_pe_pb_max": {
             "default": 0.0,

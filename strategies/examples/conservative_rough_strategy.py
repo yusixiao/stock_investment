@@ -87,7 +87,7 @@ class ConservativeRoughStrategy(Strategy):
             "label": "单股仓位绝对上限(full tier 100% × 此值)",
         },
         "buy_weeks": {"default": 4, "type": "int", "label": "分批周数"},
-        "max_holdings": {"default": 15, "type": "int", "label": "最大持仓只数"},
+        "max_holdings": {"default": 15, "type": "int", "label": "最大持股只数"},
     }
 
     def __init__(self, param_overrides=None):

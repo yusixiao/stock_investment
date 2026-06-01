@@ -4,6 +4,7 @@ import { Badge } from '../common';
 import BacktestResult from './BacktestResult';
 import RadarResultView from './RadarResultView';
 import type { BacktestTask } from './BacktestAnalysis';
+import { marketLabel } from '../../utils/marketLabel';
 
 interface Props {
   task: BacktestTask;
@@ -11,20 +12,38 @@ interface Props {
 }
 
 // 参数 key → 中文标签(没匹配的保持原 key)
+// 与 strategies/examples/*.py 中各 Strategy.params 的 label 对齐,
+// 用于历史详情(无 strategyInfo 时)显示
 const PARAM_LABELS: Record<string, string> = {
   min_dividend_years: '最低分红年限',
+  pe_min: 'PE最小值',
+  pe_max: 'PE最大值',
   pe_pb_min: 'PE×PB 下限',
   pe_pb_max: 'PE×PB 上限',
   min_roe: '最低 ROE (%)',
   ma_fast: '快线周期',
   ma_mid: '中线周期',
   ma_slow: '慢线周期',
+  ma_window: '突破 MA 窗口(0=关闭择时)',
   tangle_threshold: '缠绕阈值',
   tangle_months: '缠绕月数',
   spread_months: '发散月数',
   spread_threshold: '发散阈值',
   vol_red_bars: '连阳根数',
   buy_weeks: '分批买入周数',
+  max_holdings: '最大持股只数',
+  max_per_stock_pct: '单股仓位绝对上限',
+  threshold: '差值阈值',
+  pe_sell_enabled: '启用 PE 多轮分批卖出',
+  pe_sell_threshold: 'PE 触发阈值',
+  pe_sell_chain_threshold: '链式模式 PE 阈值',
+  pe_sell_pct1: '第 1 轮卖出比例',
+  pe_sell_pct_n: '第 2 轮起卖出比例',
+  pe_sell_breakout_pct: '新轮触发突破阈值',
+  pe_sell_batches: '每轮分批数',
+  sell_pe_pb_max: 'PE*PB 退出阈值(0=关)',
+  sell_below_ma: '月线 MA 退出',
+  use_trap_rating_soft: 'L2.5 软评分模式',
   frequency: '执行频率',
 };
 
@@ -100,7 +119,7 @@ const BacktestDetail: React.FC<Props> = ({ task, onBack }) => {
           )}
 
           {task.market && !task.symbol && (
-            <DetailRow label="市场">{task.market}</DetailRow>
+            <DetailRow label="市场">{marketLabel(task.market)}</DetailRow>
           )}
 
           {/* Created time */}

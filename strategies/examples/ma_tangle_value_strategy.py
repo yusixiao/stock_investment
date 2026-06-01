@@ -61,8 +61,8 @@ class MaTangleValueStrategy(Strategy):
     params = {
         # ===== 选股参数 =====
         "min_dividend_years": {"default": 5, "type": "int", "label": "最少分红年数"},
-        "pe_min": {"default": 0.0, "type": "float", "label": "PE 下限"},
-        "pe_max": {"default": 22.0, "type": "float", "label": "PE 上限"},
+        "pe_min": {"default": 0.0, "type": "float", "label": "PE最小值"},
+        "pe_max": {"default": 22.0, "type": "float", "label": "PE最大值"},
         "min_roe": {"default": 10.0, "type": "float", "label": "最低 ROE(%)"},
         "ma_fast": {"default": 5, "type": "int", "label": "快速均线"},
         "ma_mid": {"default": 10, "type": "int", "label": "中速均线"},
@@ -74,7 +74,7 @@ class MaTangleValueStrategy(Strategy):
         "vol_red_bars": {"default": 4, "type": "int", "label": "连阳根数"},
         # ===== 仓位 / 买入参数 =====
         "buy_weeks": {"default": 8, "type": "int", "label": "分批周数"},
-        "max_holdings": {"default": 20, "type": "int", "label": "最大持仓只数"},
+        "max_holdings": {"default": 20, "type": "int", "label": "最大持股只数"},
         # ===== PE 多轮分批卖出参数(2026-05-24)=====
         "pe_sell_enabled": {
             "default": True,

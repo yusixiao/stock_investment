@@ -6,6 +6,7 @@ import { buildTradesFilename, exportTradesToXlsx } from '../../utils/exportTrade
 import { buildMergedTradeRows } from '../../utils/buildMergedTradeRows';
 import { buildPositionSummary } from '../../utils/buildPositionSummary';
 import type { BacktestTask } from './BacktestAnalysis';
+import { marketLabel } from '../../utils/marketLabel';
 
 interface Props {
   task: BacktestTask | null;
@@ -108,7 +109,7 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
         <div>
           <h3 className="text-lg font-semibold text-foreground">{task.strategyName}</h3>
           <p className="mt-0.5 text-xs text-secondary-text">
-            {task.symbol || task.market} · {task.period} · {task.startDate} ~ {task.endDate}
+            {task.symbol || marketLabel(task.market)} · {task.period} · {task.startDate} ~ {task.endDate}
           </p>
         </div>
         <Badge variant={returnTone === 'success' ? 'success' : 'danger'} size="md">
