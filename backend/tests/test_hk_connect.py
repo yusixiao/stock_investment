@@ -125,16 +125,50 @@ def test_updater_appends_new_snapshot(isolated_market_dir):
 
 
 def test_updater_empty_fetch_does_not_crash(isolated_market_dir):
+    """push2 + datacenter-web fallback 都失败时优雅返 count=0,不抛异常。"""
     from backend.services import hk_connect_updater
 
-    with patch.object(
-        hk_connect_updater.EastMoneyAdapter,
-        "fetch_hk_connect_members",
-        return_value=[],
+    with (
+        patch.object(
+            hk_connect_updater.EastMoneyAdapter,
+            "fetch_hk_connect_members",
+            return_value=[],
+        ),
+        patch.object(
+            hk_connect_updater.EastMoneyAdapter,
+            "fetch_hk_connect_members_holdrank",
+            return_value=[],
+        ),
     ):
         result = hk_connect_updater.fetch_and_save_hk_connect()
 
     assert result["count"] == 0
+
+
+def test_updater_falls_back_to_holdrank_when_push2_blocked(isolated_market_dir):
+    """push2 返空时自动切换 datacenter-web,确保 IP 限流下 MVP 仍能拉数据。"""
+    from backend.services import hk_connect_updater
+
+    with (
+        patch.object(
+            hk_connect_updater.EastMoneyAdapter,
+            "fetch_hk_connect_members",
+            return_value=[],
+        ),
+        patch.object(
+            hk_connect_updater.EastMoneyAdapter,
+            "fetch_hk_connect_members_holdrank",
+            return_value=[
+                {"code": "09988", "name": "阿里巴巴-W"},
+                {"code": "00700", "name": "腾讯控股"},
+            ],
+        ) as mock_fallback,
+    ):
+        result = hk_connect_updater.fetch_and_save_hk_connect()
+
+    assert result["count"] == 2
+    assert mock_fallback.call_count == 1
+    assert hk_connect_updater.get_latest_hk_connect_codes() == {"09988", "00700"}
 
 
 def test_get_latest_codes_no_parquet(isolated_market_dir):

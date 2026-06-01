@@ -89,15 +89,26 @@ class DuckDBStore:
             logger.info("Skip v_hk_connect_latest: parquet 不存在 (%s)", path)
             return
         try:
+            # ⚠️ DuckDB 在某些 parquet 写法下 MAX(VARCHAR) 会截断字符串(实测
+            # '2026-06-01' → '2026-06-'),改 CAST AS DATE 比较绕过该 bug
             self._conn.execute(f"""
                 CREATE OR REPLACE VIEW v_hk_connect_latest AS
                 SELECT code, name, board, as_of_date
                 FROM read_parquet('{path}')
-                WHERE as_of_date = (SELECT MAX(as_of_date) FROM read_parquet('{path}'))
+                WHERE CAST(as_of_date AS DATE) =
+                      (SELECT MAX(CAST(as_of_date AS DATE)) FROM read_parquet('{path}'))
             """)
             logger.info("View created: v_hk_connect_latest (港股通最新快照)")
         except Exception as e:
             logger.warning(f"Failed to create v_hk_connect_latest: {e}")
+
+    def refresh_hk_connect_view(self) -> None:
+        """对外暴露:hk_connect parquet 写入后重建 v_hk_connect_latest +
+        重建 v_hk_periodic_report(后者的 is_hk_connect 表达式在 init 时被
+        baked,parquet 从无到有时必须重建才能让 JOIN 生效)。"""
+        self._setup_hk_connect_view()
+        self._setup_periodic_report_view("HK")
+        logger.info("hk_connect views refreshed (latest + v_hk_periodic_report)")
 
     def _setup_periodic_report_view(self, market: str):
         """构建 v_{market}_periodic_report 业务视图。

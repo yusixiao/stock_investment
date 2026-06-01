@@ -56,8 +56,16 @@ def fetch_and_save_hk_connect(
     adapter = EastMoneyAdapter()
     members = adapter.fetch_hk_connect_members(board_code=board_code)
     if not members:
+        # push2 限流时降级到 datacenter-web RPT_MUTUAL_STOCK_HOLDRANKS
         logger.warning(
-            "hk_connect_updater: 拉取空结果 board=%s as_of=%s", board_code, as_of_date
+            "hk_connect_updater: push2 拉取空结果,降级到 datacenter-web holdrank"
+        )
+        members = adapter.fetch_hk_connect_members_holdrank()
+    if not members:
+        logger.warning(
+            "hk_connect_updater: 全部数据源失败 board=%s as_of=%s",
+            board_code,
+            as_of_date,
         )
         return {
             "count": 0,
@@ -102,6 +110,15 @@ def fetch_and_save_hk_connect(
     ).reset_index(drop=True)
     merged.to_parquet(path, index=False)
     invalidate_cache()
+
+    # DuckDB 视图(v_hk_connect_latest + v_hk_periodic_report)依赖 parquet,
+    # parquet 从无到有时 init 已 skip,这里主动 refresh 让本进程立即可用
+    try:
+        from backend.services.duckdb_store import get_store
+
+        get_store().refresh_hk_connect_view()
+    except Exception as e:
+        logger.warning("hk_connect_updater: 刷新 DuckDB 视图失败(忽略): %s", e)
 
     logger.info(
         "hk_connect_updater: 写入 %d 行 (本次新增 %d / 累计 %d) board=%s as_of=%s -> %s",

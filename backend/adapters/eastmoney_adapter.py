@@ -502,6 +502,113 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
             time.sleep(1.0)  # push2 限流敏感,每页间隔 1s
         return out
 
+    def fetch_hk_connect_members_holdrank(self) -> List[dict]:
+        """港股通成分股 — datacenter-web fallback(push2 限流时使用)。
+
+        通过 RPT_MUTUAL_STOCK_HOLDRANKS 报表获取最新 HOLD_DATE 的全部南向标的。
+        MUTUAL_TYPE: 002=沪市港股通 / 004=深市港股通,同一股票常出现两次,按
+        SECURITY_CODE 去重。
+
+        Returns:
+            [{"code": "09988", "name": "阿里巴巴-W"}, ...] 与 push2 版本同 schema
+            失败返 []。
+        """
+        host = "datacenter-web.eastmoney.com"
+        url = f"https://{host}/api/data/v1/get"
+        session = requests.Session()
+        session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 Chrome/120.0 Safari/537.36"
+                ),
+                "Referer": "https://data.eastmoney.com/",
+            }
+        )
+
+        # Step 1:取最新 HOLD_DATE
+        latest_date: Optional[str] = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                resp = session.get(
+                    url,
+                    params={
+                        "reportName": "RPT_MUTUAL_STOCK_HOLDRANKS",
+                        "columns": "HOLD_DATE",
+                        "pageNumber": "1",
+                        "pageSize": "1",
+                        "sortColumns": "HOLD_DATE",
+                        "sortTypes": "-1",
+                    },
+                    timeout=DEFAULT_TIMEOUT,
+                )
+                payload = resp.json()
+                rows = (payload.get("result") or {}).get("data") or []
+                if rows and rows[0].get("HOLD_DATE"):
+                    # 截前 10 字符,YYYY-MM-DD HH:MM:SS → YYYY-MM-DD
+                    latest_date = str(rows[0]["HOLD_DATE"])[:10]
+                break
+            except Exception as e:
+                if attempt < MAX_RETRIES:
+                    time.sleep(RETRY_BASE_DELAY * (2**attempt))
+                else:
+                    logger.error(f"holdrank 取最新 HOLD_DATE 失败: {e}")
+                    return []
+        if not latest_date:
+            logger.warning("holdrank: 无最新 HOLD_DATE")
+            return []
+
+        # Step 2:分页拉全量(pageSize 服务端实际上限 ~500,留余量取 500)
+        out: List[dict] = []
+        seen = set()
+        page_size = 500
+        for page in range(1, 50):  # 安全上限
+            page_data = None
+            for attempt in range(MAX_RETRIES + 1):
+                try:
+                    resp = session.get(
+                        url,
+                        params={
+                            "reportName": "RPT_MUTUAL_STOCK_HOLDRANKS",
+                            "columns": "SECUCODE,SECURITY_CODE,SECURITY_NAME,MUTUAL_TYPE",
+                            "pageNumber": str(page),
+                            "pageSize": str(page_size),
+                            "filter": f"(HOLD_DATE='{latest_date}')",
+                        },
+                        timeout=DEFAULT_TIMEOUT,
+                    )
+                    page_data = resp.json()
+                    break
+                except Exception as e:
+                    if attempt < MAX_RETRIES:
+                        time.sleep(RETRY_BASE_DELAY * (2**attempt))
+                    else:
+                        logger.error(f"holdrank page {page} 失败: {e}")
+                        return out
+            if page_data is None or not page_data.get("success"):
+                break
+            rows = (page_data.get("result") or {}).get("data") or []
+            if not rows:
+                break
+            page_count = 0
+            for it in rows:
+                secucode = str(it.get("SECUCODE") or "")
+                # 仅保留 .HK 后缀(防御性,理论上 002/004 都是 HK)
+                if not secucode.endswith(".HK"):
+                    continue
+                code = str(it.get("SECURITY_CODE") or "").strip()
+                name = str(it.get("SECURITY_NAME") or "").strip()
+                if code and name and code not in seen:
+                    seen.add(code)
+                    out.append({"code": code, "name": name})
+                    page_count += 1
+            # 不足一页 → 已到末页
+            if len(rows) < page_size:
+                break
+            time.sleep(0.3)
+        logger.info(f"holdrank: HOLD_DATE={latest_date} 去重后 {len(out)} 只港股通")
+        return out
+
     def login(self):
         """兼容 BaoStockAdapter 接口,EastMoney 无需登录。"""
         pass
