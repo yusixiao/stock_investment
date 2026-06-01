@@ -172,6 +172,14 @@ def compute_r(ctx, symbol: str) -> float | None:
     total_share = _safe_float(fin.get("TOTAL_SHARE"))
     if np_value is None or np_value <= 0:
         return None
+    # HK indicator 表无 TOTAL_SHARE,退化到 NP / BASIC_EPS 倒推总股本
+    # (年报口径,与 A 股一致;Phase 4 HK 跨市兼容)
+    if total_share is None or total_share <= 0:
+        inc_hist = ctx.get_income_annual_history(symbol, 1)
+        if inc_hist:
+            eps = _safe_float(inc_hist[0].get("BASIC_EPS"))
+            if eps is not None and eps > 0:
+                total_share = np_value / eps
     if total_share is None or total_share <= 0:
         return None
 
