@@ -93,6 +93,16 @@ class Context:
     def get_financial(self, symbol: str):
         return self._market_data.get_financial(symbol, date=self.current_date)
 
+    def is_hk_connect(self, symbol: str) -> bool:
+        """该 HK 股票当前是否港股通成分股(基于最新快照,非 point-in-time)。
+        非 HK 标的恒返 False。⚠️ 接受 ~2-3% look-ahead 偏差。"""
+        if not symbol or not symbol.endswith(".HK"):
+            return False
+        from services.hk_connect_updater import get_latest_hk_connect_codes
+
+        code = symbol.split(".")[0]
+        return code in get_latest_hk_connect_codes()
+
     def get_financial_annual(self, symbol: str):
         """仅取年报口径(REPORT_DATE = -12-31)。
         用于 ROE 等需要年化口径的指标,避免季报累计值在年中拉低门槛。"""
@@ -309,6 +319,16 @@ class ScreenContext:
 
     def get_financial(self, symbol: str):
         return self._market_data.get_financial(symbol, date=self.current_date)
+
+    def is_hk_connect(self, symbol: str) -> bool:
+        """该 HK 股票当前是否港股通成分股(基于最新快照,非 point-in-time)。
+        非 HK 标的恒返 False。⚠️ 接受 ~2-3% look-ahead 偏差。"""
+        if not symbol or not symbol.endswith(".HK"):
+            return False
+        from services.hk_connect_updater import get_latest_hk_connect_codes
+
+        code = symbol.split(".")[0]
+        return code in get_latest_hk_connect_codes()
 
     def get_financial_annual(self, symbol: str):
         """仅取年报口径(REPORT_DATE = -12-31)。

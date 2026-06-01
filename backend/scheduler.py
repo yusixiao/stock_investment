@@ -91,6 +91,22 @@ def _financial_sync_job():
         logger.error(f"Scheduled financial sync failed: {e}")
 
 
+def _hk_connect_refresh_job():
+    """每周一 06:30 刷新港股通成分股快照(EastMoney push2)。
+    放在 06:00 市场更新之后,不强依赖。"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("Scheduled hk_connect refresh started")
+    try:
+        from services.hk_connect_updater import fetch_and_save_hk_connect
+
+        result = fetch_and_save_hk_connect()
+        logger.info(f"hk_connect refresh done: {result}")
+    except Exception as e:
+        logger.error(f"hk_connect refresh failed: {e}")
+
+
 def _backup_job():
     """每周备份 data/market/ 到百度网盘"""
     import logging
@@ -144,6 +160,16 @@ def start_scheduler():
         hour=2,
         minute=0,
         id="weekly_financial_sync",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        _hk_connect_refresh_job,
+        "cron",
+        day_of_week="mon",
+        hour=6,
+        minute=30,
+        id="weekly_hk_connect_refresh",
         replace_existing=True,
         misfire_grace_time=3600,
     )

@@ -199,8 +199,9 @@ def test_a_capex_double_alias(store):
     assert row["CAPEX"] == row["CONSTRUCT_LONG_ASSET"]
 
 
-def test_periodic_report_50_cols(store):
-    """三市场业务视图都是 50 列(锚定 schema 形状,意外增减触发 review)。"""
+def test_periodic_report_51_cols(store):
+    """三市场业务视图都是 51 列(锚定 schema 形状,意外增减触发 review)。
+    第 51 列 is_hk_connect:HK 视图来自 v_hk_connect_latest LEFT JOIN,A/US 恒 FALSE。"""
     for m in MARKETS:
         n = len(store._conn.execute(f"DESCRIBE v_{m}_periodic_report").fetchdf())
-        assert n == 50, f"v_{m}_periodic_report 应为 50 列,实际 {n}"
+        assert n == 51, f"v_{m}_periodic_report 应为 51 列,实际 {n}"

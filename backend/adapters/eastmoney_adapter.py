@@ -431,6 +431,77 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
         records = _fetch_report("RPT_F10_OP_BUSINESSANALYSIS", code)
         return _records_to_models(records, BusinessReviewRecord)
 
+    # ---------- 港股通成分股(push2 行情板块接口) ----------
+    # 板块代码:
+    #   b:DLMK0146 = 港股通(沪)+ 港股通(深)合并 ~601 只(含全部南向标的)
+    #   b:DLMK0144 = 港股通(沪)
+    #   b:DLMK0145 = 港股通(深独有)~69 只
+    # 仅返回当前快照(无历史进出名单)
+    def fetch_hk_connect_members(self, board_code: str = "DLMK0146") -> List[dict]:
+        """港股通成分股当前快照。
+
+        Args:
+            board_code: 板块代码,默认 DLMK0146(港股通全集)
+
+        Returns:
+            [{"code": "09988", "name": "阿里巴巴-W"}, ...] — code 为 5 位 HK 代码(带前导 0)
+            失败返 []。
+        """
+        url = "https://push2.eastmoney.com/api/qt/clist/get"
+        page_size = 100  # push2 接口单页上限 100,需分页
+        out: List[dict] = []
+        seen = set()
+        # 用 Session 复用连接 + 仿浏览器 UA,降低 push2 限流概率
+        session = requests.Session()
+        session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+                ),
+                "Referer": "https://quote.eastmoney.com/",
+            }
+        )
+        for page in range(1, 50):  # 安全上限 5000 只
+            params = {
+                "pn": page,
+                "pz": page_size,
+                "fs": f"b:{board_code}",
+                "fields": "f12,f14",
+                "fid": "f12",
+                "po": 1,
+            }
+            page_data = None
+            for attempt in range(MAX_RETRIES + 2):  # 港股通分页给更多重试机会
+                try:
+                    resp = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
+                    page_data = resp.json()
+                    break
+                except Exception as e:
+                    if attempt < MAX_RETRIES + 1:
+                        time.sleep(RETRY_BASE_DELAY * (2**attempt))
+                    else:
+                        logger.error(
+                            f"港股通成分股拉取失败 board={board_code} page={page}: {e}"
+                        )
+                        return out
+            if page_data is None:
+                break
+            diff = (page_data.get("data") or {}).get("diff") or {}
+            items = diff.values() if isinstance(diff, dict) else diff
+            page_count = 0
+            for it in items:
+                code = str(it.get("f12") or "").strip()
+                name = str(it.get("f14") or "").strip()
+                if code and name and code not in seen:
+                    seen.add(code)
+                    out.append({"code": code, "name": name})
+                    page_count += 1
+            if page_count == 0:
+                break
+            time.sleep(1.0)  # push2 限流敏感,每页间隔 1s
+        return out
+
     def login(self):
         """兼容 BaoStockAdapter 接口,EastMoney 无需登录。"""
         pass

@@ -61,6 +61,10 @@ class DuckDBStore:
         for market in ("HK", "US"):
             self._override_daily_with_derived_valuation(market)
 
+        # 港股通成分股快照视图(只在 HK 上有意义,需在 periodic_report 之前建好)
+        # 数据落点 data/market/HK/membership/hk_connect.parquet,只读最新 as_of_date
+        self._setup_hk_connect_view()
+
         # 业务视图层:v_{market}_periodic_report
         # 把 indicator + income + balance + cashflow 按 (_symbol, REPORT_DATE) LEFT JOIN
         # 同义字段 COALESCE 统一(MONETARYFUNDS / CAPEX),
@@ -69,6 +73,31 @@ class DuckDBStore:
             self._setup_periodic_report_view(market)
 
         logger.info("DuckDB views created for all market parquet data")
+
+    def _setup_hk_connect_view(self):
+        """创建港股通成分股最新快照视图 v_hk_connect_latest。
+
+        数据来源:data/market/HK/membership/hk_connect.parquet(单文件 append 多日快照)
+        视图取 as_of_date 最大值的全部行,等价"当前港股通成分股名单"。
+
+        schema: code (5 位 HK 代码) / name / board / as_of_date
+
+        ⚠️ 仅当前快照,无历史进出名单。回测严格 PIT 判断不适用。
+        """
+        path = MARKET_DIR / "HK" / "membership" / "hk_connect.parquet"
+        if not path.exists():
+            logger.info("Skip v_hk_connect_latest: parquet 不存在 (%s)", path)
+            return
+        try:
+            self._conn.execute(f"""
+                CREATE OR REPLACE VIEW v_hk_connect_latest AS
+                SELECT code, name, board, as_of_date
+                FROM read_parquet('{path}')
+                WHERE as_of_date = (SELECT MAX(as_of_date) FROM read_parquet('{path}'))
+            """)
+            logger.info("View created: v_hk_connect_latest (港股通最新快照)")
+        except Exception as e:
+            logger.warning(f"Failed to create v_hk_connect_latest: {e}")
 
     def _setup_periodic_report_view(self, market: str):
         """构建 v_{market}_periodic_report 业务视图。
@@ -141,6 +170,19 @@ class DuckDBStore:
         else:
             capex_expr = "NULL::DOUBLE AS CAPEX, NULL::DOUBLE AS CONSTRUCT_LONG_ASSET"
 
+        # is_hk_connect 列:HK 视图 LEFT JOIN v_hk_connect_latest;A/US 永远 FALSE
+        # ⚠️ 当前实现是 latest snapshot,所有历史 REPORT_DATE 行都用同一份 membership
+        # (look-ahead bias),适合 UI / 粗筛,不适合严格 PIT 回测
+        if market == "HK" and self._view_exists("v_hk_connect_latest"):
+            hk_connect_join = (
+                "LEFT JOIN v_hk_connect_latest hc "
+                "ON hc.code = SPLIT_PART(i._symbol, '.', 1)"
+            )
+            is_hk_connect_expr = "(hc.code IS NOT NULL) AS is_hk_connect"
+        else:
+            hk_connect_join = ""
+            is_hk_connect_expr = "FALSE AS is_hk_connect"
+
         sql = f"""
             CREATE OR REPLACE VIEW {view} AS
             SELECT
@@ -208,7 +250,10 @@ class DuckDBStore:
                 {col_or_null("c", "CCE_ADD", cf_cols)},
 
                 -- ── cashflow: 同义统一(CAPEX / CONSTRUCT_LONG_ASSET 互为别名) ──
-                {capex_expr}
+                {capex_expr},
+
+                -- ── 港股通成分股标记(HK 限定 latest snapshot,A/US 恒为 FALSE) ──
+                {is_hk_connect_expr}
 
             FROM {ind} i
             LEFT JOIN {inc} inc
@@ -217,6 +262,7 @@ class DuckDBStore:
               ON b._symbol = i._symbol AND b.REPORT_DATE = i.REPORT_DATE
             LEFT JOIN {cf} c
               ON c._symbol = i._symbol AND c.REPORT_DATE = i.REPORT_DATE
+            {hk_connect_join}
         """
         try:
             self._conn.execute(sql)
