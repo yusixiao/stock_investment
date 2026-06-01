@@ -57,6 +57,16 @@
 - **测试**:550+ case,`python -m pytest backend/tests/ -x -q`。adapter 测试用 mock(`test_adapters.py` 等)
 - **长任务后台执行**:任何预计运行超过 1 分钟的任务(回测、矩阵跑批、诊断脚本、全市场数据更新、批量数据迁移等)**必须**用 `nohup ... > log 2>&1 &` 后台执行,前台只查 PID/日志/进度,避免阻塞会话
 
+## 港股通虚拟市场(HK_CONNECT,2026-06-01)
+
+- **`HK_CONNECT` 是虚拟市场**,不是物理市场。回测/雷达的 `market` 入参除 `A/HK/US` 外新增 `HK_CONNECT`,语义 = 港股通成分股子集
+- **物理数据复用 HK**:`services/backtest/market_filter.py::resolve_data_market("HK_CONNECT") → "HK"`,`data_cache.get_market` 必须收到 `HK`,不能收到 `HK_CONNECT`
+- **symbols 维度过滤**:`apply_market_filter` 在 HK_CONNECT 时把 symbols 收敛为 `services.hk_connect_updater.get_latest_hk_connect_codes()` 的 `.HK` 后缀集合(601 只),无 requested 时返全集,有 requested 时返交集
+- **数据来源**:`data/market/HK/membership/hk_connect.parquet`(updater 周更),DuckDB 视图 `v_hk_connect_membership`
+- **🚨 已知偏差**:仅当前快照,**无 point-in-time 历史**;长区间回测会引入 ~2-3% look-ahead + survivorship bias。粗筛 / 资产配置可接受,严格 PIT 策略不适用
+- **前端**:`BacktestConfig.tsx` 市场下拉新增"港股通"选项,内部 `DisplayMarket = 'A'|'HK'|'US'|'HK_CONNECT'`,缓存状态查询 `toCacheMarket()` 映射回 HK;`api/backtestCache.ts::CacheMarket` 保持 3 值不变(API 契约不动)
+- **路由覆盖**:`/api/backtest/run`、`/api/backtest/scan-radar` 已接 helper;`/api/backtest/cache/load`、`DELETE /api/backtest/cache/{market}` 先 `resolve_data_market` 再校验白名单。**`/api/screener/run` 暂未接入**(仅 A 股硬编码,与回测无关)
+
 ## Terminology
 
 - **🚨 术语铁律(2026-05-26)**:本项目内部统一使用 **「现金流保守策略」**(英文标识符 `conservative` / `cpa_conservative`)指代基于穿透回报率的保守估值策略。

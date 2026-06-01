@@ -15,6 +15,7 @@ from config import LOG_DIR, STRATEGY_DIR
 from services.api_utils import safe_json
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
+from services.backtest.market_filter import apply_market_filter, resolve_data_market
 from services.backtest.strategy_loader import load_strategy_from_file, scan_strategies
 from services.backtest.task_manager import task_manager
 from services.stock_index import get_name as get_stock_name
@@ -45,7 +46,11 @@ def api_run_backtest(body: dict = Body(...)):
     start_date = body.get("start_date")
     end_date = body.get("end_date")
     target_symbols = body.get("symbols")
-    market = body.get("market", "A")
+    # market = 展示侧标识(可能含虚拟市场 HK_CONNECT);data_market = 物理数据市场
+    market = (body.get("market") or "A").upper()
+    data_market = resolve_data_market(market)
+    # HK_CONNECT 时把 symbols 收敛到港股通成分股交集
+    target_symbols = apply_market_filter(market, target_symbols)
 
     # 解析 strategy_class / filepath / overrides:支持新旧两种 payload
     if "strategy_class" in body:
@@ -101,10 +106,10 @@ def api_run_backtest(body: dict = Body(...)):
         try:
             # 数据必须事先通过 /api/backtest/cache/load 显式加载,
             # 这里只做内存切片,不走任何 IO。
-            bundle = data_cache.get_market(market)
+            bundle = data_cache.get_market(data_market)
             if bundle is None:
                 raise RuntimeError(
-                    f"{market} 市场数据未加载,请先在「策略回测」页点击「加载数据」"
+                    f"{data_market} 市场数据未加载,请先在「策略回测」页点击「加载数据」"
                 )
             task_manager.update_progress(task_id, 0, 0, "切片数据中...")
             sliced = data_cache.slice_bundle(
@@ -277,6 +282,7 @@ def api_scan_radar(body: dict = Body(...)):
     filepath_str = body.get("filepath")
     lookback = body.get("lookback", "1y")
     market = (body.get("market") or "A").upper()
+    data_market = resolve_data_market(market)
     overrides = body.get("params") or {}
 
     if not class_name or not filepath_str:
@@ -323,11 +329,13 @@ def api_scan_radar(body: dict = Body(...)):
     def run_task():
         try:
             on_progress(0, 0, "等待数据加载...")
-            _wait_for_data(market)
-            bundle = data_cache.get_market(market)
+            _wait_for_data(data_market)
+            bundle = data_cache.get_market(data_market)
             start_date, end_date = _resolve_scan_dates(bundle, lookback)
             on_progress(0, 0, f"切片数据 {start_date}~{end_date}...")
-            sliced = data_cache.slice_bundle(bundle, None, start_date, end_date)
+            # HK_CONNECT:把扫描全集收敛到港股通成分股
+            scan_symbols = apply_market_filter(market, None)
+            sliced = data_cache.slice_bundle(bundle, scan_symbols, start_date, end_date)
             if not sliced.stock_data:
                 raise RuntimeError("切片后无 K 线数据")
 

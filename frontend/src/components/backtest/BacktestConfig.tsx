@@ -5,7 +5,14 @@ import { backtestEngineApi } from '../../api/backtestEngine';
 import type { StrategyInfo } from '../../api/backtestEngine';
 import type { BacktestMode, BacktestTask } from './BacktestAnalysis';
 import { mapPayloadToResultData } from '../../utils/backtestPayload';
-import type { CacheStatusMap } from '../../api/backtestCache';
+import type { CacheStatusMap, CacheMarket } from '../../api/backtestCache';
+
+// 展示侧市场:含虚拟市场 HK_CONNECT(港股通);后端会映射回 HK 物理数据
+type DisplayMarket = 'A' | 'HK' | 'US' | 'HK_CONNECT';
+
+// HK_CONNECT 复用 HK 的数据缓存,status 查询时映射回 HK
+const toCacheMarket = (m: DisplayMarket): CacheMarket =>
+  m === 'HK_CONNECT' ? 'HK' : m;
 
 interface Props {
   mode: BacktestMode;
@@ -16,7 +23,7 @@ interface Props {
 
 const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatus }) => {
   const [symbol, setSymbol] = useState('');
-  const [market, setMarket] = useState<'A' | 'HK' | 'US'>('A');
+  const [market, setMarket] = useState<DisplayMarket>('A');
   const [strategy, setStrategy] = useState('');
   const [period, setPeriod] = useState('daily');
   const [startDate, setStartDate] = useState('2023-01-01');
@@ -62,9 +69,10 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
     return 'A';
   };
   const normalizedSymbol = symbol.includes('.') ? symbol : symbol ? `${symbol}.SZ` : '';
-  const targetMarket: 'A' | 'HK' | 'US' =
+  const targetMarket: DisplayMarket =
     mode === 'market' ? market : (normalizedSymbol ? inferMarketFromSymbol(normalizedSymbol) : 'A');
-  const targetCache = cacheStatus?.[targetMarket];
+  // HK_CONNECT 复用 HK 缓存,status 必须按物理市场 key 查
+  const targetCache = cacheStatus?.[toCacheMarket(targetMarket)];
   const isCacheReady = targetCache?.loaded === true;
   const cacheHint = !cacheStatus
     ? null
@@ -181,12 +189,13 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
           <label className="text-xs text-secondary-text">市场</label>
           <select
             value={market}
-            onChange={(e) => setMarket(e.target.value as 'A' | 'HK' | 'US')}
+            onChange={(e) => setMarket(e.target.value as DisplayMarket)}
             className="input-surface input-focus-glow h-9 w-full appearance-none rounded-lg border bg-transparent px-3 text-sm transition-all focus:outline-none"
           >
             <option value="A">A 股</option>
             <option value="HK">港股</option>
             <option value="US">美股</option>
+            <option value="HK_CONNECT">港股通</option>
           </select>
         </div>
       )}
