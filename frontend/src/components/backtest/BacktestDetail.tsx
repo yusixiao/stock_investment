@@ -151,7 +151,11 @@ const BacktestDetail: React.FC<Props> = ({ task, onBack }) => {
       {/* Right: scan-radar 任务展示 hits 表,其余复用 BacktestResult */}
       <main className="min-h-0 flex-1 overflow-y-auto">
         {task.taskType === 'scan-radar' ? (
-          <RadarResultView payload={task.radarPayload} />
+          <RadarResultView
+            payload={task.radarPayload}
+            strategyName={task.strategyName}
+            market={task.market}
+          />
         ) : (
           <BacktestResult task={task} />
         )}

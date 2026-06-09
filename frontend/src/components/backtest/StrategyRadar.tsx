@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { RiSearchLine } from '@remixicon/react';
+import { RiDownloadLine, RiSearchLine } from '@remixicon/react';
 import { cn } from '../../utils/cn';
 import {
   backtestEngineApi,
@@ -10,6 +10,10 @@ import {
   type ScanRadarPayload,
   type StrategyInfo,
 } from '../../api/backtestEngine';
+import {
+  buildRadarFilename,
+  exportRadarHitsToXlsx,
+} from '../../utils/exportRadarHitsXlsx';
 
 // 时间范围:扫描时回看的窗口长度。yesterday 仅日频策略可用,其余跨周期策略支持。
 const LOOKBACK_OPTIONS: { value: RadarLookback; label: string }[] = [
@@ -160,6 +164,17 @@ const StrategyRadar: React.FC = () => {
 
   const hits: ScanRadarHit[] = payload?.hits ?? [];
 
+  const handleExport = () => {
+    if (!payload || hits.length === 0) return;
+    const filename = buildRadarFilename({
+      strategyName: selectedStrategy?.name,
+      market: config.market,
+      startDate: payload.date_range?.start,
+      endDate: payload.date_range?.end,
+    });
+    exportRadarHitsToXlsx(payload, filename);
+  };
+
   return (
     <div className="flex h-full flex-col">
       {/* Config Bar */}
@@ -197,6 +212,7 @@ const StrategyRadar: React.FC = () => {
             >
               <option value="A">A股</option>
               <option value="HK">港股</option>
+              <option value="HK_CONNECT">港股通</option>
               <option value="US">美股</option>
             </select>
           </div>
@@ -261,6 +277,18 @@ const StrategyRadar: React.FC = () => {
               {payload.date_range && ` · 区间 ${payload.date_range.start} ~ ${payload.date_range.end}`}
               {payload.data_latest_date && ` · 实际数据日 ${payload.data_latest_date}`}
             </span>
+          )}
+
+          {payload && !isScanning && hits.length > 0 && (
+            <button
+              type="button"
+              onClick={handleExport}
+              aria-label="导出雷达命中到 Excel"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border/60 bg-card/40 px-3 text-xs text-foreground transition-colors hover:bg-hover"
+            >
+              <RiDownloadLine className="h-3.5 w-3.5" />
+              导出 Excel
+            </button>
           )}
         </div>
 

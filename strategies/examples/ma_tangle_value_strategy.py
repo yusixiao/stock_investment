@@ -11,7 +11,9 @@
 - 模式判定(首次触发时锁定):
     - 30 < PE ≤ 40 → two_stage(总最多 2 轮:15% + 20%)
     - PE > 40        → chain(15% + 20% × N,直到清仓)
-- 第 1 轮触发:PE > 30,锚点 P_1 = 当日 daily (h+l)/2,total = initial × 15%。
+    - MACD 触发但 PE 缺失/低于 30 → two_stage(默认温和退出)
+- 第 1 轮触发:PE > 30 **或** 月线 MACD bar 本月 > 上月(强势中兑现),
+              锚点 P_1 = 当日 daily (h+l)/2,total = initial × 15%。
 - 第 N+1 轮触发:任意已有锚点满足 daily (h+l)/2 > P_n × 1.05 且模式允许新轮。
                   锚点锁定避免重复触发;新轮 anchor = 触发日 daily (h+l)/2,
                   total = initial × 20%。
@@ -30,6 +32,7 @@ from datetime import date, datetime
 
 from strategies.base import Strategy
 from strategies.utils import dividend, valuation, financial, kline
+from strategies.utils.kline import get_macd_hist_series
 from strategies.utils.composite.market_cap_weighted_batch_buyer import (
     MarketCapWeightedBatchBuyer,
 )
@@ -110,6 +113,11 @@ class MaTangleValueStrategy(Strategy):
             "default": 4,
             "type": "int",
             "label": "每轮分批数(默认 4 周 4 批)",
+        },
+        "macd_sell_enabled": {
+            "default": True,
+            "type": "bool",
+            "label": "启用 MACD 上行触发卖出(月线 hist 本月>上月)",
         },
     }
 
@@ -194,20 +202,37 @@ class MaTangleValueStrategy(Strategy):
         daily = ctx.get_price(sym, period="daily")
         daily_mid = self._mid(daily) if daily else None
 
-        # 1) 尚未触发 → 检查首次触发(PE > threshold)
+        # 1) 尚未触发 → 检查首次触发(PE > threshold 或 月线 MACD hist 本月>上月)
         if state is None:
             if daily_mid is None:
                 return
             pe = valuation.get_pe(ctx, sym)
-            if pe is None or pe <= float(self.p.pe_sell_threshold):
+            pe_trigger = pe is not None and pe > float(self.p.pe_sell_threshold)
+
+            macd_trigger = False
+            macd_note = ""
+            if self.p.macd_sell_enabled:
+                hist = get_macd_hist_series(ctx, sym, n=2, freq="monthly")
+                if hist and hist[-1] > hist[-2]:
+                    macd_trigger = True
+                    macd_note = f"macd_hist {hist[-2]:.4f}->{hist[-1]:.4f}"
+
+            if not (pe_trigger or macd_trigger):
                 return
-            mode = (
-                "chain" if pe > float(self.p.pe_sell_chain_threshold) else "two_stage"
-            )
+
+            # 模式按 PE 决定;若 PE 缺失或不高(纯 MACD 触发)→ two_stage 温和退出
+            if pe is not None and pe > float(self.p.pe_sell_chain_threshold):
+                mode = "chain"
+            else:
+                mode = "two_stage"
+
             state = {
                 "mode": mode,
                 "initial_shares": int(shares),
                 "schedules": [],
+                "trigger_reason": (
+                    f"pe={pe}" if pe_trigger else macd_note or "macd_up"
+                ),
             }
             self._sell_state[sym] = state
             self._start_new_round(state, anchor_p=daily_mid, round_no=1)

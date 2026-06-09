@@ -1,14 +1,33 @@
 import type React from 'react';
+import { RiDownloadLine } from '@remixicon/react';
 import { cn } from '../../utils/cn';
 import type { ScanRadarPayload, ScanRadarHit } from '../../api/backtestEngine';
+import {
+  buildRadarFilename,
+  exportRadarHitsToXlsx,
+} from '../../utils/exportRadarHitsXlsx';
 
 interface Props {
   payload: ScanRadarPayload | null | undefined;
+  /** 用于导出文件名;来自历史详情的 task 元信息 */
+  strategyName?: string;
+  market?: string | null;
 }
 
 // 雷达扫描结果只读视图:与 StrategyRadar 实时扫描结果区相同的展示规则,
 // 用于 BacktestDetail 在历史记录里复看雷达任务
-const RadarResultView: React.FC<Props> = ({ payload }) => {
+const RadarResultView: React.FC<Props> = ({ payload, strategyName, market }) => {
+  const handleExport = () => {
+    if (!payload || !payload.hits || payload.hits.length === 0) return;
+    const filename = buildRadarFilename({
+      strategyName,
+      market,
+      startDate: payload.date_range?.start,
+      endDate: payload.date_range?.end,
+    });
+    exportRadarHitsToXlsx(payload, filename);
+  };
+
   if (!payload) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -17,6 +36,7 @@ const RadarResultView: React.FC<Props> = ({ payload }) => {
     );
   }
   const hits: ScanRadarHit[] = payload.hits ?? [];
+  const canExport = hits.length > 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -31,6 +51,18 @@ const RadarResultView: React.FC<Props> = ({ payload }) => {
           <span>· 实际数据日 {payload.data_latest_date}</span>
         )}
         {payload.frequency && <span>· 频率 {payload.frequency}</span>}
+        <div className="ml-auto">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={!canExport}
+            aria-label="导出雷达命中到 Excel"
+            className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-card/40 px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <RiDownloadLine className="h-3.5 w-3.5" />
+            导出 Excel
+          </button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">

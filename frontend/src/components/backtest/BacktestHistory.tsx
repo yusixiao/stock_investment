@@ -175,6 +175,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                 <tr className="border-b border-border/30 text-left text-xs text-secondary-text">
                   <th className="px-3 py-2">任务 ID</th>
                   <th className="px-3 py-2">策略</th>
+                  <th className="px-3 py-2 text-right">总收益率</th>
                   <th className="px-3 py-2">日期范围</th>
                   <th className="px-3 py-2">状态</th>
                   <th className="px-3 py-2">创建时间</th>
@@ -184,6 +185,8 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
               <tbody>
                 {tasks.map((task) => {
                   const isDeleted = task.deleted;
+                  const totalReturn = task.summary?.total_return as number | null | undefined;
+                  const hasReturn = typeof totalReturn === 'number' && Number.isFinite(totalReturn);
                   return (
                     <tr
                       key={task.task_id}
@@ -205,6 +208,20 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                             已删除
                           </Badge>
                         )}
+                      </td>
+                      <td
+                        className={cn(
+                          'px-3 py-2 text-right text-xs tabular-nums',
+                          hasReturn
+                            ? totalReturn! >= 0
+                              ? 'text-success'
+                              : 'text-danger'
+                            : 'text-muted-text',
+                        )}
+                      >
+                        {hasReturn
+                          ? `${totalReturn! >= 0 ? '+' : ''}${(totalReturn! * 100).toFixed(2)}%`
+                          : '--'}
                       </td>
                       <td className="px-3 py-2 text-xs tabular-nums">
                         {task.start_date && task.end_date
