@@ -65,6 +65,9 @@ class DuckDBStore:
         # 数据落点 data/market/HK/membership/hk_connect.parquet,只读最新 as_of_date
         self._setup_hk_connect_view()
 
+        # 港股 sector/industry 视图(yfinance 周更,落 hk_industry.parquet)
+        self._setup_hk_industry_view()
+
         # 业务视图层:v_{market}_periodic_report
         # 把 indicator + income + balance + cashflow 按 (_symbol, REPORT_DATE) LEFT JOIN
         # 同义字段 COALESCE 统一(MONETARYFUNDS / CAPEX),
@@ -101,6 +104,31 @@ class DuckDBStore:
             logger.info("View created: v_hk_connect_latest (港股通最新快照)")
         except Exception as e:
             logger.warning(f"Failed to create v_hk_connect_latest: {e}")
+
+    def _setup_hk_industry_view(self):
+        """创建港股 sector/industry 视图 v_hk_industry。
+
+        数据来源:data/market/HK/membership/hk_industry.parquet
+        schema: code / name / sector / industry / updated_at
+        """
+        path = MARKET_DIR / "HK" / "membership" / "hk_industry.parquet"
+        if not path.exists():
+            logger.info("Skip v_hk_industry: parquet 不存在 (%s)", path)
+            return
+        try:
+            self._conn.execute(f"""
+                CREATE OR REPLACE VIEW v_hk_industry AS
+                SELECT code, name, sector, industry, updated_at
+                FROM read_parquet('{path}')
+            """)
+            logger.info("View created: v_hk_industry (港股行业分类)")
+        except Exception as e:
+            logger.warning(f"Failed to create v_hk_industry: {e}")
+
+    def refresh_hk_industry_view(self) -> None:
+        """对外暴露:hk_industry parquet 写入后重建视图。"""
+        self._setup_hk_industry_view()
+        logger.info("v_hk_industry refreshed")
 
     def refresh_hk_connect_view(self) -> None:
         """对外暴露:hk_connect parquet 写入后重建 v_hk_connect_latest +
@@ -970,32 +998,104 @@ class DuckDBStore:
             return "HK"
         return "US"
 
-    # 各财务表的字段映射 SQL(SELECT 子句),保留 REPORT_DATE 排序键
-    # NULL AS xxx 占位字段:视图实际无此列,sections 查 .get(key) 得 None 优雅降级
-    _FIN_SELECT = {
-        "income": (
-            "REPORT_DATE, NETPROFIT, PARENT_NETPROFIT, DEDUCT_PARENT_NETPROFIT, "
-            "BASIC_EPS, OPERATE_PROFIT, OPERATE_COST, TOTAL_OPERATE_INCOME, "
-            "(TOTAL_OPERATE_INCOME - TOTAL_OPERATE_COST) AS GROSS_PROFIT"
-        ),
-        "balance": (
-            "b.REPORT_DATE, b.TOTAL_ASSETS, b.TOTAL_LIABILITIES, b.TOTAL_EQUITY, "
-            "b.MONETARYFUNDS AS MONETARY_FUND, b.INVENTORY AS INVENTORIES, "
-            "b.FIXED_ASSET AS FIXED_ASSETS, b.INTANGIBLE_ASSET AS INTANGIBLE_ASSETS, "
-            "b.GOODWILL, b.DEBT_ASSET_RATIO, "
-            "NULL::DOUBLE AS TOTAL_CURRENT_ASSETS, NULL::DOUBLE AS TOTAL_CURRENT_LIAB, "
-            "i.BPS"
-        ),
-        "cashflow": (
-            "REPORT_DATE, NETCASH_OPERATE, NETCASH_INVEST, NETCASH_FINANCE, "
-            "END_CCE AS END_CASH, CONSTRUCT_LONG_ASSET, "
-            "NULL::DOUBLE AS DEPRECIATION_FA"
-        ),
-        "indicator": (
-            "REPORT_DATE, ROEJQ, ZZCJLL AS ROAJQ, "
-            "XSMLL AS GROSSPROFIT_MARGIN, XSJLL AS NETPROFIT_MARGIN, "
-            "ZCFZL AS DEBT_ASSET_RATIO, LD AS CURRENT_RATIO, BPS, EPSJB"
-        ),
+    # 各市场各财务表的字段映射 SQL(SELECT 子句),保留 REPORT_DATE 排序键
+    # NULL::DOUBLE AS xxx 占位:视图实际无此列,sections 查 .get(key) 得 None 优雅降级
+    # 三市场 schema 差异较大(EastMoney A 全字段 / EastMoney HK / EastMoney US),分开维护
+    _FIN_SELECT_BY_MARKET: dict[str, dict[str, str]] = {
+        "A": {
+            "income": (
+                "REPORT_DATE, NETPROFIT, PARENT_NETPROFIT, DEDUCT_PARENT_NETPROFIT, "
+                "BASIC_EPS, OPERATE_PROFIT, OPERATE_COST, TOTAL_OPERATE_INCOME, "
+                "(TOTAL_OPERATE_INCOME - TOTAL_OPERATE_COST) AS GROSS_PROFIT"
+            ),
+            "balance": (
+                "b.REPORT_DATE, b.TOTAL_ASSETS, b.TOTAL_LIABILITIES, b.TOTAL_EQUITY, "
+                "b.MONETARYFUNDS AS MONETARY_FUND, b.INVENTORY AS INVENTORIES, "
+                "b.FIXED_ASSET AS FIXED_ASSETS, b.INTANGIBLE_ASSET AS INTANGIBLE_ASSETS, "
+                "b.GOODWILL, b.DEBT_ASSET_RATIO, "
+                "NULL::DOUBLE AS TOTAL_CURRENT_ASSETS, NULL::DOUBLE AS TOTAL_CURRENT_LIAB, "
+                "i.BPS"
+            ),
+            "cashflow": (
+                "REPORT_DATE, NETCASH_OPERATE, NETCASH_INVEST, NETCASH_FINANCE, "
+                "END_CCE AS END_CASH, CONSTRUCT_LONG_ASSET, "
+                "NULL::DOUBLE AS DEPRECIATION_FA"
+            ),
+            "indicator": (
+                "REPORT_DATE, ROEJQ, ZZCJLL AS ROAJQ, "
+                "XSMLL AS GROSSPROFIT_MARGIN, XSJLL AS NETPROFIT_MARGIN, "
+                "ZCFZL AS DEBT_ASSET_RATIO, LD AS CURRENT_RATIO, BPS, EPSJB"
+            ),
+        },
+        # HK schema:OPERATE_INCOME / OPERATE_EXPENSE / GROSS_PROFIT 直接给出;
+        # 无 DEDUCT_PARENT_NETPROFIT;balance 无 MONETARYFUNDS(用 CASH_EQUIVALENTS)/
+        # 无 INTANGIBLE_ASSET / 无 GOODWILL(中文列 HK_商誉 略过)/ 无 DEBT_ASSET_RATIO
+        # (从 indicator.ZCFZL 取);cashflow 直接有 CAPEX,无 DEPRECIATION_AMORTIZATION
+        "HK": {
+            "income": (
+                "REPORT_DATE, NETPROFIT, PARENT_NETPROFIT, "
+                "NULL::DOUBLE AS DEDUCT_PARENT_NETPROFIT, "
+                "BASIC_EPS, OPERATE_PROFIT, "
+                "OPERATE_EXPENSE AS OPERATE_COST, "
+                "OPERATE_INCOME AS TOTAL_OPERATE_INCOME, "
+                "GROSS_PROFIT"
+            ),
+            "balance": (
+                "b.REPORT_DATE, b.TOTAL_ASSETS, b.TOTAL_LIABILITIES, b.TOTAL_EQUITY, "
+                "b.CASH_EQUIVALENTS AS MONETARY_FUND, b.INVENTORY AS INVENTORIES, "
+                "b.FIXED_ASSET AS FIXED_ASSETS, "
+                "NULL::DOUBLE AS INTANGIBLE_ASSETS, "
+                "NULL::DOUBLE AS GOODWILL, "
+                "i.ZCFZL AS DEBT_ASSET_RATIO, "
+                "b.CURRENT_ASSETS AS TOTAL_CURRENT_ASSETS, "
+                "b.CURRENT_LIABILITIES AS TOTAL_CURRENT_LIAB, "
+                "i.BPS"
+            ),
+            "cashflow": (
+                "REPORT_DATE, NETCASH_OPERATE, NETCASH_INVEST, NETCASH_FINANCE, "
+                "END_CCE AS END_CASH, "
+                "CAPEX AS CONSTRUCT_LONG_ASSET, "
+                "NULL::DOUBLE AS DEPRECIATION_FA"
+            ),
+            "indicator": (
+                "REPORT_DATE, ROEJQ, ROA AS ROAJQ, "
+                "XSMLL AS GROSSPROFIT_MARGIN, XSJLL AS NETPROFIT_MARGIN, "
+                "ZCFZL AS DEBT_ASSET_RATIO, LD AS CURRENT_RATIO, BPS, EPSJB"
+            ),
+        },
+        # US schema:类似 HK,但 cashflow 有 DEPRECIATION_AMORTIZATION;
+        # balance 有 INTANGIBLE_ASSET / GOODWILL
+        "US": {
+            "income": (
+                "REPORT_DATE, NETPROFIT, PARENT_NETPROFIT, DEDUCT_PARENT_NETPROFIT, "
+                "BASIC_EPS, OPERATE_PROFIT, "
+                "OPERATE_EXPENSE AS OPERATE_COST, "
+                "OPERATE_INCOME AS TOTAL_OPERATE_INCOME, "
+                "GROSS_PROFIT"
+            ),
+            "balance": (
+                "b.REPORT_DATE, b.TOTAL_ASSETS, b.TOTAL_LIABILITIES, b.TOTAL_EQUITY, "
+                "b.CASH_EQUIVALENTS AS MONETARY_FUND, b.INVENTORY AS INVENTORIES, "
+                "b.FIXED_ASSET AS FIXED_ASSETS, "
+                "b.INTANGIBLE_ASSET AS INTANGIBLE_ASSETS, "
+                "b.GOODWILL, "
+                "i.ZCFZL AS DEBT_ASSET_RATIO, "
+                "b.CURRENT_ASSETS AS TOTAL_CURRENT_ASSETS, "
+                "b.CURRENT_LIABILITIES AS TOTAL_CURRENT_LIAB, "
+                "i.BPS"
+            ),
+            "cashflow": (
+                "REPORT_DATE, NETCASH_OPERATE, NETCASH_INVEST, NETCASH_FINANCE, "
+                "END_CCE AS END_CASH, "
+                "CAPEX AS CONSTRUCT_LONG_ASSET, "
+                "DEPRECIATION_AMORTIZATION AS DEPRECIATION_FA"
+            ),
+            "indicator": (
+                "REPORT_DATE, ROEJQ, ZZCJLL AS ROAJQ, "
+                "XSMLL AS GROSSPROFIT_MARGIN, XSJLL AS NETPROFIT_MARGIN, "
+                "ZCFZL AS DEBT_ASSET_RATIO, LD AS CURRENT_RATIO, BPS, EPSJB"
+            ),
+        },
     }
 
     def _try_bundle_financial_indicator_section(
@@ -1012,8 +1112,11 @@ class DuckDBStore:
             return None
         if "REPORT_DATE" not in df.columns:
             return None
-        # 只看年报
-        annual = df[df["REPORT_DATE"].astype(str).str.endswith("-12-31")].copy()
+        # A 股四季度全有 → 过滤 12-31 年报;HK/US 只有年报但财年末未必 12-31 → 全保留
+        if market == "A":
+            annual = df[df["REPORT_DATE"].astype(str).str.endswith("-12-31")].copy()
+        else:
+            annual = df.copy()
         if annual.empty:
             return []
         annual = annual.sort_values("REPORT_DATE", ascending=False).head(int(years))
@@ -1049,8 +1152,6 @@ class DuckDBStore:
         # 母公司表项目当前数据源未提供,直接返回空让 section 走 fallback 文案
         if table in ("income_parent", "balance_parent"):
             return []
-        if table not in self._FIN_SELECT:
-            return []
 
         # hot-path:仅 indicator 表(bundle 当前只缓存这张)
         if table == "indicator":
@@ -1059,9 +1160,19 @@ class DuckDBStore:
                 return hot
 
         market = self._market_of_code(code)
+        market_select = self._FIN_SELECT_BY_MARKET.get(market)
+        if not market_select or table not in market_select:
+            return []
+        select_clause = market_select[table]
         view = f"v_{market.lower()}_{table}"
         if not self._view_exists(view):
             return []
+
+        # A 股四季度全有(03/06/09/12)→ 用 LIKE '-12-31' 过滤年报
+        # HK/US 只有年报,但财年末未必 12-31(如 01104.HK = 06-30,AAPL = 09 月)
+        # → 不加日期过滤,直接 ORDER BY DESC LIMIT 取最近 N 行年报
+        annual_filter_a = "AND b.REPORT_DATE LIKE '%-12-31'" if market == "A" else ""
+        annual_filter = "AND REPORT_DATE LIKE '%-12-31'" if market == "A" else ""
 
         try:
             if table == "balance":
@@ -1073,25 +1184,29 @@ class DuckDBStore:
                     if self._view_exists(ind_view)
                     else ""
                 )
-                # 无 indicator 视图时 BPS 改 NULL
-                select_sql = self._FIN_SELECT[table]
+                # 无 indicator 视图时 i.* 字段改 NULL(BPS / DEBT_ASSET_RATIO 都来自 indicator)
+                select_sql = select_clause
                 if not ind_join:
                     select_sql = select_sql.replace("i.BPS", "NULL::DOUBLE AS BPS")
+                    select_sql = select_sql.replace(
+                        "i.ZCFZL AS DEBT_ASSET_RATIO",
+                        "NULL::DOUBLE AS DEBT_ASSET_RATIO",
+                    )
                 sql = f"""
                     SELECT {select_sql}
                     FROM {view} b
                     {ind_join}
                     WHERE b._symbol = ?
-                      AND b.REPORT_DATE LIKE '%-12-31'
+                      {annual_filter_a}
                     ORDER BY b.REPORT_DATE DESC
                     LIMIT {int(years)}
                 """
             else:
                 sql = f"""
-                    SELECT {self._FIN_SELECT[table]}
+                    SELECT {select_clause}
                     FROM {view}
                     WHERE _symbol = ?
-                      AND REPORT_DATE LIKE '%-12-31'
+                      {annual_filter}
                     ORDER BY REPORT_DATE DESC
                     LIMIT {int(years)}
                 """
