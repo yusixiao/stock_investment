@@ -107,6 +107,22 @@ def _hk_connect_refresh_job():
         logger.error(f"hk_connect refresh failed: {e}")
 
 
+def _hk_industry_refresh_job():
+    """每周一 07:00 刷新港股 sector/industry(yfinance)。
+    放在 06:30 hk_connect 名单刷新之后,确保拿到最新成分股。"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("Scheduled hk_industry refresh started")
+    try:
+        from services.hk_industry_updater import fetch_and_save_hk_industry
+
+        result = fetch_and_save_hk_industry()
+        logger.info(f"hk_industry refresh done: {result}")
+    except Exception as e:
+        logger.error(f"hk_industry refresh failed: {e}")
+
+
 def _backup_job():
     """每周备份 data/market/ 到百度网盘"""
     import logging
@@ -170,6 +186,16 @@ def start_scheduler():
         hour=6,
         minute=30,
         id="weekly_hk_connect_refresh",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        _hk_industry_refresh_job,
+        "cron",
+        day_of_week="mon",
+        hour=7,
+        minute=0,
+        id="weekly_hk_industry_refresh",
         replace_existing=True,
         misfire_grace_time=3600,
     )
