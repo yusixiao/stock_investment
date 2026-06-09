@@ -1467,36 +1467,88 @@ class DuckDBStore:
             return None
 
     def query_total_shares_for_section(self, code: str) -> Optional[int]:
-        """问股 §17 总股本 adapter — 读 v_a_indicator.TOTAL_SHARE 最新一期。
+        """问股 §17 总股本 adapter — 多市场:
+
+        - A 股:`v_a_indicator.TOTAL_SHARE` 最新一期(EastMoney 财务指标 schema)
+        - 美股:`v_us_balance.COMMON_STOCK_SHARES` 最新一期(yfinance / EastMoney US)
+        - 港股:indicator 表无 TOTAL_SHARE 列 → 用最新年报
+                `income.PARENT_NETPROFIT / income.BASIC_EPS` 倒推
+                (与 strategies/utils/conservative.py:175 fallback 一致)
 
         与 query_circulating_shares_for_section 不同:这里取总股本(含限售),
         用于市值/EV 计算;前者取流通 A 股(A_FREE_SHARE)。
         视图缺失/无数据 → None。
         """
         market = self._market_of_code(code)
-        view = f"v_{market.lower()}_indicator"
-        if not self._view_exists(view):
-            return None
         try:
-            df = self._conn.execute(
-                f"""
-                SELECT TOTAL_SHARE
-                FROM {view}
-                WHERE _symbol = ? AND TOTAL_SHARE IS NOT NULL AND TOTAL_SHARE > 0
-                ORDER BY REPORT_DATE DESC
-                LIMIT 1
-                """,
-                [code],
-            ).fetchdf()
+            if market == "A":
+                view = f"v_a_indicator"
+                if not self._view_exists(view):
+                    return None
+                df = self._conn.execute(
+                    f"""
+                    SELECT TOTAL_SHARE
+                    FROM {view}
+                    WHERE _symbol = ? AND TOTAL_SHARE IS NOT NULL AND TOTAL_SHARE > 0
+                    ORDER BY REPORT_DATE DESC
+                    LIMIT 1
+                    """,
+                    [code],
+                ).fetchdf()
+                if df.empty:
+                    return None
+                return int(df.iloc[0]["TOTAL_SHARE"])
+
+            if market == "US":
+                view = "v_us_balance"
+                if not self._view_exists(view):
+                    return None
+                df = self._conn.execute(
+                    f"""
+                    SELECT COMMON_STOCK_SHARES
+                    FROM {view}
+                    WHERE _symbol = ?
+                      AND COMMON_STOCK_SHARES IS NOT NULL
+                      AND COMMON_STOCK_SHARES > 0
+                    ORDER BY REPORT_DATE DESC
+                    LIMIT 1
+                    """,
+                    [code],
+                ).fetchdf()
+                if df.empty:
+                    return None
+                return int(df.iloc[0]["COMMON_STOCK_SHARES"])
+
+            if market == "HK":
+                view = "v_hk_income"
+                if not self._view_exists(view):
+                    return None
+                # 取最新有 PARENT_NETPROFIT + BASIC_EPS 且 EPS > 0 的年报
+                df = self._conn.execute(
+                    f"""
+                    SELECT PARENT_NETPROFIT, BASIC_EPS
+                    FROM {view}
+                    WHERE _symbol = ?
+                      AND PARENT_NETPROFIT IS NOT NULL
+                      AND BASIC_EPS IS NOT NULL
+                      AND BASIC_EPS > 0
+                      AND PARENT_NETPROFIT > 0
+                    ORDER BY REPORT_DATE DESC
+                    LIMIT 1
+                    """,
+                    [code],
+                ).fetchdf()
+                if df.empty:
+                    return None
+                np_v = float(df.iloc[0]["PARENT_NETPROFIT"])
+                eps = float(df.iloc[0]["BASIC_EPS"])
+                if eps <= 0:
+                    return None
+                return int(np_v / eps)
         except Exception as e:  # noqa: BLE001
             logger.warning("query_total_shares_for_section(%s) failed: %s", code, e)
             return None
-        if df.empty:
-            return None
-        try:
-            return int(df.iloc[0]["TOTAL_SHARE"])
-        except Exception:  # noqa: BLE001
-            return None
+        return None
 
     def query_latest_report_date(self, code: str) -> Optional[str]:
         """问股定性分析 cache 失效用 — 取 v_<market>_indicator 中该股票最新 REPORT_DATE。

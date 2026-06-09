@@ -71,12 +71,29 @@ def _safe_div(num: Optional[float], den: Optional[float]) -> Optional[float]:
     if num is None or den is None:
         return None
     try:
+        import math
+
+        n = float(num)
         d = float(den)
-        if d == 0:
+        if math.isnan(n) or math.isnan(d) or d == 0:
             return None
-        return float(num) / d
+        return n / d
     except (TypeError, ValueError):
         return None
+
+
+def _clean(v):
+    """None / NaN 统一为 None,数值原样返回。Parquet 缺失值常以 NaN 出现。"""
+    if v is None:
+        return None
+    try:
+        import math
+
+        if isinstance(v, float) and math.isnan(v):
+            return None
+    except Exception:  # noqa: BLE001
+        pass
+    return v
 
 
 def _build_legacy_header(indicators) -> str:
@@ -226,13 +243,17 @@ def _build_valuation_subsection(store, code: str, em_adapter=None) -> str:
     except Exception:  # noqa: BLE001
         cashflow = {}
 
-    cash = balance.get("MONETARY_FUND")
-    total_liab = balance.get("TOTAL_LIABILITIES")
-    total_equity = balance.get("TOTAL_EQUITY")
-    netprofit = income.get("PARENT_NETPROFIT") or income.get("NETPROFIT")
-    operate_profit = income.get("OPERATE_PROFIT")
-    netcash_op = cashflow.get("NETCASH_OPERATE")
-    capex = cashflow.get("CONSTRUCT_LONG_ASSET")
+    # HK balance.CASH_EQUIVALENTS 数据源经常为 NaN(yfinance/EastMoney HK 特点);
+    # 退化用 cashflow.END_CASH(年末现金及现金等价物)兜底,语义等价
+    cash = _clean(balance.get("MONETARY_FUND")) or _clean(cashflow.get("END_CASH"))
+    total_liab = _clean(balance.get("TOTAL_LIABILITIES"))
+    total_equity = _clean(balance.get("TOTAL_EQUITY"))
+    netprofit = _clean(income.get("PARENT_NETPROFIT")) or _clean(
+        income.get("NETPROFIT")
+    )
+    operate_profit = _clean(income.get("OPERATE_PROFIT"))
+    netcash_op = _clean(cashflow.get("NETCASH_OPERATE"))
+    capex = _clean(cashflow.get("CONSTRUCT_LONG_ASSET"))
     report_date = (
         balance.get("REPORT_DATE")
         or income.get("REPORT_DATE")
