@@ -204,10 +204,14 @@ class LowValuationQuarterlyStrategy(Strategy):
                 except (ValueError, TypeError):
                     pass  # 日期解析失败时不强制 staleness 过滤
             pb = val.get("pbMRQ")
-            if pb is None or pb <= 0 or pb > pb_max:
+            # NaN 防御:HK/US pbMRQ 由 DuckDB 用 BPS>0 派生,负净资产公司返 NaN;
+            # NaN 与任何数比较都返 False,会绕过 `pb<=0/pb>pb_max` 全部判断,
+            # 必须用 pd.isna 显式拦截(覆盖 None+NaN 两种缺失)。
+            # 历史 bug:fab04c35 任务 06158.HK 因 BPS=-2.57 → NaN PB → 误选
+            if pd.isna(pb) or pb <= 0 or pb > pb_max:
                 continue
             pe = val.get("peTTM")
-            if pe is None or pe <= 0:
+            if pd.isna(pe) or pe <= 0:
                 continue
             if _is_st_on(sym, cur_str):
                 continue
