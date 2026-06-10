@@ -75,15 +75,23 @@ def load_roe_panel(start: str, end: str) -> pd.DataFrame:
     return df
 
 
-def build_roe_lookup(roe_panel: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def build_roe_lookup(
+    roe_panel: pd.DataFrame, annual_only: bool = False
+) -> dict[str, pd.DataFrame]:
     """按 code 分组,用于 (code, date) 快速查最新已披露 ROE。
 
     去重铁律:相同 (code, NOTICE_DATE) 可能有多条(IPO 招股书 / 重述报告),
     用最大 REPORT_DATE 作为 tiebreak(最近期的 fiscal period 为准),
     保证查询结果**确定性**。
+
+    annual_only=True:只保留 REPORT_DATE 月份=12 的年报。用于 R25 配方
+    (避免 5 月调仓拿 Q1 累计 ROEJQ ≈ 年化 ÷ 4 误踏空)。
     """
+    src = roe_panel
+    if annual_only:
+        src = src[pd.to_datetime(src["REPORT_DATE"]).dt.month == 12]
     # 同 (code, NOTICE_DATE) 取最大 REPORT_DATE 的一行
-    g = roe_panel.sort_values(["code", "NOTICE_DATE", "REPORT_DATE"]).drop_duplicates(
+    g = src.sort_values(["code", "NOTICE_DATE", "REPORT_DATE"]).drop_duplicates(
         ["code", "NOTICE_DATE"], keep="last"
     )
     out = {}
@@ -493,6 +501,9 @@ def main():
     logger.info(f"ROE 披露面板 rows={len(roe_panel)}")
     roe_lookup = build_roe_lookup(roe_panel)
     logger.info(f"ROE lookup codes={len(roe_lookup)}")
+    # R25 用:仅年报 ROEJQ
+    roe_lookup_annual = build_roe_lookup(roe_panel, annual_only=True)
+    logger.info(f"ROE lookup (annual-only) codes={len(roe_lookup_annual)}")
 
     rounds = [
         (
@@ -671,6 +682,22 @@ def main():
         (
             "R24 R16 ROE>3% top20",
             select_pb_quality_roe(roe_lookup, roe_min=0.03, top_n=20),
+            equal_weight,
+            quarterly_dates,
+        ),
+        (
+            "R25 R20 + 年报 ROE 口径(本项目正式策略 LowValuationQuarterly 默认)",
+            # 与 R20 同配方:PB<1 + ROE>5% + 排动量最差 20% (6m) + top15,
+            # 但 ROE 用 annual-only lookup(仅 REPORT_DATE 月=12 的年报)。
+            # 5 月调仓时不再被 Q1 累计 ROEJQ 系统性踏空。
+            select_pb_roe_momentum(
+                roe_lookup_annual,
+                qfq,
+                roe_min=0.05,
+                mom_lookback_days=120,
+                drop_pct=0.2,
+                top_n=15,
+            ),
             equal_weight,
             quarterly_dates,
         ),

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import math
+from datetime import date as _date_cls
 from typing import Any
 
 import numpy as np
@@ -24,6 +25,21 @@ import pandas as pd
 
 from services.backtest.indicators import compute_indicators, resolve_indicator_column
 from services.stock_data import aggregate_kline
+
+
+def _date_gap_days(row_date: Any, query_date: str) -> float:
+    """返回 query_date - row_date 的日历日差(>=0 = row 早于 query)。
+
+    解析失败返回 +inf,等价于「视为过期」(staleness 检查会过滤掉)。
+    入参容忍 str / pandas.Timestamp / datetime.date。
+    """
+    try:
+        rd_str = str(row_date)[:10]
+        rd = _date_cls.fromisoformat(rd_str)
+        qd = _date_cls.fromisoformat(str(query_date)[:10])
+        return float((qd - rd).days)
+    except (ValueError, TypeError):
+        return float("inf")
 
 
 class _StaticTable:
@@ -400,14 +416,27 @@ class MarketData:
         end = i + 1
         return df.iloc[start:end].to_dict(orient="records")
 
-    def get_valuation(self, symbol: str, date: str) -> dict | None:
+    def get_valuation(
+        self, symbol: str, date: str, max_staleness_days: int | None = None
+    ) -> dict | None:
+        """ASOF 查 ``date`` 之前最近一行 valuation。
+
+        ``max_staleness_days``:可选时效上限(日历日)。若提供且最近一行的 date 与
+        查询 date 差超过该上限,返回 None。用于过滤退市/长停牌股(stale 数据
+        会让 ASOF 命中数年前的旧值,导致策略误选 → buy 永久 pending)。
+        默认 None = 保持现有行为(无 staleness 限制),向后兼容。
+        """
         table = self._valuation_cache.get(symbol)
         if table is None or table.n == 0:
             return None
         pos = int(np.searchsorted(table.dates, date, side="right")) - 1
         if pos < 0:
             return None
-        result: dict[str, Any] = {"date": table.dates[pos]}
+        row_date = table.dates[pos]
+        if max_staleness_days is not None and row_date is not None:
+            if _date_gap_days(row_date, date) > max_staleness_days:
+                return None
+        result: dict[str, Any] = {"date": row_date}
         for col, arr in table.num_cols.items():
             v = arr[pos]
             result[col] = None if math.isnan(v) else float(v)
@@ -422,8 +451,12 @@ class MarketData:
             return None
         return df
 
-    def get_financial(self, symbol: str, date: str) -> dict | None:
-        return self._lookup_financial_table(self._financial_cache, symbol, date)
+    def get_financial(
+        self, symbol: str, date: str, max_staleness_days: int | None = None
+    ) -> dict | None:
+        return self._lookup_financial_table(
+            self._financial_cache, symbol, date, max_staleness_days
+        )
 
     def get_financial_annual(self, symbol: str, date: str) -> dict | None:
         """仅返回 REPORT_DATE 以 -12-31 结尾的最近一份年报。
@@ -433,32 +466,54 @@ class MarketData:
         """
         return self._lookup_financial_table(self._financial_annual_cache, symbol, date)
 
-    def get_balance(self, symbol: str, date: str) -> dict | None:
+    def get_balance(
+        self, symbol: str, date: str, max_staleness_days: int | None = None
+    ) -> dict | None:
         """资产负债表最近一期(任何报告期,REPORT_DATE <= date)。"""
-        return self._lookup_financial_table(self._balance_cache, symbol, date)
+        return self._lookup_financial_table(
+            self._balance_cache, symbol, date, max_staleness_days
+        )
 
     def get_balance_annual(self, symbol: str, date: str) -> dict | None:
         """资产负债表最近一份年报(REPORT_DATE = -12-31 且 <= date)。"""
         return self._lookup_financial_table(self._balance_annual_cache, symbol, date)
 
-    def get_cashflow(self, symbol: str, date: str) -> dict | None:
+    def get_cashflow(
+        self, symbol: str, date: str, max_staleness_days: int | None = None
+    ) -> dict | None:
         """现金流量表最近一期(任何报告期,REPORT_DATE <= date)。"""
-        return self._lookup_financial_table(self._cashflow_cache, symbol, date)
+        return self._lookup_financial_table(
+            self._cashflow_cache, symbol, date, max_staleness_days
+        )
 
     def get_cashflow_annual(self, symbol: str, date: str) -> dict | None:
         """现金流量表最近一份年报(REPORT_DATE = -12-31 且 <= date)。"""
         return self._lookup_financial_table(self._cashflow_annual_cache, symbol, date)
 
     def _lookup_financial_table(
-        self, cache: dict[str, _StaticTable], symbol: str, date: str
+        self,
+        cache: dict[str, _StaticTable],
+        symbol: str,
+        date: str,
+        max_staleness_days: int | None = None,
     ) -> dict | None:
+        """ASOF 查 ``date`` 之前最近一期财务报告。
+
+        ``max_staleness_days``:可选时效上限(日历日)。注意财务报告本身就是季度/
+        年度披露(NOTICE_DATE 与 REPORT_DATE 都按季计),阈值需要够宽(典型 100+
+        天才合理)。常规策略不需要,主要用于退市股防护场景。
+        """
         table = cache.get(symbol)
         if table is None or table.n == 0:
             return None
         pos = int(np.searchsorted(table.dates, date, side="right")) - 1
         if pos < 0:
             return None
-        result: dict[str, Any] = {"REPORT_DATE": table.dates[pos]}
+        row_date = table.dates[pos]
+        if max_staleness_days is not None and row_date is not None:
+            if _date_gap_days(row_date, date) > max_staleness_days:
+                return None
+        result: dict[str, Any] = {"REPORT_DATE": row_date}
         for col, arr in table.num_cols.items():
             v = arr[pos]
             result[col] = None if math.isnan(v) else float(v)

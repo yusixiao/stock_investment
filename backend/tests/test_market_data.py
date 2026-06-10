@@ -332,6 +332,104 @@ def test_get_financial_annual_missing_symbol(stock_data):
     assert md.get_financial_annual("000001", date="2024-04-15") is None
 
 
+# ============= max_staleness_days(2026-06-09 新增,退市股 stale 数据防护)=============
+# 背景:get_valuation 走 ASOF (`<= date` 最近一行),退市股(如 600291.SH 2022 退市)
+# 在 2026 查询会返回 2022 的 stale pbMRQ,误进选股池后 T+1 buy 永久 pending。
+# max_staleness_days 限制最近一行 date 与查询 date 的日历日差。
+
+
+def test_get_valuation_staleness_filters_old_row(stock_data):
+    val_df = pd.DataFrame({"date": ["2022-06-30"], "pe": [10.0], "pb": [0.8]})
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", valuation={"000001": val_df}
+    )
+    # 默认行为(无 staleness 限制)→ 命中 stale 行
+    assert md.get_valuation("000001", date="2026-05-15") is not None
+    # 启用 staleness=10 → 1400+ 日历日 gap → 过滤为 None
+    assert md.get_valuation("000001", date="2026-05-15", max_staleness_days=10) is None
+
+
+def test_get_valuation_staleness_passes_recent_row(stock_data):
+    val_df = pd.DataFrame({"date": ["2024-02-10", "2024-02-15"], "pe": [10.0, 12.0]})
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", valuation={"000001": val_df}
+    )
+    # 2024-02-18 vs row 2024-02-15 → 3 日差 ≤ 10 → 命中
+    row = md.get_valuation("000001", date="2024-02-18", max_staleness_days=10)
+    assert row is not None
+    assert row["pe"] == 12.0
+
+
+def test_get_valuation_staleness_none_when_no_param(stock_data):
+    """max_staleness_days=None(默认)保持现有行为,即使 row 极陈旧也返回。"""
+    val_df = pd.DataFrame({"date": ["2010-01-15"], "pe": [10.0]})
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", valuation={"000001": val_df}
+    )
+    row = md.get_valuation("000001", date="2026-05-15")
+    assert row is not None  # 向后兼容:无参数 = 不过滤
+    assert row["pe"] == 10.0
+
+
+def test_get_valuation_staleness_boundary_inclusive(stock_data):
+    """gap == max_staleness_days 应通过(<=,不是 <)。"""
+    val_df = pd.DataFrame({"date": ["2024-02-05"], "pe": [10.0]})
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", valuation={"000001": val_df}
+    )
+    # 2024-02-15 - 2024-02-05 = 10 日,boundary 应通过
+    row = md.get_valuation("000001", date="2024-02-15", max_staleness_days=10)
+    assert row is not None
+    # 11 日 → 过滤
+    assert md.get_valuation("000001", date="2024-02-16", max_staleness_days=10) is None
+
+
+def test_get_financial_staleness_filters_old_report(stock_data):
+    """财务报告本身是季度披露,典型 staleness 阈值应 >100 天。
+    本测试用极端值 30 天验证机制。"""
+    fin_df = pd.DataFrame(
+        {
+            "REPORT_DATE": ["2022-12-31"],
+            "NETPROFIT": [100.0],
+        }
+    )
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", financial={"000001": fin_df}
+    )
+    # 1000+ 日 gap → 30 日阈值过滤
+    assert md.get_financial("000001", date="2026-05-15", max_staleness_days=30) is None
+    # 默认无限制 → 命中
+    assert md.get_financial("000001", date="2026-05-15") is not None
+
+
+def test_get_balance_staleness_supported(stock_data):
+    bal_df = pd.DataFrame(
+        {
+            "REPORT_DATE": ["2022-12-31"],
+            "TOTALASSETS": [1000.0],
+        }
+    )
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", balance={"000001": bal_df}
+    )
+    assert md.get_balance("000001", date="2026-05-15", max_staleness_days=30) is None
+    assert md.get_balance("000001", date="2026-05-15") is not None
+
+
+def test_get_cashflow_staleness_supported(stock_data):
+    cf_df = pd.DataFrame(
+        {
+            "REPORT_DATE": ["2022-12-31"],
+            "NETCASHOPERATE": [50.0],
+        }
+    )
+    md = MarketData(
+        stock_data=stock_data, frequency="daily", cashflow={"000001": cf_df}
+    )
+    assert md.get_cashflow("000001", date="2026-05-15", max_staleness_days=30) is None
+    assert md.get_cashflow("000001", date="2026-05-15") is not None
+
+
 # ============= _resolve_idx (searchsorted) 回归测试 =============
 # 这些测试针对 _resolve_idx 由 O(N) pandas mask → O(log N) np.searchsorted 的优化,
 # 重点覆盖 sparse 个股(停牌/上市晚)、target 早于首日、精确匹配等边界。

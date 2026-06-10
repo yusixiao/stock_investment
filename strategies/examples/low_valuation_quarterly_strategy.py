@@ -1,12 +1,13 @@
 """低估值季度调仓策略(LowValuationQuarterlyStrategy)。
 
-A 股 2010-2025 全样本回测最优配方(R20),独立脚本 CAGR 11.82% / Sharpe 0.81 /
-DD -24.7%(详见 scripts/backtest_low_pb_value.py)。
+A 股 2010-2025 全样本回测最优配方(R25 = R20 + 年报 ROE 口径),独立脚本
+CAGR 13.92% / Sharpe 0.83 / DD -28.2%(详见 scripts/backtest_low_pb_value.py)。
 
 核心逻辑:
 1. 在每年 5/9/11 月的第一个交易日(由 frequency="monthly" + 月份 gate 实现)做一次:
    - 全 A 股池 → PB ∈ (0, max] 且 isST==0 且 peTTM > 0
-   - 排除最新已披露 ROEJQ ≤ roe_min%(NOTICE_DATE-as-of,严防 look-ahead)
+   - 排除最新已披露**年报** ROEJQ ≤ roe_min%(NOTICE_DATE-as-of,严防 look-ahead;
+     **只用 REPORT_DATE 月=12 的年报**,避免 Q1/H1/Q3 累计同期 ROE 季节性扰动)
    - 排除过去 momentum_lookback_days 涨跌幅最差 momentum_drop_pct 分位数
    - 按 PB 升序取 top_n,等权
 2. 调仓机制 = 完全替换:把不在新目标里的全部清仓,目标里的 order_target_percent(1/N)
@@ -16,13 +17,23 @@ DD -24.7%(详见 scripts/backtest_low_pb_value.py)。
    中信/北京银行/中铁/中建等),实质是「破净银行+基建组合」。预期未来表现高度
    依赖该子板块的均值回归,而非全市场 alpha。
 
-⚠️ 与 ctx.get_financial 默认接口的差异:本策略 ROE 走
-   filter_by_roe_as_of_notice(NOTICE_DATE 防 look-ahead),不走 ctx.get_financial
-   (REPORT_DATE)。回测启动时会一次性预加载 v_a_indicator 全表 + v_a_daily isST
-   稀疏表,首次调仓略慢(几秒),后续 O(log N)。
+⚠️ 关于 ROE 口径选择(2026-06-09 决策):对比 V0=统一 5%(11.82%)/ V1=季度归一化
+   (12.02%)/ V2=仅年报(13.92%),V2 显著最优。原因:5 月调仓时 Q1 报告刚披露,
+   累计同期 ROEJQ 仅 1-3%,统一 5% 阈值会把所有正常股刷掉(系统性踏空);用上一
+   年完整年报反而更稳定。本策略采用 V2。
 
-成交价口径:遵循项目铁律(broker T+1 + (open+close)/2 中位价),与 R20 脚本
-「D 收盘价开仓」会有 ~0.1-0.2pp 偏离,实盘可达。
+⚠️ 与 ctx.get_financial 默认接口的差异:本策略 ROE 走
+   filter_by_roe_annual_as_of_notice(NOTICE_DATE 防 look-ahead + 仅年报),
+   不走 ctx.get_financial(REPORT_DATE)。回测启动时一次性预加载 v_a_indicator
+   年报子集 + v_a_daily isST 稀疏表,首次调仓略慢(几秒),后续 O(log N)。
+
+⚠️ 退市股防护(2026-06-09 修复):stage1 加 valuation 时效性检查,要求估值数据
+   日期与当前回测日间隔 ≤ max_valuation_staleness_days(默认 5 交易日)。
+   防止已退市股(如西水股份 600291.SH 2022-06 退市)的 stale pbMRQ 被 ASOF
+   查找到,误进选股池后导致 T+1 buy 永久 pending → 全空仓 bug。
+
+成交价口径:遵循项目铁律(broker T+1 + (open+close)/2 中位价),与脚本「D 收盘价
+开仓」会有 ~0.1-0.2pp 偏离,实盘可达。
 """
 
 from __future__ import annotations
@@ -34,7 +45,7 @@ import numpy as np
 import pandas as pd
 
 from strategies.base import Strategy
-from strategies.utils import valuation, financial
+from strategies.utils import financial
 
 
 # ===== isST 稀疏 cache(只装 isST=='1' 的 (sym, date) 对,A 股专用) =====
@@ -91,9 +102,9 @@ def _is_st_on(symbol: str, date_str: str) -> bool:
 class LowValuationQuarterlyStrategy(Strategy):
     name = "低估值季度调仓"
     description = (
-        "A 股每年 5/9/11 月初做一次调仓:筛 PB<1 + 非 ST + 盈利 + ROE 达标 + "
-        "排过去 6 月动量最差分位,按 PB 升序取 top N 等权。基于 R20 配方"
-        "(2010-2025 CAGR 11.82% / DD -24.7% / Sharpe 0.81)。"
+        "A 股每年 5/9/11 月初做一次调仓:筛 PB<1 + 非 ST + 盈利 + 年报 ROE 达标 + "
+        "排过去 6 月动量最差分位,按 PB 升序取 top N 等权。基于 R25 配方"
+        "(R20 + 年报 ROE,2010-2025 CAGR 13.92% / DD -28.2% / Sharpe 0.83)。"
         "⚠️ 行业高度集中于破净银行 + 央企基建,持仓多样性差。"
     )
     frequency = "monthly"
@@ -109,7 +120,12 @@ class LowValuationQuarterlyStrategy(Strategy):
         "roe_min": {
             "default": 5.0,
             "type": "float",
-            "label": "最低 ROE(%,NOTICE_DATE-as-of)",
+            "label": "最低 ROE(%,年报 NOTICE_DATE-as-of)",
+        },
+        "max_valuation_staleness_days": {
+            "default": 5,
+            "type": "int",
+            "label": "估值数据时效上限(交易日,防退市股 stale 数据)",
         },
         "momentum_lookback_days": {
             "default": 120,
@@ -164,14 +180,33 @@ class LowValuationQuarterlyStrategy(Strategy):
         lookback = int(self.p.momentum_lookback_days)
         drop_pct = float(self.p.momentum_drop_pct)
         top_n = int(self.p.top_n)
+        staleness_days = int(self.p.max_valuation_staleness_days)
 
-        # ---- Stage 1: PB / peTTM / ST 三联过滤 ----
+        # ---- Stage 1: PB / peTTM / ST + 时效性 四联过滤 ----
+        # staleness 检查防退市股:get_valuation 走 ASOF (`<= date` 最近一行),
+        # 退市股(如 600291.SH 2022 退市)在 2026 查询会返回 2022 stale pbMRQ。
+        # 这里要求 valuation 行的 date 与 cur_str 间隔 ≤ staleness_days(日历日近似)。
         stage1: list[tuple[str, float]] = []
+        cur_d_obj = cur_d  # 已 parse 的 date
         for sym in symbols:
-            pb = valuation.get_pb(ctx, sym)
+            # 取完整 valuation 行(含 date 字段),用于 staleness 检查
+            val = ctx.get_valuation(sym) if hasattr(ctx, "get_valuation") else None
+            if val is None:
+                continue
+            val_date = val.get("date")
+            if val_date is not None:
+                try:
+                    vd = date.fromisoformat(str(val_date)[:10])
+                    # 用日历日做近似(staleness_days 含义:交易日 ≈ 日历日 × 1.4),
+                    # 5 交易日 ~ 7 日历日,放宽到 staleness_days * 2 防春节/国庆假期误杀
+                    if (cur_d_obj - vd).days > staleness_days * 2:
+                        continue
+                except (ValueError, TypeError):
+                    pass  # 日期解析失败时不强制 staleness 过滤
+            pb = val.get("pbMRQ")
             if pb is None or pb <= 0 or pb > pb_max:
                 continue
-            pe = valuation.get_pe(ctx, sym)
+            pe = val.get("peTTM")
             if pe is None or pe <= 0:
                 continue
             if _is_st_on(sym, cur_str):
@@ -180,15 +215,18 @@ class LowValuationQuarterlyStrategy(Strategy):
             ctx.record_factor(sym, "PB", float(pb))
         ctx.log_flow("strategy.pb_pe_st", passed=len(stage1))
 
-        # ---- Stage 2: ROE(NOTICE_DATE-as-of)----
+        # ---- Stage 2: 年报 ROE(NOTICE_DATE-as-of)----
+        # 用 filter_by_roe_annual_as_of_notice:仅 REPORT_DATE 月=12 的年报。
+        # 不用 get_roe_as_of_notice(季度累计 ROEJQ),因为 5 月调仓拿到的是 Q1 报告
+        # ROEJQ 只是年化的 1/4(2-4%),阈值 5% 会把所有正常股刷掉,导致系统性踏空。
         stage2: list[tuple[str, float, float]] = []
         for sym, pb in stage1:
-            roe = financial.get_roe_as_of_notice(ctx, sym)
+            roe = financial.get_roe_annual_as_of_notice(ctx, sym)
             if roe is None or roe <= roe_min:
                 continue
             stage2.append((sym, pb, roe))
             ctx.record_factor(sym, "ROE", roe)
-        ctx.log_flow("strategy.roe_notice", passed=len(stage2))
+        ctx.log_flow("strategy.roe_annual_notice", passed=len(stage2))
 
         # ---- Stage 3: 动量过滤(剔除最差分位)----
         if drop_pct > 0 and stage2 and lookback > 0:
