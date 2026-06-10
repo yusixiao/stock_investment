@@ -127,6 +127,27 @@ class LowValuationMultiFactorQuarterlyStrategy(Strategy):
             "type": "float",
             "label": "score 权重:z(1/PE)",
         },
+        "score_weight_neg_momentum": {
+            "default": 0.0,
+            "type": "float",
+            "label": "score 权重:z(-动量)逆动量加分",
+        },
+        "neg_momentum_lookback_days": {
+            "default": 60,
+            "type": "int",
+            "label": "逆动量回看天数",
+        },
+        # ---- 持仓权重 ----
+        "position_weighting": {
+            "default": "equal",
+            "type": "str",
+            "label": "仓位加权方式 equal|inv_vol",
+        },
+        "vol_lookback_days": {
+            "default": 60,
+            "type": "int",
+            "label": "波动回看天数(inv_vol 用)",
+        },
         # ---- 持仓 + 调仓 ----
         "top_n": {"default": 15, "type": "int", "label": "持仓数量"},
         "max_per_industry": {
@@ -271,31 +292,55 @@ class LowValuationMultiFactorQuarterlyStrategy(Strategy):
             return []
 
         # ---- Stage 4: 多因子复合 score 排序 ----
-        # 收集每只股票的 4 因子原值,然后 z-score 标准化加权求和
-        rows = []  # (sym, pb, pe, roe, div_yield)
+        # 收集每只股票的因子原值,然后 z-score 标准化加权求和
+        # 因子集合:1/PB, 1/PE, ROE, div_yield, -momentum(逆动量)
+        w_neg_mom = float(self.p.score_weight_neg_momentum)
+        neg_mom_lookback = int(self.p.neg_momentum_lookback_days)
+
+        rows = []  # (sym, pb, pe, roe, div_yield, neg_momentum)
         for sym, pb, pe, roe in stage3:
             dy = yield_factor.get_dividend_yield_ttm(ctx, sym)
             if dy is None:
                 dy = 0.0  # 无价格异常 → 当 0 处理
-            rows.append((sym, pb, pe, roe, dy))
+            # 逆动量因子(下跌幅度大 → 值大):仅在权重 > 0 时计算
+            neg_mom = 0.0
+            if w_neg_mom > 0 and neg_mom_lookback > 0:
+                bars = ctx.get_history(sym, n=neg_mom_lookback + 1, period="daily")
+                if bars and len(bars) >= 2:
+                    o = bars[0].get("close")
+                    n = bars[-1].get("close")
+                    if o and n and float(o) > 0:
+                        # -动量:近 N 日跌幅越大 → neg_mom 越大
+                        neg_mom = -(float(n) / float(o) - 1.0)
+            rows.append((sym, pb, pe, roe, dy, neg_mom))
             ctx.record_factor(sym, "DivYieldTTM", dy)
+            if w_neg_mom > 0:
+                ctx.record_factor(sym, "NegMomentum", neg_mom)
 
         inv_pb = np.array([1.0 / r[1] for r in rows])
         inv_pe = np.array([1.0 / r[2] for r in rows])
         roes = np.array([r[3] for r in rows])
         dys = np.array([r[4] for r in rows])
+        neg_moms = np.array([r[5] for r in rows])
 
         z_inv_pb = _z_score(inv_pb)
         z_roe = _z_score(roes)
         z_dy = _z_score(dys)
         z_inv_pe = _z_score(inv_pe)
+        z_neg_mom = _z_score(neg_moms)
 
         w_pb = float(self.p.score_weight_inv_pb)
         w_roe = float(self.p.score_weight_roe)
         w_dy = float(self.p.score_weight_div_yield)
         w_pe = float(self.p.score_weight_inv_pe)
 
-        scores = w_pb * z_inv_pb + w_roe * z_roe + w_dy * z_dy + w_pe * z_inv_pe
+        scores = (
+            w_pb * z_inv_pb
+            + w_roe * z_roe
+            + w_dy * z_dy
+            + w_pe * z_inv_pe
+            + w_neg_mom * z_neg_mom
+        )
         for i, (sym, *_) in enumerate(rows):
             ctx.record_factor(sym, "Score", float(scores[i]))
 
@@ -358,7 +403,44 @@ class LowValuationMultiFactorQuarterlyStrategy(Strategy):
                     note="not_in_new_target",
                 )
 
-    # ===== 买入:等权 1/N(同原策略)=====
+    # ===== 买入:等权 1/N 或 inv_vol(1/σ_60 反向波动加权)=====
+    def _compute_inv_vol_weights(
+        self, ctx, target: list[str], lookback: int
+    ) -> dict[str, float]:
+        """计算 inv_vol 权重。σ_i = 近 lookback 日 daily-return std。
+        weight_i = (1/σ_i) / Σ(1/σ_j)。σ=0 或数据不足的 symbol 用中位数 σ 兜底,
+        全部失败则全部回退等权。
+        """
+        n = len(target)
+        sigmas: list[float | None] = []
+        for sym in target:
+            bars = ctx.get_history(sym, n=lookback + 1, period="daily")
+            if not bars or len(bars) < 3:
+                sigmas.append(None)
+                continue
+            closes = np.array(
+                [float(b["close"]) for b in bars if b.get("close") is not None]
+            )
+            if len(closes) < 3:
+                sigmas.append(None)
+                continue
+            rets = np.diff(closes) / closes[:-1]
+            sd = float(np.std(rets))
+            sigmas.append(sd if sd > 0 else None)
+
+        valid = [s for s in sigmas if s is not None and s > 0]
+        if not valid:
+            # 全部失败 → 等权
+            eq = 1.0 / float(n)
+            return {sym: eq for sym in target}
+        median_sigma = float(np.median(valid))
+        filled = np.array(
+            [s if (s is not None and s > 0) else median_sigma for s in sigmas]
+        )
+        inv = 1.0 / filled
+        weights = inv / inv.sum()
+        return dict(zip(target, weights.tolist(), strict=False))
+
     def on_buy(self, ctx) -> None:
         if not self._rebalance_pending:
             return
@@ -366,8 +448,17 @@ class LowValuationMultiFactorQuarterlyStrategy(Strategy):
         if not target:
             self._rebalance_pending = False
             return
-        target_pct = 1.0 / float(len(target))
+
+        weighting = str(self.p.position_weighting).lower().strip()
+        if weighting == "inv_vol":
+            vol_lb = int(self.p.vol_lookback_days)
+            weights = self._compute_inv_vol_weights(ctx, target, vol_lb)
+        else:
+            eq = 1.0 / float(len(target))
+            weights = {sym: eq for sym in target}
+
         for sym in target:
+            target_pct = float(weights.get(sym, 0.0))
             ctx.order_target_percent(sym, target_pct)
             if hasattr(ctx, "log_pass"):
                 ctx.log_pass(sym, "strategy.rebalance_buy", target_pct=target_pct)

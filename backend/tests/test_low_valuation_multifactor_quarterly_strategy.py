@@ -332,3 +332,165 @@ def test_on_buy_equal_weight():
     for _, pct in ctx.target_pct_orders:
         assert abs(pct - 0.25) < 1e-9
     assert strat._rebalance_pending is False
+
+
+# ===== 逆动量加分 =====
+def _build_history_with_momentum(symbol: str, total_return: float, n: int = 121):
+    """构造 n 根 daily bar,使首尾收益率 = total_return(线性插值近似)。"""
+    start = 10.0
+    end = start * (1.0 + total_return)
+    closes = [start + (end - start) * i / (n - 1) for i in range(n)]
+    return [{"close": c} for c in closes]
+
+
+def test_neg_momentum_boosts_falling_stocks(monkeypatch):
+    """开启逆动量加分(其他因子权重清零)→ 跌幅最大的股票排第一。"""
+    valuation = {
+        "DROP.SH": {"date": "2025-11-03", "pbMRQ": 0.7, "peTTM": 9.0},
+        "FLAT.SH": {"date": "2025-11-03", "pbMRQ": 0.7, "peTTM": 9.0},
+        "UP.SH": {"date": "2025-11-03", "pbMRQ": 0.7, "peTTM": 9.0},
+    }
+    history = {
+        "DROP.SH": _build_history_with_momentum("DROP.SH", -0.3),  # 跌 30%
+        "FLAT.SH": _build_history_with_momentum("FLAT.SH", 0.0),
+        "UP.SH": _build_history_with_momentum("UP.SH", 0.3),  # 涨 30%
+    }
+    ctx = _make_ctx(valuation, history=history)
+    _patch_externals(monkeypatch, {"DROP.SH": 12.0, "FLAT.SH": 12.0, "UP.SH": 12.0})
+
+    strat = LowValuationMultiFactorQuarterlyStrategy(
+        param_overrides={
+            "rebalance_months": [11],
+            "momentum_drop_pct": 0.0,  # 关掉动量分位剔除
+            "max_per_industry": 0,
+            "top_n": 1,
+            # 关闭其他因子,只留逆动量
+            "score_weight_inv_pb": 0.0,
+            "score_weight_roe": 0.0,
+            "score_weight_div_yield": 0.0,
+            "score_weight_inv_pe": 0.0,
+            "score_weight_neg_momentum": 1.0,
+            "neg_momentum_lookback_days": 60,
+        }
+    )
+    selected = strat.screen(ctx, ["DROP.SH", "FLAT.SH", "UP.SH"])
+    assert selected == ["DROP.SH"]
+    # NegMomentum 因子应被记录
+    assert "NegMomentum" in ctx.get_factors("DROP.SH")
+
+
+def test_neg_momentum_weight_zero_skips_computation(monkeypatch):
+    """权重 = 0 时不应记录 NegMomentum 因子(性能优化路径)。"""
+    valuation = {
+        "A.SH": {"date": "2025-11-03", "pbMRQ": 0.5, "peTTM": 8.0},
+    }
+    ctx = _make_ctx(valuation, history=_default_history(["A.SH"]))
+    _patch_externals(monkeypatch, {"A.SH": 12.0})
+    strat = LowValuationMultiFactorQuarterlyStrategy(
+        param_overrides={
+            "rebalance_months": [11],
+            "momentum_drop_pct": 0.0,
+            "max_per_industry": 0,
+            "score_weight_neg_momentum": 0.0,  # 默认值
+        }
+    )
+    strat.screen(ctx, ["A.SH"])
+    assert "NegMomentum" not in ctx.get_factors("A.SH")
+
+
+# ===== inv_vol 仓位加权 =====
+def _history_with_volatility(seed: int, n: int = 61, sigma: float = 0.01):
+    """生成 n 根 bar,daily-return 服从 N(0, sigma^2)(seeded 重现)。"""
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    rets = rng.normal(0.0, sigma, n - 1)
+    closes = [10.0]
+    for r in rets:
+        closes.append(closes[-1] * (1.0 + r))
+    return [{"close": c} for c in closes]
+
+
+def test_on_buy_inv_vol_low_sigma_gets_more():
+    """三只标的:LOW(σ=0.005), MID(σ=0.02), HIGH(σ=0.05) → LOW 权重最大。"""
+    strat = LowValuationMultiFactorQuarterlyStrategy(
+        param_overrides={"position_weighting": "inv_vol", "vol_lookback_days": 60}
+    )
+    strat._target_holdings = ["LOW.SH", "MID.SH", "HIGH.SH"]
+    strat._rebalance_pending = True
+
+    ctx = MockContext(
+        history={
+            "LOW.SH": _history_with_volatility(seed=1, sigma=0.005),
+            "MID.SH": _history_with_volatility(seed=2, sigma=0.02),
+            "HIGH.SH": _history_with_volatility(seed=3, sigma=0.05),
+        }
+    )
+    strat.on_buy(ctx)
+
+    weights = dict(ctx.target_pct_orders)
+    assert len(weights) == 3
+    # LOW 权重应最大,HIGH 最小
+    assert weights["LOW.SH"] > weights["MID.SH"] > weights["HIGH.SH"]
+    # 总权重 ≈ 1.0
+    assert abs(sum(weights.values()) - 1.0) < 1e-9
+
+
+def test_on_buy_inv_vol_falls_back_when_no_history():
+    """所有标的都无 history → 全部回退等权(1/N)。"""
+    strat = LowValuationMultiFactorQuarterlyStrategy(
+        param_overrides={"position_weighting": "inv_vol", "vol_lookback_days": 60}
+    )
+    strat._target_holdings = ["A.SH", "B.SH"]
+    strat._rebalance_pending = True
+
+    ctx = MockContext()  # 无 history
+    strat.on_buy(ctx)
+
+    assert len(ctx.target_pct_orders) == 2
+    for _, pct in ctx.target_pct_orders:
+        assert abs(pct - 0.5) < 1e-9
+
+
+def test_on_buy_inv_vol_partial_history_uses_median_fallback():
+    """部分标的无 history → 用中位数 σ 兜底,仍能产出归一化权重。"""
+    strat = LowValuationMultiFactorQuarterlyStrategy(
+        param_overrides={"position_weighting": "inv_vol", "vol_lookback_days": 60}
+    )
+    strat._target_holdings = ["A.SH", "B.SH", "MISSING.SH"]
+    strat._rebalance_pending = True
+
+    ctx = MockContext(
+        history={
+            "A.SH": _history_with_volatility(seed=1, sigma=0.01),
+            "B.SH": _history_with_volatility(seed=2, sigma=0.02),
+            # MISSING.SH 无 history
+        }
+    )
+    strat.on_buy(ctx)
+
+    weights = dict(ctx.target_pct_orders)
+    assert len(weights) == 3
+    # 总权重 ≈ 1.0
+    assert abs(sum(weights.values()) - 1.0) < 1e-9
+    # MISSING 用中位数 σ 兜底,权重应为正
+    assert weights["MISSING.SH"] > 0
+
+
+def test_on_buy_default_equal_when_position_weighting_equal():
+    """默认 equal → 即使 inv_vol 数据可用也走等权。"""
+    strat = LowValuationMultiFactorQuarterlyStrategy()  # 默认 equal
+    strat._target_holdings = ["A.SH", "B.SH"]
+    strat._rebalance_pending = True
+
+    ctx = MockContext(
+        history={
+            "A.SH": _history_with_volatility(seed=1, sigma=0.005),
+            "B.SH": _history_with_volatility(seed=2, sigma=0.05),
+        }
+    )
+    strat.on_buy(ctx)
+
+    weights = dict(ctx.target_pct_orders)
+    assert abs(weights["A.SH"] - 0.5) < 1e-9
+    assert abs(weights["B.SH"] - 0.5) < 1e-9
