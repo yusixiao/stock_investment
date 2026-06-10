@@ -1,8 +1,14 @@
 import type React from 'react';
-import { useEffect, useState, useCallback } from 'react';
-import { RiDeleteBin6Line, RiRefreshLine } from '@remixicon/react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import {
+  RiArrowDownSLine,
+  RiArrowUpSLine,
+  RiDeleteBin6Line,
+  RiExpandUpDownLine,
+  RiRefreshLine,
+} from '@remixicon/react';
 import { cn } from '../../utils/cn';
-import { Badge } from '../common';
+import { Badge, Tooltip } from '../common';
 import { backtestEngineApi, type TaskListItem } from '../../api/backtestEngine';
 import type { BacktestTask } from './BacktestAnalysis';
 import { mapPayloadToResultData } from '../../utils/backtestPayload';
@@ -38,12 +44,94 @@ function extractStrategyName(item: TaskListItem): string {
   return '旧版任务';
 }
 
+// 市场展示:单只股票 → 显示代码;否则 A/HK/HK_CONNECT/US → 中文标签
+function extractMarketLabel(item: TaskListItem): string {
+  const pi = item.pipeline_info;
+  if (!pi) return '--';
+  const symbols = pi.symbols as string[] | undefined;
+  if (symbols && symbols.length === 1) return symbols[0];
+  const market = (pi.market as string | undefined) || 'A';
+  switch (market.toUpperCase()) {
+    case 'A':
+      return 'A 股';
+    case 'HK':
+      return '港股';
+    case 'HK_CONNECT':
+      return '港股通';
+    case 'US':
+      return '美股';
+    default:
+      return market;
+  }
+}
+
+// 提取策略参数,供 tooltip 显示
+function extractParams(item: TaskListItem): Record<string, unknown> | null {
+  const pi = item.pipeline_info;
+  if (!pi) return null;
+  // 扁平结构(新):pipeline_info.params
+  if (pi.params && typeof pi.params === 'object') {
+    return pi.params as Record<string, unknown>;
+  }
+  // 旧嵌套:pipeline_info.strategies[0].params
+  if (Array.isArray(pi.strategies) && pi.strategies.length > 0) {
+    const first = pi.strategies[0] as Record<string, unknown>;
+    if (first.params && typeof first.params === 'object') {
+      return first.params as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
+// 参数 tooltip 内容:多行 key: value
+const ParamsTooltip: React.FC<{ params: Record<string, unknown> | null }> = ({ params }) => {
+  if (!params || Object.keys(params).length === 0) {
+    return <span className="text-muted-text">无参数</span>;
+  }
+  return (
+    <div className="flex flex-col gap-0.5 font-mono text-[11px] leading-5">
+      {Object.entries(params).map(([k, v]) => (
+        <div key={k} className="flex gap-2">
+          <span className="text-secondary-text">{k}:</span>
+          <span className="text-foreground">
+            {Array.isArray(v) ? `[${v.join(', ')}]` : String(v)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
   const [tasks, setTasks] = useState<TaskListItem[]>([]);
   const [showDeleted, setShowDeleted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
+  // 排序:null = 默认(按 created_at 后端原序);'asc' / 'desc' = 按总收益率
+  const [returnSort, setReturnSort] = useState<'asc' | 'desc' | null>(null);
+
+  const sortedTasks = useMemo(() => {
+    if (!returnSort) return tasks;
+    // 三态:有效数 → 排序;非数 / null → 沉到末尾(无论升降)
+    const arr = [...tasks];
+    arr.sort((a, b) => {
+      const ra = a.summary?.total_return as number | null | undefined;
+      const rb = b.summary?.total_return as number | null | undefined;
+      const va = typeof ra === 'number' && Number.isFinite(ra) ? ra : null;
+      const vb = typeof rb === 'number' && Number.isFinite(rb) ? rb : null;
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      return returnSort === 'asc' ? va - vb : vb - va;
+    });
+    return arr;
+  }, [tasks, returnSort]);
+
+  const cycleReturnSort = useCallback(() => {
+    // 三态循环:null → desc → asc → null
+    setReturnSort((prev) => (prev === null ? 'desc' : prev === 'desc' ? 'asc' : null));
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -175,7 +263,24 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                 <tr className="border-b border-border/30 text-left text-xs text-secondary-text">
                   <th className="px-3 py-2">任务 ID</th>
                   <th className="px-3 py-2">策略</th>
-                  <th className="px-3 py-2 text-right">总收益率</th>
+                  <th className="px-3 py-2">市场</th>
+                  <th className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={cycleReturnSort}
+                      className="inline-flex items-center gap-0.5 text-xs text-secondary-text hover:text-foreground"
+                      title="点击切换排序:降序 → 升序 → 默认"
+                    >
+                      总收益率
+                      {returnSort === 'desc' ? (
+                        <RiArrowDownSLine className="h-3.5 w-3.5 text-foreground" />
+                      ) : returnSort === 'asc' ? (
+                        <RiArrowUpSLine className="h-3.5 w-3.5 text-foreground" />
+                      ) : (
+                        <RiExpandUpDownLine className="h-3.5 w-3.5 opacity-50" />
+                      )}
+                    </button>
+                  </th>
                   <th className="px-3 py-2">日期范围</th>
                   <th className="px-3 py-2">状态</th>
                   <th className="px-3 py-2">创建时间</th>
@@ -183,7 +288,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                 </tr>
               </thead>
               <tbody>
-                {tasks.map((task) => {
+                {sortedTasks.map((task) => {
                   const isDeleted = task.deleted;
                   const totalReturn = task.summary?.total_return as number | null | undefined;
                   const hasReturn = typeof totalReturn === 'number' && Number.isFinite(totalReturn);
@@ -202,12 +307,19 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                     >
                       <td className="px-3 py-2 font-mono text-xs">{task.task_id}</td>
                       <td className="px-3 py-2">
-                        {extractStrategyName(task)}
+                        <Tooltip content={<ParamsTooltip params={extractParams(task)} />}>
+                          <span className="cursor-help underline decoration-dotted decoration-border underline-offset-4">
+                            {extractStrategyName(task)}
+                          </span>
+                        </Tooltip>
                         {isDeleted && (
                           <Badge variant="default" className="ml-2">
                             已删除
                           </Badge>
                         )}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-secondary-text">
+                        {extractMarketLabel(task)}
                       </td>
                       <td
                         className={cn(
