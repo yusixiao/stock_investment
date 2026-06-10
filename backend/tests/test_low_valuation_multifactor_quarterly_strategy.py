@@ -477,6 +477,92 @@ def test_on_buy_inv_vol_partial_history_uses_median_fallback():
     assert weights["MISSING.SH"] > 0
 
 
+# ===== 止损 / 止盈 =====
+def _make_position_ctx(
+    positions: dict[str, tuple[int, float]], prices: dict[str, float]
+):
+    """positions: {sym: (shares, cost)};prices: {sym: close}。"""
+    from types import SimpleNamespace
+
+    ctx = MockContext(price={sym: {"daily": {"close": p}} for sym, p in prices.items()})
+    ctx._positions = {
+        sym: SimpleNamespace(shares=n, cost=c, buy_date="2024-01-01")
+        for sym, (n, c) in positions.items()
+    }
+    return ctx
+
+
+def test_stop_loss_triggers_when_pnl_below_threshold():
+    """个股跌幅 ≥ stop_loss_pct → 清仓。"""
+    strat = LowValuationMultiFactorQuarterlyStrategy(
+        param_overrides={"stop_loss_pct": 0.20}
+    )
+    strat._rebalance_pending = False  # 非调仓日
+
+    ctx = _make_position_ctx(
+        positions={
+            "DROP.SH": (1000, 10.0),  # 现价 7.5 = -25%,触发止损
+            "OK.SH": (500, 10.0),  # 现价 9.0 = -10%,不触发
+        },
+        prices={"DROP.SH": 7.5, "OK.SH": 9.0},
+    )
+    strat.on_sell(ctx)
+
+    assert ("DROP.SH", -1000) in ctx.orders
+    assert all(sym != "OK.SH" for sym, _ in ctx.orders)
+
+
+def test_take_profit_triggers_when_pnl_above_threshold():
+    """个股涨幅 ≥ take_profit_pct → 清仓。"""
+    strat = LowValuationMultiFactorQuarterlyStrategy(
+        param_overrides={"take_profit_pct": 0.50}
+    )
+    strat._rebalance_pending = False
+
+    ctx = _make_position_ctx(
+        positions={
+            "MOON.SH": (1000, 10.0),  # 现价 16 = +60%,触发止盈
+            "OK.SH": (500, 10.0),  # 现价 13 = +30%,不触发
+        },
+        prices={"MOON.SH": 16.0, "OK.SH": 13.0},
+    )
+    strat.on_sell(ctx)
+
+    assert ("MOON.SH", -1000) in ctx.orders
+    assert all(sym != "OK.SH" for sym, _ in ctx.orders)
+
+
+def test_sl_tp_disabled_by_default():
+    """默认 sl=0/tp=0 → 不触发任何止损止盈卖出。"""
+    strat = LowValuationMultiFactorQuarterlyStrategy()
+    strat._rebalance_pending = False
+
+    ctx = _make_position_ctx(
+        positions={"DROP.SH": (1000, 10.0)},
+        prices={"DROP.SH": 5.0},  # -50%
+    )
+    strat.on_sell(ctx)
+    assert ctx.orders == []
+
+
+def test_sl_removes_from_target_holdings():
+    """止损卖出后从 _target_holdings 移除,防止 on_buy 当日买回。"""
+    strat = LowValuationMultiFactorQuarterlyStrategy(
+        param_overrides={"stop_loss_pct": 0.10}
+    )
+    strat._target_holdings = ["DROP.SH", "OK.SH"]
+    strat._rebalance_pending = True
+
+    ctx = _make_position_ctx(
+        positions={"DROP.SH": (1000, 10.0)},
+        prices={"DROP.SH": 8.5, "OK.SH": 10.0},  # DROP -15% 触发
+    )
+    strat.on_sell(ctx)
+
+    assert "DROP.SH" not in strat._target_holdings
+    assert "OK.SH" in strat._target_holdings
+
+
 def test_on_buy_default_equal_when_position_weighting_equal():
     """默认 equal → 即使 inv_vol 数据可用也走等权。"""
     strat = LowValuationMultiFactorQuarterlyStrategy()  # 默认 equal

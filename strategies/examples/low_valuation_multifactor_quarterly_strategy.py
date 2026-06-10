@@ -148,6 +148,17 @@ class LowValuationMultiFactorQuarterlyStrategy(Strategy):
             "type": "int",
             "label": "波动回看天数(inv_vol 用)",
         },
+        # ---- 卖出止损/止盈(每根 bar 检查,独立于调仓日)----
+        "stop_loss_pct": {
+            "default": 0.0,
+            "type": "float",
+            "label": "止损线 %(0=不启用,e.g. 0.20 = 个股跌 20% 清仓)",
+        },
+        "take_profit_pct": {
+            "default": 0.0,
+            "type": "float",
+            "label": "止盈线 %(0=不启用,e.g. 0.50 = 个股涨 50% 清仓)",
+        },
         # ---- 持仓 + 调仓 ----
         "top_n": {"default": 15, "type": "int", "label": "持仓数量"},
         "max_per_industry": {
@@ -375,8 +386,54 @@ class LowValuationMultiFactorQuarterlyStrategy(Strategy):
         self._rebalance_pending = True
         return selected
 
-    # ===== 卖出:与原策略一致(清掉非目标持仓)=====
+    # ===== 每 bar 止损/止盈检查(独立于调仓日)=====
+    def _check_stop_loss_take_profit(self, ctx) -> None:
+        sl = float(self.p.stop_loss_pct)
+        tp = float(self.p.take_profit_pct)
+        if sl <= 0 and tp <= 0:
+            return
+        positions = list(ctx.get_positions().items())
+        for sym, pos in positions:
+            shares = pos.shares if hasattr(pos, "shares") else pos.get("shares", 0)
+            cost = pos.cost if hasattr(pos, "cost") else pos.get("cost", 0.0)
+            if shares <= 0 or cost <= 0:
+                continue
+            price = ctx.get_price(sym)
+            if not price or price.get("close") is None:
+                continue
+            cur = float(price["close"])
+            pnl_pct = (cur - cost) / cost
+            reason = None
+            if sl > 0 and pnl_pct <= -sl:
+                reason = "stop_loss"
+            elif tp > 0 and pnl_pct >= tp:
+                reason = "take_profit"
+            if reason is None:
+                continue
+            ctx.order_shares(sym, -int(shares))
+            try:
+                ctx.target_symbols.discard(sym)
+            except AttributeError:
+                pass
+            # 同时从本策略 target_holdings 移除,防止 rebalance 当日 on_buy 又买回
+            try:
+                self._target_holdings.remove(sym)
+            except ValueError:
+                pass
+            if hasattr(ctx, "log_exec"):
+                ctx.log_exec(
+                    reason,
+                    sym,
+                    shares=int(shares),
+                    price=cur,
+                    note=f"pnl_pct={pnl_pct:.4f}",
+                )
+
+    # ===== 卖出:止损止盈(每 bar)+ 调仓日清非目标 =====
     def on_sell(self, ctx) -> None:
+        # 1) 止损/止盈每 bar 检查(SL/TP 关闭则 no-op)
+        self._check_stop_loss_take_profit(ctx)
+        # 2) 调仓日清掉非目标持仓
         if not self._rebalance_pending:
             return
         target_set = set(self._target_holdings)
