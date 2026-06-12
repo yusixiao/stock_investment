@@ -130,20 +130,24 @@ class YFinanceAdapter(MarketDataAdapter, EventDataAdapter):
         events = []
 
         for dt, amount in divs.items():
-            if amount <= 0:
+            # yfinance 偶尔返回 NaN 分红额(NaN <= 0 为 False 会漏过判断,
+            # 进而产出 NaN factor_change → 累计因子全 None,污染该标的 qfq)
+            if amount is None or pd.isna(amount) or amount <= 0:
                 continue
             mask = hist.index < dt
             if not mask.any():
                 continue
             prev_close = float(hist.loc[mask].iloc[-1]["Close"])
-            if prev_close <= 0:
+            if prev_close <= 0 or pd.isna(prev_close):
                 continue
             factor_change = (prev_close - amount) / prev_close
+            if pd.isna(factor_change) or factor_change <= 0:
+                continue
             date_str = dt.strftime("%Y-%m-%d")
             events.append((date_str, factor_change))
 
         for dt, ratio in splits.items():
-            if ratio <= 0 or ratio == 1.0:
+            if ratio is None or pd.isna(ratio) or ratio <= 0 or ratio == 1.0:
                 continue
             date_str = dt.strftime("%Y-%m-%d")
             # 拆股 N:1 意味着价格除以 N，因子乘以 1/N
@@ -152,8 +156,14 @@ class YFinanceAdapter(MarketDataAdapter, EventDataAdapter):
         if not events:
             return []
 
-        # 按日期排序（升序）
-        events.sort(key=lambda x: x[0])
+        # 同一除权日可能同时发生多个公司行为(如分红+拆股、分红+送股)。
+        # 必须先把同日所有 factor_change 连乘合并成一个,否则后续累乘会为
+        # 同一 dividOperateDate 产出多条因子不同的行 → 写入 parquet 后该日键
+        # 非唯一,qfq ASOF JOIN 在并行下随机选行,导致回测结果不可复现。
+        merged: dict[str, float] = {}
+        for date_str, change in events:
+            merged[date_str] = merged.get(date_str, 1.0) * change
+        events = sorted(merged.items(), key=lambda x: x[0])
 
         # 计算前复权因子：从最新事件往前累乘
         # foreAdjustFactor 在最新事件日为最接近 1.0 的值
