@@ -48,6 +48,8 @@ BASE_R14 = {**BASE8, "top_n": 12, "trend_ma_days": 90,
             "require_industry": True, "max_per_sector": 2}
 # R17 锁定的最优选股内核:BASE_R14 + g25(净利 CAGR≥25%,唯一跨 4 窗口 4/4 的成长过滤)
 BASE_G25 = {**BASE_R14, "np_cagr_min": 0.25}
+# R21 全期/H1/H2/切片全面冠军:BASE_R14 + pe_max=15(np_cagr_min 默认 0.15)
+CHAMPION_PE15 = {**BASE_R14, "pe_max": 15.0}
 ROUNDS: dict[str, list] = {
     # Round 1: 基线 + 粗扫主因子(成长强度 / PEG / 持仓数 / 排序)
     "1": [
@@ -385,6 +387,26 @@ ROUNDS: dict[str, list] = {
         ("R21_pe20", "PE≤20(冠军参照)", {**BASE_R14, "pe_max": 20.0}),
         ("R21_pe15", "PE≤15", {**BASE_R14, "pe_max": 15.0}),
         ("R21_pe10", "PE≤10", {**BASE_R14, "pe_max": 10.0}),
+    ],
+    # Round 22: 在【新冠军 CHAMPION_PE15】基座上重验个股波动率加权(2026-06-14)。
+    #   R19 曾在旧基座 BASE_G25(npCAGR≥25)上测过,invvol/invvar 与等权几乎打平
+    #   (invvol_252 微胜 EW),但基座已变(冠军=pe15/npCAGR默认0.15),需在新内核重验。
+    #   目标:看反波动率/反方差加权能否在不伤收益下降回撤/提 Sharpe。
+    #   单股封顶 2.5×等权(=20.83%),与 R19 一致;lookback 扫 {60,120,252}。
+    "22": [
+        ("R22_ew", "等权 1/N 参照(CHAMPION_PE15)", CHAMPION_PE15),
+        ("R22_invvol_60", "反波动率加权·60日",
+         {**CHAMPION_PE15, "weight_scheme": "invvol", "vol_lookback": 60, "weight_cap_mult": 2.5}),
+        ("R22_invvol_120", "反波动率加权·120日",
+         {**CHAMPION_PE15, "weight_scheme": "invvol", "vol_lookback": 120, "weight_cap_mult": 2.5}),
+        ("R22_invvol_252", "反波动率加权·252日",
+         {**CHAMPION_PE15, "weight_scheme": "invvol", "vol_lookback": 252, "weight_cap_mult": 2.5}),
+        ("R22_invvar_60", "反方差加权·60日",
+         {**CHAMPION_PE15, "weight_scheme": "invvar", "vol_lookback": 60, "weight_cap_mult": 2.5}),
+        ("R22_invvar_120", "反方差加权·120日",
+         {**CHAMPION_PE15, "weight_scheme": "invvar", "vol_lookback": 120, "weight_cap_mult": 2.5}),
+        ("R22_invvar_252", "反方差加权·252日",
+         {**CHAMPION_PE15, "weight_scheme": "invvar", "vol_lookback": 252, "weight_cap_mult": 2.5}),
     ],
 }
 
