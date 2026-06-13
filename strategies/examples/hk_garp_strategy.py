@@ -50,7 +50,7 @@ class HkGarpStrategy(Strategy):
             "label": "3 年营收 CAGR 下限(小数)",
         },
         "cagr_years": {
-            "default": 3,
+            "default": 5,
             "type": "int",
             "label": "CAGR 回看年数",
         },
@@ -65,7 +65,7 @@ class HkGarpStrategy(Strategy):
             "label": "连续 N 年 ROE≥下限(0=只看最新一年)",
         },
         "pe_max": {
-            "default": 35.0,
+            "default": 15.0,
             "type": "float",
             "label": "peTTM 上限(防泡沫)",
         },
@@ -85,7 +85,7 @@ class HkGarpStrategy(Strategy):
             "label": "要求 pbMRQ>0",
         },
         "min_amount_hkd": {
-            "default": 0.0,
+            "default": 1e7,
             "type": "float",
             "label": "近 N 日日均成交额下限(HKD,0=不过滤)",
         },
@@ -95,7 +95,7 @@ class HkGarpStrategy(Strategy):
             "label": "成交额回看交易日",
         },
         "top_n": {
-            "default": 20,
+            "default": 12,
             "type": "int",
             "label": "持仓数量",
         },
@@ -105,7 +105,7 @@ class HkGarpStrategy(Strategy):
             "label": "排序键:peg | growth | composite | momentum(动量降序) | reversal(反转) | garp_mom(GARP+动量复合)",
         },
         "trend_ma_days": {
-            "default": 0,
+            "default": 90,
             "type": "int",
             "label": "趋势过滤:要求 close > N 日均线(0=不过滤)",
         },
@@ -120,12 +120,12 @@ class HkGarpStrategy(Strategy):
             "label": "动量下限(过去 momentum_days 涨幅,小数;-1=不过滤)",
         },
         "require_industry": {
-            "default": False,
+            "default": True,
             "type": "bool",
             "label": "仅保留有行业分类的标的(yfinance 覆盖≈龙头/大盘代理)",
         },
         "max_per_sector": {
-            "default": 0,
+            "default": 2,
             "type": "int",
             "label": "每个一级行业最多持仓数(0=不限,行业龙头分散)",
         },
@@ -135,7 +135,7 @@ class HkGarpStrategy(Strategy):
             "label": "估值数据时效上限(交易日,防退市股 stale)",
         },
         "rebalance_months": {
-            "default": [5, 11],
+            "default": [6],
             "type": "list[int]",
             "label": "调仓月份(每年这些月的第一个交易日)",
         },
