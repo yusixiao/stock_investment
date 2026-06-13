@@ -61,17 +61,20 @@ BASE_G25 = {**BASE_R14, "np_cagr_min": 0.25}
 
 # ---- 候选集(option b)----
 # 不重训:这里是【固定参数】的几个候选,各跑一次连续回测后用抗跌分横向比较。
-# 2026-06-13 干净基线重跑(R1-R20,factor 修复后)全期年化排名(同 2010-2026 段):
-#   PE20      23.55% sharpe0.86 mdd41.33%  ← 全期冠军(BASE_R14+pe_max20)
+# 2026-06-14 干净基线 + R21 便宜度下沿探测后,全期年化排名(同 2010-2026 段):
+#   PE15      28.81% sharpe0.99 mdd40.02%  ← 🏆 全期新冠军(BASE_R14+pe_max15),H1#1/H2#2 已验证
+#   PE20      23.55% sharpe0.86 mdd41.33%  ← 旧冠军(BASE_R14+pe_max20)
 #   G20_PE25  22.68% sharpe0.82 mdd43.42%
-#   PEG10_PE25 22.13% sharpe0.81 mdd43.42%
 #   PE25      21.55% sharpe0.80 mdd43.43%
-#   BASE_G25  20.48% sharpe0.75 mdd44.82%  ← 基线参照
-# ⚠️ 上述按【全期年化】挑选本身含 selection bias;walk-forward 即用于检验这些候选
-#    在 K=2/4/8/16 时间切片下是否稳健(抗跌优先),而非再次按全期挑冠军。
+#   PE10      21.96% sharpe0.78 mdd39.38%  ← 倒 U 跌回,Score 负(价值陷阱,已排除)
+#   BASE_R14  19.23%                       ← 基座(无便宜度过滤)
+# 便宜度梯度 = 倒 U(峰在 PE≤15);抗跌 Score(CAGR−λ·最差年):pe15 +12.97 > pe20 +5.13 > pe10 −5.03。
+# ⚠️ walk-forward 用于检验候选在 K=2/4/8/16 时间切片下是否稳健(抗跌优先),而非再次按全期挑冠军。
 # 每项: (tag, note, param_overrides)
 CANDIDATES: list[tuple[str, str, dict]] = [
-    ("PE20", "全期冠军 PE≤20(BASE_R14+pe20)", {**BASE_R14, "pe_max": 20.0}),
+    ("PE15", "全期新冠军 PE≤15(BASE_R14+pe15)", {**BASE_R14, "pe_max": 15.0}),
+    ("PE10", "PE≤10(下沿,疑价值陷阱)", {**BASE_R14, "pe_max": 10.0}),
+    ("PE20", "旧冠军 PE≤20(BASE_R14+pe20)", {**BASE_R14, "pe_max": 20.0}),
     ("G20_PE25", "成长≥20 + PE≤25", {**BASE_R14, "np_cagr_min": 0.20, "pe_max": 25.0}),
     ("PEG10_PE25", "PEG≤1.0 + PE≤25(双便宜度)", {**BASE_R14, "peg_max": 1.0, "pe_max": 25.0}),
     ("PE25", "PE≤25(防泡沫)", {**BASE_R14, "pe_max": 25.0}),

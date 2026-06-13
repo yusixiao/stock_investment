@@ -371,8 +371,20 @@ ROUNDS: dict[str, list] = {
          {**BASE_G25, "weight_scheme": "invvar", "vol_lookback": 60, "weight_cap_mult": 2.5}),
         ("R19_invvar_120", "反方差加权·120日",
          {**BASE_G25, "weight_scheme": "invvar", "vol_lookback": 120, "weight_cap_mult": 2.5}),
-        ("R19_invvar_252", "反方差加权·252日",
-         {**BASE_G25, "weight_scheme": "invvar", "vol_lookback": 252, "weight_cap_mult": 2.5}),
+         ("R19_invvar_252", "反方差加权·252日",
+          {**BASE_G25, "weight_scheme": "invvar", "vol_lookback": 252, "weight_cap_mult": 2.5}),
+    ],
+    # Round 21: 便宜度梯度【下沿】探测(2026-06-13)。历史只测过 PE≤25/20,
+    #   全期+H1/H2 都证 PE≤20 是冠军且越便宜越好(35→25→20 单调向上)。
+    #   此轮把 pe_max 继续往下压(15/10),看下沿是【平台】(稳健宽带)
+    #   还是【悬崖】(港股低 PE 多价值陷阱/周期顶,压太低反而筛掉好成长股)。
+    #   pe25/pe20 为同表对齐参照。均在 BASE_R14(np_cagr_min 默认 0.15)上。
+    "21": [
+        ("R21_base", "基座 BASE_R14(无便宜度过滤,pe_max=35)", BASE_R14),
+        ("R21_pe25", "PE≤25(参照)", {**BASE_R14, "pe_max": 25.0}),
+        ("R21_pe20", "PE≤20(冠军参照)", {**BASE_R14, "pe_max": 20.0}),
+        ("R21_pe15", "PE≤15", {**BASE_R14, "pe_max": 15.0}),
+        ("R21_pe10", "PE≤10", {**BASE_R14, "pe_max": 10.0}),
     ],
 }
 
