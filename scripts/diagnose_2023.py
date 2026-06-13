@@ -35,7 +35,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
 from services.duckdb_store import get_store
-from strategies.examples.hk_garp_strategy import HkGarpStrategy
+from strategies.deployed.hk_garp_strategy import HkGarpStrategy
 from strategies.utils import growth_hk, hk_industry
 
 try:

@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from strategies.examples.conservative_rough_strategy import ConservativeRoughStrategy
+from strategies.deployed.conservative_rough_strategy import ConservativeRoughStrategy
 
 from .utils_test_helpers import MockContext
 

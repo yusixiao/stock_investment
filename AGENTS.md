@@ -28,7 +28,8 @@
   - 业务库:`data/portfolio.db`(SQLite)— portfolios / trades / snapshots / backtest_tasks / strategy_groups / group_runs
 - **代码注释**:复杂/非显然逻辑必须加注释;日志保持信息量
 - **MACD bar**:`2 × (DIF - DEA)`(用户明确要求)
-- **策略定义**:本地 `strategies/examples/*.py`,通过 `importlib` 加载(信任本地用户)
+- **🚨 策略目录铁律(2026-06-14)**:`strategies/deployed/` = **已发布策略**(UI/回测 `/api/backtest/strategies` 只扫这里,经 `config.DEPLOYED_STRATEGY_DIR`);`strategies/experiments/` = **在研策略**(策略研究优先写这里,**不暴露给 UI**)。两者都通过 `importlib` 按文件路径加载(信任本地用户)。原 `strategies/examples/` 已重命名为 `deployed/`
+- **策略定义**:已发布策略放 `strategies/deployed/*.py`,在研策略放 `strategies/experiments/*.py`
 - **回测架构**:事件驱动,Broker 处理 T+1、涨跌停、佣金万三+印花税千一、滑点。已从单一 `TraderStrategy` **拆分为 BuyStrategy + SellStrategy**(`buy_sell_engine.py`)
 - **Pipeline 模型**:0..N ScreenerStrategy → 0..1 BuyStrategy → 0..1 SellStrategy。Pipeline 顺序由用户在 UI 中决定,**不按频率自动排序**
 - **Pipeline 时间相关性**:相邻 screener 间 `join_mode = "independent"(OR 并集)| "correlated"(AND 粗周期内交集)`,`join_modes` 数组长度 = `len(screeners) - 1`,默认全部 independent(向后兼容)
@@ -39,7 +40,7 @@
 - **akshare 已禁用**(见上方数据源铁律) — 历史 mock 测试仅作迁移期保留
 - **`write` 工具对超大内容会中止** — 拆成多次小写
 - **前端端口**:3001(`vite.config.ts`),代理 `/api → 127.0.0.1:8000`
-- **策略模型(2026-05 重构,Phase 6)**:**Pipeline + Screener/Buyer/Seller 三角拆分模型已废弃**。当前为**单一 Strategy 类**(`strategies/base.py::Strategy` / `ScreenerStrategy`),策略实现 `screen(ctx, symbols) -> List[str]` + 可选 `on_buy(ctx, symbol)` / `on_sell(ctx, symbol)` hooks。示例:`strategies/examples/ma_tangle_value_strategy.py`、`hk_garp_strategy.py`
+- **策略模型(2026-05 重构,Phase 6)**:**Pipeline + Screener/Buyer/Seller 三角拆分模型已废弃**。当前为**单一 Strategy 类**(`strategies/base.py::Strategy` / `ScreenerStrategy`),策略实现 `screen(ctx, symbols) -> List[str]` + 可选 `on_buy(ctx, symbol)` / `on_sell(ctx, symbol)` hooks。示例:`strategies/deployed/ma_tangle_value_strategy.py`、`hk_garp_strategy.py`
 - **API 兼容**:`/api/screener/run` 与 `/api/backtest/run` 仍接收 `pipeline: []` 数组,但**只取首元素**加载策略类(importlib),应用参数覆盖,执行 `screen` / 完整回测
 - **统一 Context**(`backend/services/backtest/context.py`):`Context` 类**取代旧 ScreenerContext / TraderContext**,集中管理市场数据访问、broker 下单、决策日志、symbol pool 注入(每根 bar 由 Engine 注入)、因子收集(`record_factor` / `get_factors` / `reset_factors`)。轻量版 `ScreenContext` 用于 `/api/screener/run` 与 scan-radar(无 broker、可选 `log_sink`)
 - **MarketData 适配器**(`backend/services/backtest/market_data.py`):BacktestEngine 数据层。预计算 numpy 缓存(daily OHLC 数组、日期数组、估值/财务表),日期索引用二分查找(O(log N))。**启动时预聚合周/月线**(`aggregate_kline`),其余频率懒加载。`get_bar_at` 比 `get_price` 快 ~9.6×。strict 模式仅在目标日期精确匹配 period 末日时返回 bar
@@ -191,12 +192,13 @@ stock_investment/
 │   │   └── portfolio/
 │   │       ├── db.py / manager.py
 │   └── tests/                          # 797 cases
-├── strategies/examples/             # 现存 5 个策略(2026-06-14 精简)
+├── strategies/deployed/             # 已发布策略(UI 只扫这里),现存 5 个(2026-06-14 精简)
 │   ├── hk_garp_strategy.py             # H股 GARP 冠军(frequency = "monthly")
 │   ├── low_valuation_quarterly_strategy.py            # A股 低估值季度
 │   ├── low_valuation_multifactor_quarterly_strategy.py # A股 低估值多因子季度
 │   ├── ma_tangle_value_strategy.py     # A股 月线均线缠绕价值
 │   └── conservative_rough_strategy.py  # A股 现金流保守(粗算)
+├── strategies/experiments/          # 在研策略(策略研究优先写这里,不暴露给 UI)
 ├── frontend/                           # name: dsa-web,React 19 + TS + Tailwind v4
 │   ├── vite.config.ts                  # port 3001, proxy /api → :8000
 │   ├── src/
@@ -364,7 +366,7 @@ backend/services/agent/
 - **用途**:
   1. 给 cpa Agent 提供候选股票池(5400+ → 几十)
   2. 作为 cpa LLM 真实精算结果的回测基线对比
-- **代码位置**:`strategies/utils/conservative.py` + `strategies/examples/conservative_rough_strategy.py`,docstring 显式标注「粗算 / 不是 cpa 精算 KK」
+- **代码位置**:`strategies/utils/conservative.py` + `strategies/deployed/conservative_rough_strategy.py`,docstring 显式标注「粗算 / 不是 cpa 精算 KK」
 
 ### 三层模型 Roadmap(详见 `docs/design_conservative_strategy_layers.md`)
 

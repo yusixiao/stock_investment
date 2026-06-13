@@ -27,7 +27,7 @@ log = logging.getLogger("matrix")
 
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
-from strategies.examples.ma_tangle_value_strategy import MaTangleValueStrategy
+from strategies.deployed.ma_tangle_value_strategy import MaTangleValueStrategy
 
 # ---------- 变体矩阵 ----------
 VARIANTS = [

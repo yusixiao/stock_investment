@@ -10,6 +10,8 @@ MARKET_DIR = DATA_DIR / "market"
 # 跨任务共享(cpa Phase 0 / BA agent 都读这里),所以归 data/ 不是 report/
 QUALITATIVE_DIR = DATA_DIR / "qualitative"
 STRATEGY_DIR = BASE_DIR / "strategies"
+# UI/回测只加载已发布策略:strategies/deployed/。在研策略放 strategies/experiments/,不进 UI
+DEPLOYED_STRATEGY_DIR = STRATEGY_DIR / "deployed"
 LOG_DIR = BASE_DIR / "logs"
 PORTFOLIO_DB = DATA_DIR / "portfolio.db"
 

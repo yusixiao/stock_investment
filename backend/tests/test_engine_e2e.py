@@ -21,7 +21,7 @@ import pytest
 
 from backend import config
 from services.backtest.engine import BacktestEngine
-from strategies.examples.ma_tangle_value_strategy import MaTangleValueStrategy
+from strategies.deployed.ma_tangle_value_strategy import MaTangleValueStrategy
 
 
 MARKET_DAILY_DIR = config.MARKET_DIR / "A" / "daily"

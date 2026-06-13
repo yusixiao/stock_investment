@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
 
-from config import LOG_DIR, STRATEGY_DIR
+from config import DEPLOYED_STRATEGY_DIR, LOG_DIR
 from services.api_utils import safe_json
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
@@ -27,9 +27,10 @@ router = APIRouter(prefix="/api/backtest", tags=["backtest"])
 
 @router.get("/strategies")
 def api_list_strategies():
-    if not STRATEGY_DIR.exists():
+    # 只列已发布策略(strategies/deployed/);在研策略在 strategies/experiments/,不暴露给 UI
+    if not DEPLOYED_STRATEGY_DIR.exists():
         return []
-    return scan_strategies(STRATEGY_DIR)
+    return scan_strategies(DEPLOYED_STRATEGY_DIR)
 
 
 @router.post("/run")

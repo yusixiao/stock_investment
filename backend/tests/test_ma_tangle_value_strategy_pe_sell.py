@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.tests.utils_test_helpers import MockContext
-from strategies.examples.ma_tangle_value_strategy import MaTangleValueStrategy
+from strategies.deployed.ma_tangle_value_strategy import MaTangleValueStrategy
 
 
 # ===== 共用工具 =====

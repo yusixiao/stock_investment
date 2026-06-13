@@ -14,8 +14,8 @@ import pandas as pd
 
 from tests.utils_test_helpers import MockContext
 
-from strategies.examples import low_valuation_quarterly_strategy as mod
-from strategies.examples.low_valuation_quarterly_strategy import (
+from strategies.deployed import low_valuation_quarterly_strategy as mod
+from strategies.deployed.low_valuation_quarterly_strategy import (
     LowValuationQuarterlyStrategy,
 )
 

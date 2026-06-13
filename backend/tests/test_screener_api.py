@@ -52,7 +52,7 @@ class TestScreenerRoutes:
         from pathlib import Path
 
         strategies_dir = (
-            Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
+            Path(__file__).resolve().parent.parent.parent / "strategies" / "deployed"
         )
         screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
 

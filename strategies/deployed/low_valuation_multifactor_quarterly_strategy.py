@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 from strategies.base import Strategy
-from strategies.examples.low_valuation_quarterly_strategy import _is_st_on
+from strategies.deployed.low_valuation_quarterly_strategy import _is_st_on
 from strategies.utils import financial, quality, yield_factor
 
 

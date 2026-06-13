@@ -5,7 +5,7 @@
 """
 import pytest
 
-from strategies.examples.hk_garp_strategy import HkGarpStrategy
+from strategies.deployed.hk_garp_strategy import HkGarpStrategy
 
 
 def _strat(scheme, cap=2.5, top_n=12, vols=None):

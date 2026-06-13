@@ -45,7 +45,7 @@ from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
 from services.duckdb_store import get_store
 from strategies.utils import growth_hk, hk_industry
-from strategies.examples.hk_garp_strategy import HkGarpStrategy
+from strategies.deployed.hk_garp_strategy import HkGarpStrategy
 
 START = "2010-01-01"
 END = "2026-06-01"

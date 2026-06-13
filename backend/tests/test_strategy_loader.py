@@ -7,12 +7,12 @@ from services.backtest.strategy_loader import (
 from strategies.base import Strategy
 
 
-EXAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "strategies" / "examples"
+DEPLOYED_DIR = Path(__file__).resolve().parent.parent.parent / "strategies" / "deployed"
 
 
 class TestLoadStrategyFromFile:
     def test_load_strategy(self):
-        filepath = EXAMPLES_DIR / "ma_tangle_value_strategy.py"
+        filepath = DEPLOYED_DIR / "ma_tangle_value_strategy.py"
         strategies = load_strategy_from_file(filepath)
         assert len(strategies) >= 1
         s = strategies[0]
@@ -33,14 +33,14 @@ class TestLoadStrategyFromFile:
 
 
 class TestScanStrategies:
-    def test_scan_examples_dir(self):
-        results = scan_strategies(EXAMPLES_DIR)
+    def test_scan_deployed_dir(self):
+        results = scan_strategies(DEPLOYED_DIR)
         assert len(results) >= 1
         names = [r["name"] for r in results]
         assert "月线均线缠绕价值策略" in names
 
     def test_scan_returns_correct_structure(self):
-        results = scan_strategies(EXAMPLES_DIR)
+        results = scan_strategies(DEPLOYED_DIR)
         for r in results:
             assert "name" in r
             assert "description" in r
@@ -67,14 +67,14 @@ class TestScanStrategies:
 
     def test_scan_includes_frequency_overridable(self):
         # 每个返回 dict 都应有 frequency_overridable 字段
-        results = scan_strategies(EXAMPLES_DIR)
+        results = scan_strategies(DEPLOYED_DIR)
         for r in results:
             assert "frequency_overridable" in r
             assert isinstance(r["frequency_overridable"], bool)
 
     def test_scan_finds_new_strategy_subclass(self):
         # 新 Strategy 基类的子类应该被扫描到,且 strategy_type == "strategy"
-        results = scan_strategies(EXAMPLES_DIR)
+        results = scan_strategies(DEPLOYED_DIR)
         names = [r["name"] for r in results]
         assert "月线均线缠绕价值策略" in names
         entry = next(r for r in results if r["name"] == "月线均线缠绕价值策略")
