@@ -9,6 +9,7 @@ from backend.adapters.base import MarketDataAdapter, EventDataAdapter
 from backend.models.market import DailyKlineRecord, AdjustFactorRecord
 from backend.models.event import DividendRecord
 from backend.models.management import ExecutiveRecord, ExecutiveHoldChangeRecord
+from backend.services.adjust_factor_audit import audit_factors, recompute_factors
 
 logger = logging.getLogger(__name__)
 
@@ -176,15 +177,29 @@ class YFinanceAdapter(MarketDataAdapter, EventDataAdapter):
         for i in range(n - 2, -1, -1):
             fore_factors[i] = fore_factors[i + 1] * events[i + 1][1]
 
-        records = []
-        for i, (date_str, _) in enumerate(events):
-            records.append(
-                AdjustFactorRecord(
-                    code=std_code,
-                    dividOperateDate=date_str,
-                    foreAdjustFactor=round(fore_factors[i], 6),
-                )
+        recs = [(events[i][0], round(fore_factors[i], 6)) for i in range(n)]
+
+        # 幻灵拆股防线(2026-06):yfinance t.splits 偶尔返回真实股价中并不存在的
+        # 拆股事件(BYD 01211.HK 2025 假涨 +1910% 事故)。用 raw close 跳空比校验每个
+        # 大额 factor_change:真实拆股/合股必在 hist Close 留对应跳空,幻灵则 raw 平稳。
+        # 不匹配者中性化并重算,避免每日 06:00 更新重新污染存量数据。
+        raw = [
+            (idx.strftime("%Y-%m-%d"), float(c))
+            for idx, c in zip(hist.index, hist["Close"])
+            if c is not None and not pd.isna(c) and c > 0
+        ]
+        raw.sort(key=lambda x: x[0])
+        audited = audit_factors(recs, raw)
+        cleaned = recompute_factors(audited)
+
+        records = [
+            AdjustFactorRecord(
+                code=std_code,
+                dividOperateDate=date_str,
+                foreAdjustFactor=factor,
             )
+            for date_str, factor in cleaned
+        ]
 
         return records
 

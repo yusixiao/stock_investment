@@ -43,6 +43,11 @@ M = list(range(1, 13))  # 月度调仓
 BASE7 = {"top_n": 30, "min_amount_hkd": 1e7, "rebalance_months": [6], "cagr_years": 5}
 # R7 冠军基座(在 BASE7 上加 120 日趋势过滤 = 12.94%)
 BASE8 = {**BASE7, "trend_ma_days": 120}
+# R11 全期冠军基座(进取+仅龙头+每行业≤2 = 25.77%);R14 在其上扫排序×阈值
+BASE_R14 = {**BASE8, "top_n": 12, "trend_ma_days": 90,
+            "require_industry": True, "max_per_sector": 2}
+# R17 锁定的最优选股内核:BASE_R14 + g25(净利 CAGR≥25%,唯一跨 4 窗口 4/4 的成长过滤)
+BASE_G25 = {**BASE_R14, "np_cagr_min": 0.25}
 ROUNDS: dict[str, list] = {
     # Round 1: 基线 + 粗扫主因子(成长强度 / PEG / 持仓数 / 排序)
     "1": [
@@ -245,6 +250,130 @@ ROUNDS: dict[str, list] = {
         ("R12_rob_sec3", "稳健 Top15+每行业≤3(纯分散)",
          {**BASE8, "top_n": 15, "max_per_sector": 3}),
     ],
+    # Round 14: 在全期冠军基座(agg_ind_sec2=Top12+趋势90+仅龙头+每行业≤2=25.77%)上
+    #   交叉探索「排序键」×「因子阈值」——行业约束固定,看能否在冠军上再榨 edge / 改善风险调整收益
+    #   (R13 市场择时需多轮对比,单列;此轮不涉新数据)
+    "14": [
+        ("R14_base", "基座 agg_ind_sec2(peg升序排序)", BASE_R14),
+        # --- 维度①:排序键(行业约束基座上换 sort_by)---
+        ("R14_sortG", "+成长降序排序", {**BASE_R14, "sort_by": "growth"}),
+        ("R14_sortC", "+复合排序(peg+growth rank)", {**BASE_R14, "sort_by": "composite"}),
+        ("R14_garpmom", "+GARP×动量复合排序(6月)",
+         {**BASE_R14, "momentum_days": 120, "sort_by": "garp_mom"}),
+        ("R14_sortmom6", "+6月动量降序排序(追强)",
+         {**BASE_R14, "momentum_days": 120, "sort_by": "momentum"}),
+        # --- 维度②:因子阈值(基座 peg 排序 + 收紧阈值)---
+        ("R14_roe15", "+ROE≥15(质量)", {**BASE_R14, "roe_min": 15.0}),
+        ("R14_roe20", "+ROE≥20(强质量)", {**BASE_R14, "roe_min": 20.0}),
+        ("R14_g20", "+净利CAGR≥20(强成长)", {**BASE_R14, "np_cagr_min": 0.20}),
+        ("R14_peg10", "+PEG≤1.0(更便宜)", {**BASE_R14, "peg_max": 1.0}),
+        ("R14_pegfloor", "+PEG≥0.4(剔超低陷阱)", {**BASE_R14, "peg_min": 0.4}),
+        ("R14_pe25", "+PE≤25(防泡沫)", {**BASE_R14, "pe_max": 25.0}),
+        # --- 维度③:排序×阈值交叉(最优组合候选)---
+        ("R14_sortC_roe15", "复合排序+ROE15",
+         {**BASE_R14, "sort_by": "composite", "roe_min": 15.0}),
+        ("R14_garpmom_roe15", "GARP×动量+ROE15",
+         {**BASE_R14, "momentum_days": 120, "sort_by": "garp_mom", "roe_min": 15.0}),
+    ],
+    # Round 15: R14 赢家的样本外稳健性验证(配 --start/--end 跑 full/H1/H2)
+    #   验证 PEG≤1.0(27.27% 最高)、PE≤25(Sharpe 0.79 最佳)不是单段过拟合,
+    #   并测两种"便宜度"过滤(peg10/pe25)及 peg10+g20 是否可叠加。
+    #   ROE/PEG 地板已在 R14 证实反噬,不纳入。
+    "15": [
+        ("R15_base", "基座 agg_ind_sec2(参照)", BASE_R14),
+        ("R15_peg10", "PEG≤1.0(R14 最高收益)", {**BASE_R14, "peg_max": 1.0}),
+        ("R15_pe25", "PE≤25(R14 最佳 Sharpe)", {**BASE_R14, "pe_max": 25.0}),
+        ("R15_g20", "净利CAGR≥20(R14 次高)", {**BASE_R14, "np_cagr_min": 0.20}),
+        ("R15_peg10_pe25", "PEG≤1.0+PE≤25(双便宜度叠加)",
+         {**BASE_R14, "peg_max": 1.0, "pe_max": 25.0}),
+        ("R15_peg10_g20", "PEG≤1.0+净利CAGR≥20(便宜×强成长)",
+         {**BASE_R14, "peg_max": 1.0, "np_cagr_min": 0.20}),
+    ],
+    # Round 16: 真 walk-forward —— 杜绝 selection bias 的样本外检验
+    #   方法:用此【先验定义】的候选网格(不靠全期结果挑),在 H1(--start 2010 --end 2018)
+    #   训练段排名 → 机械选出 H1 冠军 → 读它在 H2(--start 2018 --end 2026)测试段的表现。
+    #   H2 全程不参与选参。若 H1 冠军在 H2 仍强 = 真 edge;若崩 = 坐实过拟合。
+    #   网格沿 GARP 经济轴铺开(成长/便宜度/集中度/排序),各轴独立 + 少量交叉。
+    "16": [
+        ("R16_base", "基座 agg_ind_sec2(参照)", BASE_R14),
+        # 轴①:成长阈值梯度
+        ("R16_g15", "净利CAGR≥15", {**BASE_R14, "np_cagr_min": 0.15}),
+        ("R16_g20", "净利CAGR≥20", {**BASE_R14, "np_cagr_min": 0.20}),
+        ("R16_g25", "净利CAGR≥25", {**BASE_R14, "np_cagr_min": 0.25}),
+        # 轴②:便宜度阈值梯度
+        ("R16_peg10", "PEG≤1.0", {**BASE_R14, "peg_max": 1.0}),
+        ("R16_peg15", "PEG≤1.5", {**BASE_R14, "peg_max": 1.5}),
+        ("R16_pe20", "PE≤20", {**BASE_R14, "pe_max": 20.0}),
+        ("R16_pe25", "PE≤25", {**BASE_R14, "pe_max": 25.0}),
+        # 轴③:集中度
+        ("R16_t10", "Top10(更集中)", {**BASE_R14, "top_n": 10}),
+        ("R16_t15", "Top15(更分散)", {**BASE_R14, "top_n": 15}),
+        # 轴④:排序键
+        ("R16_sortC", "复合排序(peg+growth rank)", {**BASE_R14, "sort_by": "composite"}),
+        # 轴⑤:少量经济上合理的交叉
+        ("R16_g20_peg15", "成长≥20 + PEG≤1.5", {**BASE_R14, "np_cagr_min": 0.20, "peg_max": 1.5}),
+        ("R16_g20_pe25", "成长≥20 + PE≤25", {**BASE_R14, "np_cagr_min": 0.20, "pe_max": 25.0}),
+        ("R16_sortC_g20", "复合排序 + 成长≥20",
+         {**BASE_R14, "sort_by": "composite", "np_cagr_min": 0.20}),
+    ],
+    # Round 17: 成长阈值梯度的尾部探测(配 4 窗口 P1-P4 跑)
+    #   R16/R17 矩阵已证 g25 跨 4 窗口 4/4 全胜、g20 仅 2/4(擦边)。
+    #   此轮把成长轴从 g25 继续往上延伸(g30/g35),看超额是否【单调向上】
+    #   还是 g25 后见顶回落(过度收紧→样本太少→噪声/反噬)。
+    #   base/g20/g25 重跑用于在同一张表内对齐参照。
+    "17": [
+        ("R17_base", "基座 agg_ind_sec2(参照)", BASE_R14),
+        ("R17_g20", "净利CAGR≥20", {**BASE_R14, "np_cagr_min": 0.20}),
+        ("R17_g25", "净利CAGR≥25", {**BASE_R14, "np_cagr_min": 0.25}),
+        ("R17_g30", "净利CAGR≥30", {**BASE_R14, "np_cagr_min": 0.30}),
+        ("R17_g35", "净利CAGR≥35", {**BASE_R14, "np_cagr_min": 0.35}),
+    ],
+    # Round 18: 在 R17 锁定的最优内核(BASE_G25)上叠加 HSI 市场 regime 择时,
+    #   目标 = 降回撤 + (尽量)提收益。每月检查 HSI regime,risk-off 时缩仓。
+    #   3 信号(收盘>MA200 / 收盘>MA120 / MA50>MA200 金叉)× 3 risk-off 仓位(0.5/0.3/0)。
+    #   全部 PIT(只用 current_date 之前的 HSI);base_g25 为无择时参照。
+    #   配 4 窗口 P1-P4(--start/--end)跑,看 regime 是否跨周期稳定降回撤而非只在某段生效。
+    "18": [
+        ("R18_base_g25", "无择时参照(BASE_G25)", BASE_G25),
+        # 信号①:HSI 收盘 > MA200(经典)
+        ("R18_ma200_e50", "MA200择时·熊市半仓",
+         {**BASE_G25, "regime_mode": "close_ma", "regime_ma_days": 200, "risk_off_exposure": 0.5}),
+        ("R18_ma200_e30", "MA200择时·熊市3成仓",
+         {**BASE_G25, "regime_mode": "close_ma", "regime_ma_days": 200, "risk_off_exposure": 0.3}),
+        ("R18_ma200_e0", "MA200择时·熊市空仓",
+         {**BASE_G25, "regime_mode": "close_ma", "regime_ma_days": 200, "risk_off_exposure": 0.0}),
+        # 信号②:HSI 收盘 > MA120(与个股趋势 90/120 同哲学)
+        ("R18_ma120_e50", "MA120择时·熊市半仓",
+         {**BASE_G25, "regime_mode": "close_ma", "regime_ma_days": 120, "risk_off_exposure": 0.5}),
+        ("R18_ma120_e30", "MA120择时·熊市3成仓",
+         {**BASE_G25, "regime_mode": "close_ma", "regime_ma_days": 120, "risk_off_exposure": 0.3}),
+        ("R18_ma120_e0", "MA120择时·熊市空仓",
+         {**BASE_G25, "regime_mode": "close_ma", "regime_ma_days": 120, "risk_off_exposure": 0.0}),
+        # 信号③:HSI MA50 > MA200(金叉/死叉,更平滑)
+        ("R18_cross_e50", "金叉择时·熊市半仓",
+         {**BASE_G25, "regime_mode": "ma_cross", "regime_fast_ma": 50, "regime_slow_ma": 200, "risk_off_exposure": 0.5}),
+        ("R18_cross_e30", "金叉择时·熊市3成仓",
+         {**BASE_G25, "regime_mode": "ma_cross", "regime_fast_ma": 50, "regime_slow_ma": 200, "risk_off_exposure": 0.3}),
+        ("R18_cross_e0", "金叉择时·熊市空仓",
+         {**BASE_G25, "regime_mode": "ma_cross", "regime_fast_ma": 50, "regime_slow_ma": 200, "risk_off_exposure": 0.0}),
+    ],
+    # Round 19: 在 BASE_G25 上做个股波动率加权(不叠指数择时),目标"降回撤不伤收益"。
+    # 基线 EW(1/N) + invvol/invvar × lookback{60,120,252},单股封顶 2.5×等权。
+    "19": [
+        ("R19_ew", "等权 1/N 参照(BASE_G25)", BASE_G25),
+        ("R19_invvol_60", "反波动率加权·60日",
+         {**BASE_G25, "weight_scheme": "invvol", "vol_lookback": 60, "weight_cap_mult": 2.5}),
+        ("R19_invvol_120", "反波动率加权·120日",
+         {**BASE_G25, "weight_scheme": "invvol", "vol_lookback": 120, "weight_cap_mult": 2.5}),
+        ("R19_invvol_252", "反波动率加权·252日",
+         {**BASE_G25, "weight_scheme": "invvol", "vol_lookback": 252, "weight_cap_mult": 2.5}),
+        ("R19_invvar_60", "反方差加权·60日",
+         {**BASE_G25, "weight_scheme": "invvar", "vol_lookback": 60, "weight_cap_mult": 2.5}),
+        ("R19_invvar_120", "反方差加权·120日",
+         {**BASE_G25, "weight_scheme": "invvar", "vol_lookback": 120, "weight_cap_mult": 2.5}),
+        ("R19_invvar_252", "反方差加权·252日",
+         {**BASE_G25, "weight_scheme": "invvar", "vol_lookback": 252, "weight_cap_mult": 2.5}),
+    ],
 }
 
 
@@ -318,21 +447,42 @@ def _write(summaries, round_tag):
     (OUT_DIR / f"hk_garp_r{round_tag}_overview.md").write_text("\n".join(lines))
 
 
+def _run_round(sliced, round_key, round_label):
+    """跑单轮所有 config(复用已切片的 bundle),增量写排行榜。"""
+    configs = ROUNDS[round_key]
+    summaries = []
+    log.info(">>> Round %s: %d configs", round_key, len(configs))
+    for tag, note, ov in configs:
+        try:
+            summaries.append(_run_one(sliced, tag, note, ov))
+        except Exception as e:
+            log.exception("[%s] FAILED: %s", tag, e)
+            summaries.append({"tag": tag, "note": note, "error": str(e)})
+        _write(summaries, round_label)
+    log.info("<<< DONE round %s -> exported/hk_garp_r%s_overview.md",
+             round_key, round_label)
+
+
 def main():
     global START, END
     ap = argparse.ArgumentParser()
-    ap.add_argument("--round", default="1")
+    ap.add_argument("--round", default="1",
+                    help="轮次号,或 'all' 一次跑全部 R1-R19(共用一次 bundle 加载)")
     ap.add_argument("--start", default=START)
     ap.add_argument("--end", default=END)
     ap.add_argument("--label", default="", help="输出文件后缀(区分子区间跑)")
     args = ap.parse_args()
-    configs = ROUNDS.get(args.round)
-    if not configs:
-        log.error("unknown round %s; available: %s", args.round, list(ROUNDS))
+
+    if args.round == "all":
+        round_keys = list(ROUNDS.keys())
+    elif args.round in ROUNDS:
+        round_keys = [args.round]
+    else:
+        log.error("unknown round %s; available: %s | all", args.round, list(ROUNDS))
         return
+
     START, END = args.start, args.end
     start, end = args.start, args.end
-    round_label = f"{args.round}{args.label}"
 
     growth_hk.reset_cache()
     hk_industry.reset_cache()
@@ -344,17 +494,11 @@ def main():
     log.info("sliced %d stocks iter[%d,%d] %s→%s", len(sliced.stock_data),
              sliced.iter_start_idx, sliced.iter_end_idx, start, end)
 
-    summaries = []
-    for tag, note, ov in configs:
-        try:
-            summaries.append(_run_one(sliced, tag, note, ov))
-        except Exception as e:
-            log.exception("[%s] FAILED: %s", tag, e)
-            summaries.append({"tag": tag, "note": note, "error": str(e)})
-        _write(summaries, round_label)
-
-    log.info("DONE round %s (%s→%s) -> exported/hk_garp_r%s_overview.md",
-             args.round, start, end, round_label)
+    t_all = time.time()
+    for rk in round_keys:
+        _run_round(sliced, rk, f"{rk}{args.label}")
+    log.info("ALL DONE rounds=%s (%s→%s) in %.0fs",
+             round_keys, start, end, time.time() - t_all)
 
 
 if __name__ == "__main__":

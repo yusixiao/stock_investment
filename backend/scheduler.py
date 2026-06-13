@@ -123,6 +123,22 @@ def _hk_industry_refresh_job():
         logger.error(f"hk_industry refresh failed: {e}")
 
 
+def _index_update_job():
+    """每日 06:15 增量更新指数日线(HSI / 恒生科技 / 沪深300)。
+    放在 06:00 市场更新之后,与个股数据同源刷新。"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("Scheduled index update started")
+    try:
+        from services.index_updater import update_all_indices
+
+        results = update_all_indices(full=False)
+        logger.info(f"index update done: {results}")
+    except Exception as e:
+        logger.error(f"index update failed: {e}")
+
+
 def _backup_job():
     """每周备份 data/market/ 到百度网盘"""
     import logging
@@ -176,6 +192,16 @@ def start_scheduler():
         hour=2,
         minute=0,
         id="weekly_financial_sync",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        _index_update_job,
+        "cron",
+        day_of_week="mon-fri",
+        hour=6,
+        minute=15,
+        id="daily_index_update",
         replace_existing=True,
         misfire_grace_time=3600,
     )

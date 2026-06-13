@@ -139,12 +139,127 @@ class HkGarpStrategy(Strategy):
             "type": "list[int]",
             "label": "调仓月份(每年这些月的第一个交易日)",
         },
+        # ---- R18: HSI 市场 regime 择时(降回撤)----
+        "risk_off_exposure": {
+            "default": 1.0,
+            "type": "float",
+            "label": "risk-off(熊市)时目标仓位比例(1.0=关闭择时;0.5=半仓;0=空仓)",
+        },
+        "regime_index": {
+            "default": "HSI",
+            "type": "str",
+            "label": "regime 参考指数代码(market=HK)",
+        },
+        "regime_mode": {
+            "default": "close_ma",
+            "type": "str",
+            "label": "regime 信号:close_ma(收盘>MA) | ma_cross(快MA>慢MA)",
+        },
+        "regime_ma_days": {
+            "default": 200,
+            "type": "int",
+            "label": "close_ma 模式:MA 窗口(收盘 > 此 MA = risk-on)",
+        },
+        "regime_fast_ma": {
+            "default": 50,
+            "type": "int",
+            "label": "ma_cross 模式:快线窗口",
+        },
+        "regime_slow_ma": {
+            "default": 200,
+            "type": "int",
+            "label": "ma_cross 模式:慢线窗口",
+        },
+        # ---- R19: 个股波动率加权(降回撤,不依赖指数择时)----
+        "weight_scheme": {
+            "default": "equal",
+            "type": "str",
+            "label": "组合权重方案:equal(1/N 等权)| invvol(∝1/σ)| invvar(∝1/σ²)",
+        },
+        "vol_lookback": {
+            "default": 120,
+            "type": "int",
+            "label": "波动率回看天数(已实现日收益标准差;equal 时忽略)",
+        },
+        "weight_cap_mult": {
+            "default": 2.5,
+            "type": "float",
+            "label": "单股权重上限 = 此倍数 × 等权(防超低波动股霸盘;0=不封顶)",
+        },
     }
 
     def __init__(self, param_overrides: dict | None = None):
         super().__init__(param_overrides)
         self._target_holdings: list[str] = []
         self._rebalance_pending: bool = False
+        self._target_exposure: float = 1.0  # 本次 rebalance 应用的仓位比例
+        self._cur_exposure: float = 1.0  # 当前实际生效的仓位比例
+        # HSI regime 序列(PIT:懒加载全序列,使用时按 current_date 截断)
+        self._regime_dates: list[date] = []
+        self._regime_closes: list[float] = []
+        self._regime_loaded: bool = False
+        # R19: 个股波动率(screen 阶段 PIT 计算,on_buy 用于加权)
+        self._sym_vol: dict[str, float] = {}
+
+    def _load_regime(self) -> None:
+        """懒加载 HSI 指数全序列(升序)。只加载一次;PIT 截断在 _regime_exposure 里做。"""
+        if self._regime_loaded:
+            return
+        self._regime_loaded = True
+        try:
+            from services.duckdb_store import get_store
+
+            df = get_store().query_index("HK", str(self.p.regime_index))
+            if df is not None and not df.empty and "close" in df.columns:
+                for d_str, c in zip(df["date"], df["close"]):
+                    if c is None or pd.isna(c):
+                        continue
+                    try:
+                        self._regime_dates.append(date.fromisoformat(str(d_str)[:10]))
+                        self._regime_closes.append(float(c))
+                    except (ValueError, TypeError):
+                        continue
+        except Exception:
+            # 指数缺失 → regime 不可用,退化为永远 risk-on(不 de-risk)
+            self._regime_dates = []
+            self._regime_closes = []
+
+    def _regime_exposure(self, cur_d: date) -> float:
+        """根据 HSI regime 计算目标仓位比例。PIT:只用 date <= cur_d 的指数数据。
+
+        risk-on → 1.0;risk-off → risk_off_exposure。risk_off_exposure>=1.0 视为关闭择时。
+        数据不足 / 指数缺失 → 1.0(谨慎:不主动空仓)。
+        """
+        import bisect
+
+        risk_off = float(self.p.risk_off_exposure)
+        if risk_off >= 1.0:
+            return 1.0  # 择时关闭
+        self._load_regime()
+        dates = self._regime_dates
+        closes = self._regime_closes
+        if not dates:
+            return 1.0
+        # 最后一个 date <= cur_d 的位置(严格 PIT,不含未来)
+        idx = bisect.bisect_right(dates, cur_d) - 1
+        if idx < 0:
+            return 1.0
+
+        mode = str(self.p.regime_mode).lower()
+        if mode == "ma_cross":
+            fast = int(self.p.regime_fast_ma)
+            slow = int(self.p.regime_slow_ma)
+            if idx + 1 < slow:
+                return 1.0  # 历史不足
+            fast_ma = sum(closes[idx - fast + 1 : idx + 1]) / fast
+            slow_ma = sum(closes[idx - slow + 1 : idx + 1]) / slow
+            return 1.0 if fast_ma > slow_ma else risk_off
+        # close_ma
+        ma_days = int(self.p.regime_ma_days)
+        if idx + 1 < ma_days:
+            return 1.0  # 历史不足
+        ma = sum(closes[idx - ma_days + 1 : idx + 1]) / ma_days
+        return 1.0 if closes[idx] > ma else risk_off
 
     def screen(self, ctx, symbols: list[str]) -> list[str]:
         cur_str = ctx.current_date
@@ -158,8 +273,25 @@ class HkGarpStrategy(Strategy):
         rebal_months = self.p.rebalance_months
         if isinstance(rebal_months, str):
             rebal_months = [int(x) for x in rebal_months.split(",") if x.strip()]
+
+        # ---- R18: 每月检查 HSI regime,据此调整目标仓位(即便非调仓月)----
+        desired_exposure = self._regime_exposure(cur_d)
+
         if cur_d.month not in set(rebal_months):
-            ctx.log_flow("strategy.screen.skip", reason="not_rebalance_month")
+            # 非调仓月:不重新选股,但若 regime 翻转则把现有持仓重标到新仓位
+            if (
+                self._target_holdings
+                and abs(desired_exposure - self._cur_exposure) > 1e-9
+            ):
+                self._target_exposure = desired_exposure
+                self._rebalance_pending = True
+                ctx.log_flow(
+                    "strategy.regime.adjust",
+                    exposure=round(desired_exposure, 3),
+                    prev=round(self._cur_exposure, 3),
+                )
+            else:
+                ctx.log_flow("strategy.screen.skip", reason="not_rebalance_month")
             return []
 
         ctx.log_flow("strategy.screen.start", input=len(symbols))
@@ -183,12 +315,19 @@ class HkGarpStrategy(Strategy):
         min_momentum = float(self.p.min_momentum)
         require_industry = bool(self.p.require_industry)
         max_per_sector = int(self.p.max_per_sector)
+        weight_scheme = str(self.p.weight_scheme).lower()
+        vol_lookback = int(self.p.vol_lookback)
 
-        # 单次取够长的历史窗口同时算流动性 / 趋势 / 动量, 避免重复 get_history
+        # R19: 个股波动率加权时, 需要 vol_lookback+1 根历史算日收益标准差
+        vol_need = (vol_lookback + 1) if (weight_scheme in ("invvol", "invvar") and vol_lookback > 0) else 0
+        sym_vol: dict[str, float] = {}
+
+        # 单次取够长的历史窗口同时算流动性 / 趋势 / 动量 / 波动率, 避免重复 get_history
         need_hist = max(
             amt_lookback if min_amount > 0 else 0,
             trend_ma_days,
             momentum_days + 1,
+            vol_need,
         )
 
         # ---- Stage 1: 估值健康(PIT)+ 时效 + 流动性 + 趋势/动量(全用日线 bar)----
@@ -254,6 +393,19 @@ class HkGarpStrategy(Strategy):
                         momentum = closes[-1] / base - 1.0
                         if momentum < min_momentum:
                             continue
+                # R19: PIT 已实现波动率 = 近 vol_lookback 日日收益标准差(样本std)
+                if vol_need > 0 and len(closes) > vol_lookback:
+                    window = closes[-(vol_lookback + 1):]
+                    rets = [
+                        window[i] / window[i - 1] - 1.0
+                        for i in range(1, len(window))
+                        if window[i - 1]
+                    ]
+                    if len(rets) >= 2:
+                        mean = sum(rets) / len(rets)
+                        var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
+                        if var > 0:
+                            sym_vol[sym] = var ** 0.5
             stage1.append((sym, float(pe), momentum))
         ctx.log_flow("strategy.valuation_liquidity_trend", passed=len(stage1))
 
@@ -345,6 +497,8 @@ class HkGarpStrategy(Strategy):
         ctx.log_flow("strategy.screen.done", input=len(symbols), passed=len(selected))
 
         self._target_holdings = selected
+        self._target_exposure = desired_exposure  # R18: 调仓月也应用 regime 仓位
+        self._sym_vol = sym_vol  # R19: 个股波动率(on_buy 加权用)
         self._rebalance_pending = True
         return selected
 
@@ -369,7 +523,60 @@ class HkGarpStrategy(Strategy):
         if not target:
             self._rebalance_pending = False
             return
-        target_pct = 1.0 / float(len(target))
+        # R18: regime 仓位比例(exposure=1.0 即满仓)。R19: 在 exposure 内按方案分配个股权重
+        exposure = self._target_exposure
+        weights = self._compute_weights(target)  # 归一化(sum=1)的个股权重
         for sym in target:
-            ctx.order_target_percent(sym, target_pct)
+            ctx.order_target_percent(sym, exposure * weights[sym])
+        self._cur_exposure = exposure
         self._rebalance_pending = False
+
+    def _compute_weights(self, target: list[str]) -> dict[str, float]:
+        """R19: 计算归一化(sum=1)的个股权重。
+
+        equal → 1/N;invvol → ∝1/σ;invvar → ∝1/σ²。
+        缺失波动率的股票用已知股票均值回填。最后按 weight_cap_mult×等权 迭代封顶 +
+        把超额重分配给未封顶股票,直到稳定(经典 capped risk-weighting)。
+        """
+        n = len(target)
+        if n == 0:
+            return {}
+        scheme = str(self.p.weight_scheme).lower()
+        eq = 1.0 / n
+
+        if scheme not in ("invvol", "invvar") or not self._sym_vol:
+            return {s: eq for s in target}
+
+        # 原始风险倒数权重
+        raw: dict[str, float | None] = {}
+        for s in target:
+            v = self._sym_vol.get(s)
+            if v is None or v <= 0:
+                raw[s] = None
+            else:
+                raw[s] = (1.0 / v) if scheme == "invvol" else (1.0 / (v * v))
+        known = [w for w in raw.values() if w is not None]
+        fill = (sum(known) / len(known)) if known else 1.0
+        weights = {s: (w if w is not None else fill) for s, w in raw.items()}
+
+        total = sum(weights.values()) or 1.0
+        weights = {s: w / total for s, w in weights.items()}
+
+        # 封顶 + 重分配
+        cap_mult = float(self.p.weight_cap_mult)
+        if cap_mult > 0:
+            cap = cap_mult * eq
+            for _ in range(n):  # 最多 N 轮收敛
+                over = {s: w for s, w in weights.items() if w > cap + 1e-12}
+                if not over:
+                    break
+                excess = sum(w - cap for s, w in over.items())
+                for s in over:
+                    weights[s] = cap
+                under = {s: w for s, w in weights.items() if w < cap - 1e-12}
+                under_total = sum(under.values())
+                if under_total <= 0:
+                    break  # 全部触顶, 无法再分配
+                for s in under:
+                    weights[s] += excess * (weights[s] / under_total)
+        return weights

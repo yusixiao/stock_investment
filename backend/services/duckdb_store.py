@@ -44,6 +44,13 @@ class DuckDBStore:
             if adj_dir.exists():
                 self._create_glob_view(f"v_{market.lower()}_adjust_factor", adj_dir)
 
+            # 指数视图: v_{market}_index
+            # ⚠️ 指数独立于个股 daily:不做复权 ASOF JOIN、不做估值覆盖,
+            # 也不会进 query_qfq_kline_bulk 的股票 universe。
+            index_dir = market_dir / "index"
+            if index_dir.exists():
+                self._create_glob_view(f"v_{market.lower()}_index", index_dir)
+
             # 财务数据视图: v_{market}_{type}
             for fin_type in FINANCIAL_TYPES:
                 fin_dir = market_dir / "financial" / fin_type
@@ -129,6 +136,13 @@ class DuckDBStore:
         """对外暴露:hk_industry parquet 写入后重建视图。"""
         self._setup_hk_industry_view()
         logger.info("v_hk_industry refreshed")
+
+    def refresh_index_view(self, market: str) -> None:
+        """对外暴露:index parquet 写入后重建 v_{market}_index 视图。"""
+        index_dir = MARKET_DIR / market / "index"
+        if index_dir.exists():
+            self._create_glob_view(f"v_{market.lower()}_index", index_dir)
+            logger.info("v_%s_index refreshed", market.lower())
 
     def refresh_hk_connect_view(self) -> None:
         """对外暴露:hk_connect parquet 写入后重建 v_hk_connect_latest +
@@ -810,6 +824,54 @@ class DuckDBStore:
             sql = f"SELECT {select} FROM {view} {where} ORDER BY _symbol, date"
             df = self._conn.execute(sql, params).fetchdf()
             return self._bulk_split(df, sort_col="date")
+
+    def query_index_bulk(
+        self,
+        market: str,
+        codes: Optional[list[str]] = None,
+    ) -> dict[str, pd.DataFrame]:
+        """批量取指数日线序列(date 升序),code → DataFrame。
+
+        指数无复权、无估值覆盖,直读 v_{market}_index;视图缺失返回 {}。
+        codes=None 取该市场全部指数。
+        """
+        with self._lock:
+            view = f"v_{market.lower()}_index"
+            if not self._view_exists(view):
+                return {}
+            params: list = []
+            where = ""
+            if codes:
+                placeholders = ",".join(["?"] * len(codes))
+                where = f"WHERE _symbol IN ({placeholders})"
+                params.extend(codes)
+            sql = f"SELECT * FROM {view} {where} ORDER BY _symbol, date"
+            df = self._conn.execute(sql, params).fetchdf()
+            return self._bulk_split(df, sort_col="date")
+
+    def query_index(
+        self,
+        market: str,
+        code: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """查询单个指数日线(date 升序)。视图缺失返回空 DataFrame。"""
+        with self._lock:
+            view = f"v_{market.lower()}_index"
+            if not self._view_exists(view):
+                return pd.DataFrame()
+            conditions = ["_symbol = ?"]
+            params: list = [code]
+            if start_date:
+                conditions.append("date >= ?")
+                params.append(start_date)
+            if end_date:
+                conditions.append("date <= ?")
+                params.append(end_date)
+            where = " AND ".join(conditions)
+            sql = f"SELECT * FROM {view} WHERE {where} ORDER BY date"
+            return self._conn.execute(sql, params).fetchdf()
 
     def query_dividend_bulk(
         self,

@@ -13,7 +13,7 @@
   - `cache/` — **纯派生缓存**(`cache/tavily/`、`cache/qfq/` 等),可随时删,自动重建,**不备份**
   - `logs/` — **运行日志**(应用日志、调度器日志),可定期清理,**不备份**
   - 新代码**禁止**写入 `data/{agent_runs,cache,logs}`,旧路径需逐步迁移并清理
-- **沟通语言**:中文
+- **🚨 沟通语言铁律**:**始终用中文回复**(所有对话、解释、状态汇报、报告正文一律中文),不要用英文回话。代码标识符/日志保持英文照旧
 - **技术栈**:
   - 后端 Python:FastAPI + APScheduler + DuckDB(查询层)+ pandas/parquet(存储)+ SQLite(业务库)
   - 前端 React 19 + TypeScript + Vite 7 + Tailwind v4 + zustand + react-router 7 + lightweight-charts(K 线)+ recharts(回测曲线)+ react-markdown
