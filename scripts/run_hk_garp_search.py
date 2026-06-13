@@ -408,6 +408,49 @@ ROUNDS: dict[str, list] = {
         ("R22_invvar_252", "反方差加权·252日",
          {**CHAMPION_PE15, "weight_scheme": "invvar", "vol_lookback": 252, "weight_cap_mult": 2.5}),
     ],
+    # Round 23: 冠军 CHAMPION_PE15 关键参数 plateau / 敏感性检查(2026-06-14)。
+    #   目的:确认冠军每个关键参数落在【平台】(邻域平滑、稳健)而非【尖峰】(过拟合)。
+    #   方法 = 单变量扫描(one-at-a-time):每次只动一个参数,其余固定在冠军值
+    #   (top_n=12 / trend_ma_days=90 / max_per_sector=2 / peg_max=1.5 / pe_max=15)。
+    #   R23_champion 为锚点(=CHAMPION_PE15),各 sweep 已剔除冠军值避免重复跑。
+    #   pe_max 粗梯度(10/15/20/25/35)已在 R21 测过,此处补峰附近细点 12/13/18。
+    "23": [
+        ("R23_champion", "锚点 CHAMPION_PE15(t12/ma90/sec2/peg1.5/pe15)", CHAMPION_PE15),
+        # --- top_n 邻域 ---
+        ("R23_top8", "top_n=8(更集中)", {**CHAMPION_PE15, "top_n": 8}),
+        ("R23_top10", "top_n=10", {**CHAMPION_PE15, "top_n": 10}),
+        ("R23_top15", "top_n=15", {**CHAMPION_PE15, "top_n": 15}),
+        ("R23_top20", "top_n=20(更分散)", {**CHAMPION_PE15, "top_n": 20}),
+        # --- trend_ma_days 邻域 ---
+        ("R23_ma60", "trend_ma=60", {**CHAMPION_PE15, "trend_ma_days": 60}),
+        ("R23_ma120", "trend_ma=120", {**CHAMPION_PE15, "trend_ma_days": 120}),
+        ("R23_ma150", "trend_ma=150", {**CHAMPION_PE15, "trend_ma_days": 150}),
+        # --- max_per_sector 邻域 ---
+        ("R23_sec1", "max_per_sector=1(每行业仅1只)", {**CHAMPION_PE15, "max_per_sector": 1}),
+        ("R23_sec3", "max_per_sector=3", {**CHAMPION_PE15, "max_per_sector": 3}),
+        ("R23_sec4", "max_per_sector=4", {**CHAMPION_PE15, "max_per_sector": 4}),
+        # --- peg_max 邻域 ---
+        ("R23_peg10", "peg_max=1.0", {**CHAMPION_PE15, "peg_max": 1.0}),
+        ("R23_peg125", "peg_max=1.25", {**CHAMPION_PE15, "peg_max": 1.25}),
+        ("R23_peg175", "peg_max=1.75", {**CHAMPION_PE15, "peg_max": 1.75}),
+        ("R23_peg20", "peg_max=2.0", {**CHAMPION_PE15, "peg_max": 2.0}),
+        # --- pe_max 峰附近细点(粗梯度 10/15/20/25/35 见 R21) ---
+        ("R23_pe12", "pe_max=12", {**CHAMPION_PE15, "pe_max": 12.0}),
+        ("R23_pe13", "pe_max=13", {**CHAMPION_PE15, "pe_max": 13.0}),
+        ("R23_pe18", "pe_max=18", {**CHAMPION_PE15, "pe_max": 18.0}),
+    ],
+    # Round 24: 便宜度族 OOS 对比(2026-06-14)。用户问 pe18/pe20 邻域更平滑是否
+    #   在样本外也更稳。R21 的 H1/H2 已有 pe20/pe15,缺 pe18。本轮在 H1(2010-2018
+    #   训练段)/ H2(2018-2026 封存测试段)各跑一次,含 pe20/pe15 作区间对齐校验
+    #   (若跑出的 pe20/pe15 与 R21_H{1,2} 一致 → 切片对齐,pe18 结果可信)。
+    #   跑法:--round 24 --start 2010-01-01 --end 2018-01-01 --label _H1
+    #        --round 24 --start 2018-01-01 --end 2026-06-01 --label _H2
+    "24": [
+        ("R24_base", "基座 BASE_R14(pe_max=35,无便宜度过滤)", BASE_R14),
+        ("R24_pe20", "PE≤20(校验对齐 R21)", {**BASE_R14, "pe_max": 20.0}),
+        ("R24_pe18", "PE≤18(新增,平台候选)", {**BASE_R14, "pe_max": 18.0}),
+        ("R24_pe15", "PE≤15(冠军,校验对齐 R21)", {**BASE_R14, "pe_max": 15.0}),
+    ],
 }
 
 
