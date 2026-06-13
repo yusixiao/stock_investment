@@ -64,8 +64,6 @@ async def lifespan(app: FastAPI):
     init_db()
     init_duckdb_with_health_check()
     init_stock_index()
-    # 触发 agent 注册(导入即注册到 agent_harness.registry)
-    import services.agents  # noqa: F401
 
     # 启动后异步预加载 A 股 MarketBundle(回测/雷达依赖,不阻塞 lifespan)
     try:

@@ -21,6 +21,7 @@ from fastapi import APIRouter, Body
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from config import PORTFOLIO_DB
 from services import stock_index
 from services.agent.core import sse
 from services.agent.coordinator import Coordinator
@@ -38,7 +39,7 @@ router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
 
 def _conn() -> sqlite3.Connection:
-    path = os.environ.get("DSA_PORTFOLIO_DB", "data/portfolio.db")
+    path = os.environ.get("DSA_PORTFOLIO_DB") or str(PORTFOLIO_DB)
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.execute("PRAGMA foreign_keys = ON")
     init_chat_tables(conn)
