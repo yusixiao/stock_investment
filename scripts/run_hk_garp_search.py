@@ -43,12 +43,16 @@ M = list(range(1, 13))  # 月度调仓
 BASE7 = {"top_n": 30, "min_amount_hkd": 1e7, "rebalance_months": [6], "cagr_years": 5}
 # R7 冠军基座(在 BASE7 上加 120 日趋势过滤 = 12.94%)
 BASE8 = {**BASE7, "trend_ma_days": 120}
-# R11 全期冠军基座(进取+仅龙头+每行业≤2 = 25.77%);R14 在其上扫排序×阈值
+# R11 全期冠军基座(进取+仅龙头+每行业≤2 = 25.77%);R14 在其上扫排序×阈值。
+# pe_max 显式锁定为 35 —— 这是 R11/R14 评估当时的策略默认值,是 BASE 的固有定义。
+# BASE 是探索过程中找出的中间基座,绝不能跟随策略默认值漂移(策略默认已于 302b96c
+# 改为冠军值 15);此处钉死原值,确保 BASE 与冠军解耦、R21_base 对照始终有效。
 BASE_R14 = {**BASE8, "top_n": 12, "trend_ma_days": 90,
-            "require_industry": True, "max_per_sector": 2}
+            "require_industry": True, "max_per_sector": 2, "pe_max": 35.0}
 # R17 锁定的最优选股内核:BASE_R14 + g25(净利 CAGR≥25%,唯一跨 4 窗口 4/4 的成长过滤)
 BASE_G25 = {**BASE_R14, "np_cagr_min": 0.25}
-# R21 全期/H1/H2/切片全面冠军:BASE_R14 + pe_max=15(np_cagr_min 默认 0.15)
+# R21 全期/H1/H2/切片全面冠军 = BASE_R14 基座 + pe_max=15(np_cagr_min 默认 0.15)。
+# 冠军是 BASE 的衍生(在基座上收紧便宜度),不是 BASE 本身;显式覆盖 pe_max=15。
 CHAMPION_PE15 = {**BASE_R14, "pe_max": 15.0}
 ROUNDS: dict[str, list] = {
     # Round 1: 基线 + 粗扫主因子(成长强度 / PEG / 持仓数 / 排序)
