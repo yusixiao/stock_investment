@@ -360,10 +360,18 @@ def main():
                     help="稳定带半宽(年化口径),统计落在 base±band 内的段数")
     ap.add_argument("--start", default=START)
     ap.add_argument("--end", default=END)
+    ap.add_argument("--only", default="",
+                    help="只跑指定 tag(逗号分隔),空=全部 CANDIDATES")
     args = ap.parse_args()
 
     START, END = args.start, args.end
     ks = sorted({int(x) for x in args.ks.split(",") if x.strip()})
+    only = {t.strip() for t in args.only.split(",") if t.strip()}
+    candidates = [c for c in CANDIDATES if not only or c[0] in only]
+    if not candidates:
+        log.error("--only %s 未匹配任何 tag; 可选: %s",
+                  args.only, [c[0] for c in CANDIDATES])
+        return
 
     growth_hk.reset_cache()
     hk_industry.reset_cache()
@@ -379,7 +387,7 @@ def main():
     hsi_ye = _hsi_year_end()
 
     results = []
-    for tag, note, ov in CANDIDATES:
+    for tag, note, ov in candidates:
         try:
             t1 = time.time()
             metrics, eq, init_cap = _run_candidate(sliced, ov)
