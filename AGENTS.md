@@ -39,7 +39,7 @@
 - **akshare 已禁用**(见上方数据源铁律) — 历史 mock 测试仅作迁移期保留
 - **`write` 工具对超大内容会中止** — 拆成多次小写
 - **前端端口**:3001(`vite.config.ts`),代理 `/api → 127.0.0.1:8000`
-- **策略模型(2026-05 重构,Phase 6)**:**Pipeline + Screener/Buyer/Seller 三角拆分模型已废弃**。当前为**单一 Strategy 类**(`strategies/base.py::Strategy` / `ScreenerStrategy`),策略实现 `screen(ctx, symbols) -> List[str]` + 可选 `on_buy(ctx, symbol)` / `on_sell(ctx, symbol)` hooks。示例:`strategies/examples/ma_tangle_value_strategy.py`、`ma_close_strategy.py`
+- **策略模型(2026-05 重构,Phase 6)**:**Pipeline + Screener/Buyer/Seller 三角拆分模型已废弃**。当前为**单一 Strategy 类**(`strategies/base.py::Strategy` / `ScreenerStrategy`),策略实现 `screen(ctx, symbols) -> List[str]` + 可选 `on_buy(ctx, symbol)` / `on_sell(ctx, symbol)` hooks。示例:`strategies/examples/ma_tangle_value_strategy.py`、`hk_garp_strategy.py`
 - **API 兼容**:`/api/screener/run` 与 `/api/backtest/run` 仍接收 `pipeline: []` 数组,但**只取首元素**加载策略类(importlib),应用参数覆盖,执行 `screen` / 完整回测
 - **统一 Context**(`backend/services/backtest/context.py`):`Context` 类**取代旧 ScreenerContext / TraderContext**,集中管理市场数据访问、broker 下单、决策日志、symbol pool 注入(每根 bar 由 Engine 注入)、因子收集(`record_factor` / `get_factors` / `reset_factors`)。轻量版 `ScreenContext` 用于 `/api/screener/run` 与 scan-radar(无 broker、可选 `log_sink`)
 - **MarketData 适配器**(`backend/services/backtest/market_data.py`):BacktestEngine 数据层。预计算 numpy 缓存(daily OHLC 数组、日期数组、估值/财务表),日期索引用二分查找(O(log N))。**启动时预聚合周/月线**(`aggregate_kline`),其余频率懒加载。`get_bar_at` 比 `get_price` 快 ~9.6×。strict 模式仅在目标日期精确匹配 period 末日时返回 bar
@@ -123,12 +123,9 @@
 - **Buy/Sell 拆分**:`BaseStrategy → ScreenerStrategy / BuyStrategy / SellStrategy`,`buy_sell_engine.py` 替代旧 TraderStrategy 路径(旧 API 兼容)
 - **Pipeline 时间相关性**(`join_mode`):`engine.py` 实现 OR/AND 合并,跨频率用 `date_belongs_to()` 归属判定
 - **链式回测**:`source_task_id` 完整链路 + Signal Table 模式
-- **新策略**:
-  - `dividend_years_screener.py`(连续分红年限)
-  - `roe_screener.py`、`pe_pb_product_screener.py`(估值)
-  - `monthly_low_screener.py`、`monthly_volume_red_screener.py`
-  - `ma_tangle_breakout_screener.py`(月线均线缠绕突破)
-  - `market_cap_weighted_buyer.py`(按市值加权买入)
+- **策略(独立 screener 已于 2026-05-18 合并进单一 Strategy 模型,逻辑下沉 `strategies/utils/`)**:
+  连续分红年限 / ROE / PE·PB / 月线低点 / 缠绕突破 / 市值加权等因子均迁入 utils,
+  由 `ma_tangle_value_strategy.py` 等组合策略调用(见下方"现存策略")
 - **StrategyGroup**:`group_manager.py` + `routers/strategy_group.py`,支持 archiving / deletion / execution / 分步运行
 
 ### 前端 React 重构
@@ -194,12 +191,12 @@ stock_investment/
 │   │   └── portfolio/
 │   │       ├── db.py / manager.py
 │   └── tests/                          # 797 cases
-├── strategies/examples/
-│   ├── ma_tangle_breakout_screener.py  # frequency = "monthly"
-│   ├── dividend_years_screener.py
-│   ├── monthly_low_screener.py / monthly_volume_red_screener.py
-│   ├── pe_pb_product_screener.py / roe_screener.py
-│   └── market_cap_weighted_buyer.py
+├── strategies/examples/             # 现存 5 个策略(2026-06-14 精简)
+│   ├── hk_garp_strategy.py             # H股 GARP 冠军(frequency = "monthly")
+│   ├── low_valuation_quarterly_strategy.py            # A股 低估值季度
+│   ├── low_valuation_multifactor_quarterly_strategy.py # A股 低估值多因子季度
+│   ├── ma_tangle_value_strategy.py     # A股 月线均线缠绕价值
+│   └── conservative_rough_strategy.py  # A股 现金流保守(粗算)
 ├── frontend/                           # name: dsa-web,React 19 + TS + Tailwind v4
 │   ├── vite.config.ts                  # port 3001, proxy /api → :8000
 │   ├── src/
@@ -439,7 +436,7 @@ backend/services/agent/
 - StrategyRadar 参数对话框走 createPortal(避开滚动容器裁剪)
 - 6m lookback 选项前后端贯通
 - 雷达扫描默认开决策日志
-- `strategies/utils/kline.py::filter_by_ma_close` + `MaCloseStrategy` 示例
+- `strategies/utils/kline.py::filter_by_ma_close`(均线粘合筛选工具,下沉至 utils)
 - 指标快路径:`get_ma / macd` 工具直查 DataFrame 列(O(1))
 
 ### 2026-05-23 — Ask Stock Phase A 启动(LLM 客户端 + agent 骨架)
