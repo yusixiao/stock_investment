@@ -61,14 +61,22 @@ BASE_G25 = {**BASE_R14, "np_cagr_min": 0.25}
 
 # ---- 候选集(option b)----
 # 不重训:这里是【固定参数】的几个候选,各跑一次连续回测后用抗跌分横向比较。
-# ⚠️ R1-R20 干净基线重跑完成后,把真正的全期冠军参数加到本列表顶部(或替换 BASE_G25)。
+# 2026-06-13 干净基线重跑(R1-R20,factor 修复后)全期年化排名(同 2010-2026 段):
+#   PE20      23.55% sharpe0.86 mdd41.33%  ← 全期冠军(BASE_R14+pe_max20)
+#   G20_PE25  22.68% sharpe0.82 mdd43.42%
+#   PEG10_PE25 22.13% sharpe0.81 mdd43.42%
+#   PE25      21.55% sharpe0.80 mdd43.43%
+#   BASE_G25  20.48% sharpe0.75 mdd44.82%  ← 基线参照
+# ⚠️ 上述按【全期年化】挑选本身含 selection bias;walk-forward 即用于检验这些候选
+#    在 K=2/4/8/16 时间切片下是否稳健(抗跌优先),而非再次按全期挑冠军。
 # 每项: (tag, note, param_overrides)
 CANDIDATES: list[tuple[str, str, dict]] = [
-    ("BASE_G25", "全期最优内核(冠军)", BASE_G25),
-    ("BASE_R14", "冠军基座(无 g25 成长过滤)", BASE_R14),
-    ("G20", "成长≥20(更宽)", {**BASE_R14, "np_cagr_min": 0.20}),
-    ("PEG10", "PEG≤1.0(更便宜)", {**BASE_R14, "peg_max": 1.0}),
-    ("PE25", "PE≤25(防泡沫,R14 最佳 Sharpe)", {**BASE_R14, "pe_max": 25.0}),
+    ("PE20", "全期冠军 PE≤20(BASE_R14+pe20)", {**BASE_R14, "pe_max": 20.0}),
+    ("G20_PE25", "成长≥20 + PE≤25", {**BASE_R14, "np_cagr_min": 0.20, "pe_max": 25.0}),
+    ("PEG10_PE25", "PEG≤1.0 + PE≤25(双便宜度)", {**BASE_R14, "peg_max": 1.0, "pe_max": 25.0}),
+    ("PE25", "PE≤25(防泡沫)", {**BASE_R14, "pe_max": 25.0}),
+    ("BASE_G25", "最优成长内核(基线参照)", BASE_G25),
+    ("BASE_R14", "冠军基座(无便宜度过滤)", BASE_R14),
 ]
 
 
