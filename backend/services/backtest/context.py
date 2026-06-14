@@ -98,7 +98,7 @@ class Context:
         非 HK 标的恒返 False。⚠️ 接受 ~2-3% look-ahead 偏差。"""
         if not symbol or not symbol.endswith(".HK"):
             return False
-        from services.hk_connect_updater import get_latest_hk_connect_codes
+        from services.market_data.updaters.hk_connect_updater import get_latest_hk_connect_codes
 
         code = symbol.split(".")[0]
         return code in get_latest_hk_connect_codes()
@@ -325,7 +325,7 @@ class ScreenContext:
         非 HK 标的恒返 False。⚠️ 接受 ~2-3% look-ahead 偏差。"""
         if not symbol or not symbol.endswith(".HK"):
             return False
-        from services.hk_connect_updater import get_latest_hk_connect_codes
+        from services.market_data.updaters.hk_connect_updater import get_latest_hk_connect_codes
 
         code = symbol.split(".")[0]
         return code in get_latest_hk_connect_codes()

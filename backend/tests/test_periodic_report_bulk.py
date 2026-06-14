@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from config import MARKET_DIR
-from services.duckdb_store import DuckDBStore
+from services.market_data.duckdb_store import DuckDBStore
 
 
 def _has_real_data() -> bool:

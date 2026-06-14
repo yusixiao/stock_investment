@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services import financial_sync
+from services.market_data.updaters import financial_sync
 
 
 def _mk_record(report_date: str = "2026-03-31"):

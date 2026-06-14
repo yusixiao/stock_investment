@@ -31,7 +31,7 @@ def update_circulating_shares(on_phase: callable = None) -> dict:
             on_phase(msg)
 
     # 延迟 import,避免单测因 DuckDB 初始化重型依赖而启动慢
-    from services.duckdb_store import get_store
+    from services.market_data.duckdb_store import get_store
 
     logger.info("开始从 DuckDB v_a_indicator 抽取流通股数...")
     _phase("查询 DuckDB v_a_indicator...")

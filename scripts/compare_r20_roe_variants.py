@@ -41,7 +41,7 @@ from scripts.backtest_low_pb_value import (  # noqa: E402
     metrics,
     run_backtest,
 )
-from services.duckdb_store import init_duckdb  # noqa: E402
+from services.market_data.duckdb_store import init_duckdb  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"

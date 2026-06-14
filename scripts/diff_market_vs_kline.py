@@ -224,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 延迟导入，让 --help 不被重型依赖拖慢
     from config import DATA_DIR
-    from services.duckdb_store import get_store
+    from services.market_data.duckdb_store import get_store
     from services.qfq_cache import get_qfq_kline
 
     market_daily = DATA_DIR / "market" / "A" / "daily"

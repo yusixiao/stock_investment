@@ -64,9 +64,9 @@ def test_adapter_returns_empty_on_persistent_error():
 def isolated_market_dir(tmp_path, monkeypatch):
     """重定向 MARKET_DIR 到 tmp,确保测试间互不污染。"""
     monkeypatch.setattr("backend.config.MARKET_DIR", tmp_path)
-    monkeypatch.setattr("backend.services.hk_connect_updater.MARKET_DIR", tmp_path)
+    monkeypatch.setattr("backend.services.market_data.updaters.hk_connect_updater.MARKET_DIR", tmp_path)
     # 同时清缓存
-    from backend.services import hk_connect_updater
+    from backend.services.market_data.updaters import hk_connect_updater
 
     hk_connect_updater.invalidate_cache()
     yield tmp_path
@@ -74,7 +74,7 @@ def isolated_market_dir(tmp_path, monkeypatch):
 
 
 def test_updater_writes_and_dedups(isolated_market_dir):
-    from backend.services import hk_connect_updater
+    from backend.services.market_data.updaters import hk_connect_updater
 
     fake_members = [
         {"code": "09988", "name": "阿里巴巴-W"},
@@ -100,7 +100,7 @@ def test_updater_writes_and_dedups(isolated_market_dir):
 
 
 def test_updater_appends_new_snapshot(isolated_market_dir):
-    from backend.services import hk_connect_updater
+    from backend.services.market_data.updaters import hk_connect_updater
 
     with patch.object(
         hk_connect_updater.EastMoneyAdapter,
@@ -126,7 +126,7 @@ def test_updater_appends_new_snapshot(isolated_market_dir):
 
 def test_updater_empty_fetch_does_not_crash(isolated_market_dir):
     """push2 + datacenter-web fallback 都失败时优雅返 count=0,不抛异常。"""
-    from backend.services import hk_connect_updater
+    from backend.services.market_data.updaters import hk_connect_updater
 
     with (
         patch.object(
@@ -147,7 +147,7 @@ def test_updater_empty_fetch_does_not_crash(isolated_market_dir):
 
 def test_updater_falls_back_to_holdrank_when_push2_blocked(isolated_market_dir):
     """push2 返空时自动切换 datacenter-web,确保 IP 限流下 MVP 仍能拉数据。"""
-    from backend.services import hk_connect_updater
+    from backend.services.market_data.updaters import hk_connect_updater
 
     with (
         patch.object(
@@ -172,7 +172,7 @@ def test_updater_falls_back_to_holdrank_when_push2_blocked(isolated_market_dir):
 
 
 def test_get_latest_codes_no_parquet(isolated_market_dir):
-    from backend.services import hk_connect_updater
+    from backend.services.market_data.updaters import hk_connect_updater
 
     assert hk_connect_updater.get_latest_hk_connect_codes() == set()
 
@@ -181,7 +181,7 @@ def test_get_latest_codes_no_parquet(isolated_market_dir):
 
 
 def test_is_hk_connect_non_hk_symbol(isolated_market_dir):
-    from backend.services import hk_connect_updater
+    from backend.services.market_data.updaters import hk_connect_updater
 
     # 即便有快照,A/US 标的也应返回 False
     with patch.object(
@@ -197,7 +197,7 @@ def test_is_hk_connect_non_hk_symbol(isolated_market_dir):
 
 
 def test_is_hk_connect_hit_and_miss(isolated_market_dir):
-    from backend.services import hk_connect_updater
+    from backend.services.market_data.updaters import hk_connect_updater
 
     with patch.object(
         hk_connect_updater.EastMoneyAdapter,
@@ -217,7 +217,7 @@ def test_is_hk_connect_hit_and_miss(isolated_market_dir):
 
 
 def test_cache_invalidates_on_write(isolated_market_dir):
-    from backend.services import hk_connect_updater
+    from backend.services.market_data.updaters import hk_connect_updater
 
     # 第一次写入 1 只
     with patch.object(

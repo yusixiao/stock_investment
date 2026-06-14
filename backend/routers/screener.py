@@ -11,7 +11,7 @@ from fastapi import APIRouter, Body, HTTPException
 from services.backtest.context import ScreenContext
 from services.backtest.market_data import MarketData
 from services.backtest.strategy_loader import load_strategy_from_file
-from services.duckdb_store import get_store
+from services.market_data.duckdb_store import get_store
 from strategies.base import Strategy
 
 

@@ -6,8 +6,8 @@ from typing import Optional
 
 import pandas as pd
 
-from services.duckdb_store import get_store
-from services.indicator import calc_macd
+from services.market_data.duckdb_store import get_store
+from services.market_data.indicator import calc_macd
 
 router = APIRouter(prefix="/api/market", tags=["market-kline"])
 

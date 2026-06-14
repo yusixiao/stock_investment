@@ -34,12 +34,12 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
-from services.duckdb_store import get_store
+from services.market_data.duckdb_store import get_store
 from strategies.deployed.hk_garp_strategy import HkGarpStrategy
 from strategies.utils import growth_hk, hk_industry
 
 try:
-    from services import stock_index
+    from services.market_data import stock_index
 except Exception:
     stock_index = None
 

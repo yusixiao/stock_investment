@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from services.stock_data import aggregate_kline
+from services.market_data.stock_data import aggregate_kline
 
 
 class TestAggregateKline:

@@ -25,7 +25,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-from services.dividend_market_updater import update_a_dividend
+from services.market_data.updaters.dividend_market_updater import update_a_dividend
 
 
 def main():

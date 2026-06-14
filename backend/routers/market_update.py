@@ -18,7 +18,7 @@ class UpdateRequest(BaseModel):
 @router.post("/trigger")
 def trigger_update(req: UpdateRequest = UpdateRequest()):
     """手动触发增量更新（后台线程执行）"""
-    from services.market_updater import (
+    from services.market_data.updaters.market_updater import (
         get_update_progress,
         update_all_markets,
         update_single_market,
@@ -46,7 +46,7 @@ def trigger_update(req: UpdateRequest = UpdateRequest()):
 @router.get("/progress")
 def get_progress():
     """查看当前更新进度"""
-    from services.market_updater import get_update_progress
+    from services.market_data.updaters.market_updater import get_update_progress
 
     return get_update_progress()
 
@@ -54,7 +54,7 @@ def get_progress():
 @router.post("/adjust-factor")
 def trigger_adjust_factor(req: UpdateRequest = UpdateRequest()):
     """手动触发复权因子更新"""
-    from services.market_updater import update_adjust_factors
+    from services.market_data.updaters.market_updater import update_adjust_factors
 
     markets = [req.market] if req.market else None
     thread = threading.Thread(

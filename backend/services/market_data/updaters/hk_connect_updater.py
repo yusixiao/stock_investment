@@ -114,7 +114,7 @@ def fetch_and_save_hk_connect(
     # DuckDB 视图(v_hk_connect_latest + v_hk_periodic_report)依赖 parquet,
     # parquet 从无到有时 init 已 skip,这里主动 refresh 让本进程立即可用
     try:
-        from backend.services.duckdb_store import get_store
+        from backend.services.market_data.duckdb_store import get_store
 
         get_store().refresh_hk_connect_view()
     except Exception as e:

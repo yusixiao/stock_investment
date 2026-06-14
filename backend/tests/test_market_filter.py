@@ -50,13 +50,13 @@ class TestApplyMarketFilter:
     def test_us_market_passthrough(self):
         assert apply_market_filter("US", None) is None
 
-    @patch("services.hk_connect_updater.get_latest_hk_connect_codes")
+    @patch("services.market_data.updaters.hk_connect_updater.get_latest_hk_connect_codes")
     def test_hk_connect_none_returns_full_pool(self, mock_codes):
         mock_codes.return_value = ["00700", "09988", "03690"]
         result = apply_market_filter(HK_CONNECT_MARKET, None)
         assert result == ["00700.HK", "03690.HK", "09988.HK"]  # sorted
 
-    @patch("services.hk_connect_updater.get_latest_hk_connect_codes")
+    @patch("services.market_data.updaters.hk_connect_updater.get_latest_hk_connect_codes")
     def test_hk_connect_intersection_preserves_order(self, mock_codes):
         mock_codes.return_value = ["00700", "09988", "03690"]
         # 用户传混合列表,只保留港股通成员且按用户原始顺序
@@ -64,21 +64,21 @@ class TestApplyMarketFilter:
         result = apply_market_filter(HK_CONNECT_MARKET, requested)
         assert result == ["09988.HK", "00700.HK"]
 
-    @patch("services.hk_connect_updater.get_latest_hk_connect_codes")
+    @patch("services.market_data.updaters.hk_connect_updater.get_latest_hk_connect_codes")
     def test_hk_connect_empty_intersection(self, mock_codes):
         mock_codes.return_value = ["00700"]
         requested = ["00001.HK", "08888.HK"]
         result = apply_market_filter(HK_CONNECT_MARKET, requested)
         assert result == []
 
-    @patch("services.hk_connect_updater.get_latest_hk_connect_codes")
+    @patch("services.market_data.updaters.hk_connect_updater.get_latest_hk_connect_codes")
     def test_hk_connect_parquet_missing_returns_empty(self, mock_codes):
         # parquet 缺失时 updater 返回空列表 → HK_CONNECT 退化为空池
         mock_codes.return_value = []
         result = apply_market_filter(HK_CONNECT_MARKET, None)
         assert result == []
 
-    @patch("services.hk_connect_updater.get_latest_hk_connect_codes")
+    @patch("services.market_data.updaters.hk_connect_updater.get_latest_hk_connect_codes")
     def test_hk_connect_lowercase_normalized(self, mock_codes):
         mock_codes.return_value = ["00700"]
         result = apply_market_filter("hk_connect", None)

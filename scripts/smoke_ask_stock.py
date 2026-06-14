@@ -48,12 +48,12 @@ async def main() -> int:
     )
 
     # 延迟 import:在 sys.path 设好之后
-    from services import stock_index
+    from services.market_data import stock_index
     from services.agent.coordinator import Coordinator
     from services.agent.core.session_repo import SessionRepo
     from services.agent.core.workspace import Workspace
     from services.db_schema import init_chat_tables
-    from services.duckdb_store import (
+    from services.market_data.duckdb_store import (
         get_store,
         init_duckdb_with_health_check,
     )

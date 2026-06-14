@@ -43,7 +43,7 @@ log = logging.getLogger("hk_walk_forward")
 
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
-from services.duckdb_store import get_store
+from services.market_data.duckdb_store import get_store
 from strategies.utils import growth_hk, hk_industry
 from strategies.deployed.hk_garp_strategy import HkGarpStrategy
 

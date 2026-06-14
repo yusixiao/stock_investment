@@ -29,7 +29,7 @@ from strategies.deployed.hk_garp_strategy import HkGarpStrategy
 from strategies.utils import growth_hk, hk_industry
 
 try:
-    from services import stock_index
+    from services.market_data import stock_index
 except Exception:
     stock_index = None
 

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Query
 
-from services.stock_index import search_stocks
+from services.market_data.stock_index import search_stocks
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 

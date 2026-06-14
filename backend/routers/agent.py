@@ -22,10 +22,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from config import PORTFOLIO_DB
-from services import stock_index
+from services.market_data import stock_index
 from services.agent.core import sse
 from services.agent.coordinator import Coordinator
-from services.duckdb_store import get_store as get_duckdb_store
+from services.market_data.duckdb_store import get_store as get_duckdb_store
 from services.agent.core.llm_routing import resolve_channel_name
 from services.agent.core.session_repo import SessionRepo
 from services.agent.core.tavily_client import TavilyClient

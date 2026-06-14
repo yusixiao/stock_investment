@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.duckdb_store import DuckDBStore
+from services.market_data.duckdb_store import DuckDBStore
 
 
 @pytest.fixture(scope="module")

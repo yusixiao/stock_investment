@@ -11,7 +11,7 @@ Phase 1b 验收 + 防回归。锚定:
 import pytest
 
 from config import MARKET_DIR
-from services.duckdb_store import DuckDBStore
+from services.market_data.duckdb_store import DuckDBStore
 
 MARKETS = ["a", "hk", "us"]
 

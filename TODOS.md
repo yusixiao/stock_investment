@@ -185,5 +185,16 @@
        **B1** 双确认(MA200下穿且死叉持续N周)/ **B2** 迟滞缓冲带(消除频繁切换,牛市误伤最低)/
        **B3** MA200 斜率为负 N 周 / **A1** 个股周线破位止损 / **A2** 个股回撤止损 /
        **C** 熊市追加年中调仓 / **🌟E** 混合推荐(B2 管系统性熊 + A1 管个别暴雷)。
-       关键:B 类走 engine `risk_off_exposure` 择时层(R18 同框架)**不算改策略**,
-       后续可作 R25 择时实验,区别仅在信号判据更钝。
+        关键:B 类走 engine `risk_off_exposure` 择时层(R18 同框架)**不算改策略**,
+        后续可作 R25 择时实验,区别仅在信号判据更钝。
+
+## 工程/前端
+
+- [ ] **🚨 前端测试环境(jsdom)未配置 — 31 个测试文件全挂(2026-06-14 发现)** —
+      `frontend/vite.config.ts` **缺 `test.environment: 'jsdom'`** 配置,导致所有依赖 DOM 的
+      测试(render / renderHook)报 `ReferenceError: document is not defined`。
+      现象:`npm test` 基线 **31 failed files / 208 passed**(失败全是环境问题,非用例逻辑错)。
+      在「目录重构(前端先行)」时发现并坐实(stash 前后失败数一致 → 与重构无关,属预存债)。
+      **修复方向**:在 `vite.config.ts` 补 `test: { environment: 'jsdom', setupFiles: ['./src/setupTests.ts'], globals: true }`
+      (项目已有 `src/setupTests.ts` 但未被加载);需确认 `jsdom` 依赖已装。修复后应恢复到接近 0 失败。
+      - 影响面:前端全部组件/hook 测试的可信度(当前等于没跑)

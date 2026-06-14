@@ -9,7 +9,7 @@ import pandas as pd
 
 
 def test_to_yfinance_symbol_strips_leading_zero():
-    from backend.services.hk_industry_updater import _to_yfinance_symbol
+    from backend.services.market_data.updaters.hk_industry_updater import _to_yfinance_symbol
 
     assert _to_yfinance_symbol("09988") == "9988.HK"
     assert _to_yfinance_symbol("00700") == "0700.HK"
@@ -20,7 +20,7 @@ def test_to_yfinance_symbol_strips_leading_zero():
 
 def test_fetch_and_save_writes_parquet(tmp_path):
     """端到端:mock fetch_one,验证 parquet schema + 视图刷新调用。"""
-    from backend.services import hk_industry_updater as mod
+    from backend.services.market_data.updaters import hk_industry_updater as mod
 
     fake_records = {
         "00700": {
@@ -50,11 +50,11 @@ def test_fetch_and_save_writes_parquet(tmp_path):
         ):
             # 视图刷新 / stock_index 刷新都不应阻塞流程,即使失败
             with patch(
-                "backend.services.duckdb_store.get_store",
+                "backend.services.market_data.duckdb_store.get_store",
                 side_effect=RuntimeError("not initialized"),
             ):
                 with patch(
-                    "backend.services.stock_index.refresh_hk_industry",
+                    "backend.services.market_data.stock_index.refresh_hk_industry",
                     side_effect=RuntimeError("not loaded"),
                 ):
                     result = mod.fetch_and_save_hk_industry(
@@ -77,7 +77,7 @@ def test_fetch_and_save_writes_parquet(tmp_path):
 
 def test_incremental_skips_fresh_records(tmp_path):
     """已存在且未过期的 code 跳过 fetch。"""
-    from backend.services import hk_industry_updater as mod
+    from backend.services.market_data.updaters import hk_industry_updater as mod
 
     target = tmp_path / "hk_industry.parquet"
 
@@ -112,11 +112,11 @@ def test_incremental_skips_fresh_records(tmp_path):
 
     with patch.object(mod, "_parquet_path", return_value=target):
         with patch(
-            "backend.services.duckdb_store.get_store",
+            "backend.services.market_data.duckdb_store.get_store",
             side_effect=RuntimeError(),
         ):
             with patch(
-                "backend.services.stock_index.refresh_hk_industry",
+                "backend.services.market_data.stock_index.refresh_hk_industry",
                 side_effect=RuntimeError(),
             ):
                 result = mod.fetch_and_save_hk_industry(
@@ -135,7 +135,7 @@ def test_incremental_skips_fresh_records(tmp_path):
 
 def test_failed_fetch_does_not_block(tmp_path):
     """单只失败不影响整体落盘。"""
-    from backend.services import hk_industry_updater as mod
+    from backend.services.market_data.updaters import hk_industry_updater as mod
 
     target = tmp_path / "hk_industry.parquet"
 
@@ -151,11 +151,11 @@ def test_failed_fetch_does_not_block(tmp_path):
 
     with patch.object(mod, "_parquet_path", return_value=target):
         with patch(
-            "backend.services.duckdb_store.get_store",
+            "backend.services.market_data.duckdb_store.get_store",
             side_effect=RuntimeError(),
         ):
             with patch(
-                "backend.services.stock_index.refresh_hk_industry",
+                "backend.services.market_data.stock_index.refresh_hk_industry",
                 side_effect=RuntimeError(),
             ):
                 result = mod.fetch_and_save_hk_industry(
@@ -171,7 +171,7 @@ def test_failed_fetch_does_not_block(tmp_path):
 
 def test_empty_hk_connect_returns_zero(tmp_path):
     """港股通名单为空时,直接 return 不抓数据。"""
-    from backend.services import hk_industry_updater as mod
+    from backend.services.market_data.updaters import hk_industry_updater as mod
 
     target = tmp_path / "hk_industry.parquet"
 
@@ -192,7 +192,7 @@ def test_empty_hk_connect_returns_zero(tmp_path):
 
 def test_stock_index_loads_hk_industry(tmp_path, monkeypatch):
     """stock_index.init_stock_index 启动时把 hk_industry parquet 内容回填到内存索引。"""
-    from backend.services import stock_index
+    from backend.services.market_data import stock_index
 
     # 构造假的目录结构
     data_root = tmp_path / "data"

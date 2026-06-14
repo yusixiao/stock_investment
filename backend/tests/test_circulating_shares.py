@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 from unittest.mock import MagicMock, patch
 
-from services.circulating_shares import (
+from services.market_data.updaters.circulating_shares import (
     CIRCULATING_SHARES_FILE,
     get_circulating_shares,
     update_circulating_shares,
@@ -16,7 +16,7 @@ def clean_file(tmp_path, monkeypatch):
     """使用临时目录避免污染真实数据。"""
     test_file = tmp_path / "circulating_shares.parquet"
     monkeypatch.setattr(
-        "services.circulating_shares.CIRCULATING_SHARES_FILE", test_file
+        "services.market_data.updaters.circulating_shares.CIRCULATING_SHARES_FILE", test_file
     )
     yield test_file
 
@@ -30,7 +30,7 @@ def _mock_duckdb_df():
     )
 
 
-@patch("services.duckdb_store.get_store")
+@patch("services.market_data.duckdb_store.get_store")
 def test_update_circulating_shares_from_duckdb(mock_get_store, clean_file):
     fake_store = MagicMock()
     fake_store._conn.execute.return_value.fetchdf.return_value = _mock_duckdb_df()
@@ -48,7 +48,7 @@ def test_update_circulating_shares_from_duckdb(mock_get_store, clean_file):
     assert df.loc[df["symbol"] == "000001", "circulating_shares"].iloc[0] == 50_000_000
 
 
-@patch("services.duckdb_store.get_store")
+@patch("services.market_data.duckdb_store.get_store")
 def test_update_raises_when_no_data(mock_get_store, clean_file):
     fake_store = MagicMock()
     fake_store._conn.execute.return_value.fetchdf.return_value = pd.DataFrame(
@@ -59,7 +59,7 @@ def test_update_raises_when_no_data(mock_get_store, clean_file):
         update_circulating_shares()
 
 
-@patch("services.duckdb_store.get_store")
+@patch("services.market_data.duckdb_store.get_store")
 def test_get_circulating_shares(mock_get_store, clean_file):
     fake_store = MagicMock()
     fake_store._conn.execute.return_value.fetchdf.return_value = _mock_duckdb_df()

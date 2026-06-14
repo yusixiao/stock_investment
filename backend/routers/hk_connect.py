@@ -25,7 +25,7 @@ class RefreshRequest(BaseModel):
 @router.get("")
 def list_hk_connect(board_code: str | None = None):
     """返回最新快照的港股通成分股 code 列表。"""
-    from services.hk_connect_updater import _parquet_path, get_latest_hk_connect_codes
+    from services.market_data.updaters.hk_connect_updater import _parquet_path, get_latest_hk_connect_codes
 
     codes = sorted(get_latest_hk_connect_codes(board_code=board_code))
     path = _parquet_path()
@@ -53,7 +53,7 @@ def list_hk_connect(board_code: str | None = None):
 def _do_refresh(board_code: str) -> None:
     global _refresh_running
     try:
-        from services.hk_connect_updater import fetch_and_save_hk_connect
+        from services.market_data.updaters.hk_connect_updater import fetch_and_save_hk_connect
 
         result = fetch_and_save_hk_connect(board_code=board_code)
         logger.info("hk_connect refresh done: %s", result)

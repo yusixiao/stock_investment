@@ -33,7 +33,7 @@ from typing import Iterable
 import pandas as pd
 
 from backend.config import MARKET_DIR
-from backend.services.hk_connect_updater import get_latest_hk_connect_codes
+from backend.services.market_data.updaters.hk_connect_updater import get_latest_hk_connect_codes
 
 logger = logging.getLogger(__name__)
 
@@ -204,13 +204,13 @@ def fetch_and_save_hk_industry(
 
     # 刷新 DuckDB 视图 + stock_index 内存缓存
     try:
-        from backend.services.duckdb_store import get_store
+        from backend.services.market_data.duckdb_store import get_store
 
         get_store().refresh_hk_industry_view()
     except Exception as e:
         logger.warning("hk_industry_updater: 刷新 DuckDB 视图失败(忽略): %s", e)
     try:
-        from backend.services.stock_index import refresh_hk_industry
+        from backend.services.market_data.stock_index import refresh_hk_industry
 
         refresh_hk_industry()
     except Exception as e:

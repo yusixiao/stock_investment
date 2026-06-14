@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from services import duckdb_store
+from services.market_data import duckdb_store
 
 
 @pytest.fixture

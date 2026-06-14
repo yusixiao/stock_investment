@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, "backend")
-from services.duckdb_store import init_duckdb, get_store  # noqa: E402
+from services.market_data.duckdb_store import init_duckdb, get_store  # noqa: E402
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(

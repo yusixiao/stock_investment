@@ -16,8 +16,8 @@ import pandas as pd
 import pytest
 
 from config import MARKET_DIR
-from services.duckdb_store import DuckDBStore
-from services.index_updater import (
+from services.market_data.duckdb_store import DuckDBStore
+from services.market_data.updaters.index_updater import (
     INDEX_CATALOG,
     _fetch_baostock_index,
     _fetch_yfinance_index,

@@ -1426,7 +1426,7 @@ class DuckDBStore:
 
                 from backend.config import DATA_DIR
                 from backend.repositories.holder_repo import HolderRepository
-                from backend.services.holder_updater import HolderUpdater
+                from backend.services.market_data.updaters.holder_updater import HolderUpdater
 
                 holders_dir = Path(DATA_DIR) / "market" / "A" / "holders"
                 self._holder_updater_inst = HolderUpdater(
@@ -1510,7 +1510,7 @@ class DuckDBStore:
         文件不存在或 symbol 不匹配 → None。
         """
         try:
-            from services.circulating_shares import get_circulating_shares
+            from services.market_data.updaters.circulating_shares import get_circulating_shares
 
             df = get_circulating_shares()
         except Exception as e:  # noqa: BLE001

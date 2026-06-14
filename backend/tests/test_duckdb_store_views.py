@@ -7,7 +7,7 @@ Phase 1a 验收测试。Phase 1b(业务视图)前置防回归保险。
 import pytest
 
 from config import MARKET_DIR
-from services.duckdb_store import DuckDBStore
+from services.market_data.duckdb_store import DuckDBStore
 
 MARKETS = ["a", "hk", "us"]
 PERIODIC_TABLES = ["indicator", "income", "balance", "cashflow"]

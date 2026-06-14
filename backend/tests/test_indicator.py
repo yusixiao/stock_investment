@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import pytest
 
-from services.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
+from services.market_data.indicator import calc_ma, calc_macd, calc_kdj, calc_boll
 
 
 def _make_df(n=100):

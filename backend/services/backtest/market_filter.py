@@ -4,7 +4,7 @@
 `HK_CONNECT`(港股通成分股)。该虚拟市场:
 
   - 复用 HK 市场的 MarketBundle / 数据缓存(物理数据完全一致)
-  - 仅在 symbols 维度按 services.hk_connect_updater.get_latest_hk_connect_codes()
+  - 仅在 symbols 维度按 services.market_data.updaters.hk_connect_updater.get_latest_hk_connect_codes()
     限定到当前快照的港股通成分股(601 只)
   - 任务历史 / 前端展示保留 'HK_CONNECT' 标签;data_cache.get_market 必须收到 'HK'
 
@@ -39,14 +39,14 @@ def apply_market_filter(
         * requested_symbols 非空 → 返回与港股通成分股的交集(顺序保留)
     - 其他市场:原样返回(passthrough)
 
-    ⚠️ 调用 services.hk_connect_updater 读 parquet,parquet 缺失时 connect_set
+    ⚠️ 调用 services.market_data.updaters.hk_connect_updater 读 parquet,parquet 缺失时 connect_set
     为空,HK_CONNECT 会得到空列表 / 空交集 — 上游路由会因此报"切片后无 K 线"。
     """
     if (market or "").upper() != HK_CONNECT_MARKET:
         return requested_symbols
 
     # 延迟 import 避免模块互相 import
-    from services.hk_connect_updater import get_latest_hk_connect_codes
+    from services.market_data.updaters.hk_connect_updater import get_latest_hk_connect_codes
 
     connect_codes = get_latest_hk_connect_codes()
     connect_symbols = {f"{c}.HK" for c in connect_codes}

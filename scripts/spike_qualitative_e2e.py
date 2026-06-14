@@ -28,7 +28,7 @@ from backend.services.agent.core.qualitative.cache import QualitativeCache
 from backend.services.agent.core.qualitative.dimensions import MOCK_DIMENSION_FNS
 from backend.services.agent.core.symbol import StockRef
 from backend.services.agent.core.tavily_client import TavilyClient
-from backend.services.duckdb_store import get_store
+from backend.services.market_data.duckdb_store import get_store
 from backend.services.system_config.channels import (
     get_channel,
     reconstruct_channels,

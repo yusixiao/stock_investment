@@ -30,7 +30,7 @@ from services.agent.core.symbol import StockRef
 
 def test_query_latest_report_date_real_store():
     """真实 DuckDBStore:002594.SZ 应返回非空 'YYYY-MM-DD' 字符串(若数据存在)。"""
-    from services.duckdb_store import DuckDBStore
+    from services.market_data.duckdb_store import DuckDBStore
 
     s = DuckDBStore()
     try:
@@ -53,7 +53,7 @@ def test_query_latest_report_date_real_store():
 
 def test_query_latest_report_date_view_missing():
     """视图不存在 → None,不抛。"""
-    from services.duckdb_store import DuckDBStore
+    from services.market_data.duckdb_store import DuckDBStore
 
     s = DuckDBStore()
     with patch.object(s, "_view_exists", return_value=False):
@@ -63,7 +63,7 @@ def test_query_latest_report_date_view_missing():
 
 def test_query_latest_report_date_db_error():
     """SQL 抛异常 → None,不冒泡。"""
-    from services.duckdb_store import DuckDBStore
+    from services.market_data.duckdb_store import DuckDBStore
 
     s = DuckDBStore()
     fake_conn = MagicMock()

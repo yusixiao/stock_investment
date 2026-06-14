@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
-from backend.services.market_updater import _get_adapter, _get_repo  # noqa: E402
+from backend.services.market_data.updaters.market_updater import _get_adapter, _get_repo  # noqa: E402
 
 
 def main() -> None:

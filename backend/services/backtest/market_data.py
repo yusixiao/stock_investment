@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 from services.backtest.indicators import compute_indicators, resolve_indicator_column
-from services.stock_data import aggregate_kline
+from services.market_data.stock_data import aggregate_kline
 
 
 def _date_gap_days(row_date: Any, query_date: str) -> float:

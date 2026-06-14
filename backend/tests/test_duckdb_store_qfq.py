@@ -8,8 +8,8 @@ from raw daily parquet + adjust_factor parquet.
 import pandas as pd
 import pytest
 
-from services.duckdb_store import DuckDBStore
-import services.duckdb_store as duckdb_store_module
+from services.market_data.duckdb_store import DuckDBStore
+import services.market_data.duckdb_store as duckdb_store_module
 
 
 def _write_daily(market_dir, market, symbol, rows):

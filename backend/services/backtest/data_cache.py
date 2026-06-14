@@ -27,8 +27,8 @@ import numpy as np
 import pandas as pd
 
 from services.backtest.indicators import compute_indicators
-from services.duckdb_store import get_store
-from services.stock_data import aggregate_kline
+from services.market_data.duckdb_store import get_store
+from services.market_data.stock_data import aggregate_kline
 
 logger = logging.getLogger(__name__)
 

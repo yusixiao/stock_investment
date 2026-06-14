@@ -22,7 +22,7 @@
 - **🚨 数据源铁律(2026-05-24)**:**禁止使用 akshare**(在本环境不稳定/经常超时),`backend/adapters/akshare_adapter.py` 已物理删除。所有新代码与现有改动必须用 **baostock / eastmoney / yfinance**;不要再 `import akshare`,**任何"AKShare 兼容层"提议一律拒绝**。旧依赖逐步迁移至 DuckDB 视图或 baostock;`scripts/migrate_financial_akshare.py` 等历史一次性迁移脚本保留供归档,不再调用
 - **数据存储**:
   - **🚨 铁律(2026-05-21):所有业务数据来源**必须**是 `data/market/`,绝对禁止读取 `data/{kline,financial,dividend,valuation,indicators}/...` 等任何旧路径**。新增数据(分红、估值等当前缺失类目)也**必须落到 `data/market/{A,HK,US}/<category>/`** 下,按市场分区组织,统一英文 schema(对齐 EastMoney/YFinance 原始字段)
-  - **唯一业务数据源 = DuckDB**(2026-05-18 决策):所有业务代码(回测、选股、K 线展示、财务/估值/分红查询)**必须**经 `services/duckdb_store.py` 访问数据,**禁止**直接 `glob` parquet 或读旧路径文件。新增数据访问 API 必须先在 `DuckDBStore` 上加方法/视图
+  - **唯一业务数据源 = DuckDB**(2026-05-18 决策):所有业务代码(回测、选股、K 线展示、财务/估值/分红查询)**必须**经 `services/market_data/duckdb_store.py` 访问数据,**禁止**直接 `glob` parquet 或读旧路径文件。新增数据访问 API 必须先在 `DuckDBStore` 上加方法/视图
   - **DuckDB 唯一来源 = `data/market/`**:`data/market/{A,HK,US}/{daily,adjust_factor,financial/{income,balance,cashflow,indicator}}/*.parquet`(DuckDB 视图 `v_a_daily / v_a_adjust_factor / v_a_income / v_a_indicator / ...` 等)。财务表统一英文 schema(`REPORT_DATE / NETPROFIT / BASIC_EPS / ROEJQ / EPSJB / BPS / ...`)
   - **旧路径完全废弃**(2026-05-21 重申):`data/kline/`、`data/financial/A/`(中文 schema)、`data/dividend/A/`、`data/valuation/A/`、`data/indicators/A/` 全部不再被任何业务代码读取。当前残留引用(`config.py` 的 `VALUATION_DIR/DIVIDEND_DIR/FINANCIAL_DIR/INDICATOR_DIR`、`data_cache._load_valuation/_load_dividend/_load_financial`、`valuation_updater/dividend_updater` 写路径、`strategies/utils/{dividend,valuation,financial}.py` 中文字段名)需要逐步清理。物理目录可手动删除
   - 复权因子:`data/market/{market}/adjust_factor/*.parquet`
@@ -82,8 +82,8 @@
 - 任务结果持久化到 SQLite `backtest_tasks` 表(`final_result` 列存完整 JSON);进度仍存内存
 - **链式回测已废弃**:旧 Signal Table / `source_task_id` 继承选股结果的功能已从 Engine + API 移除;`backtest_tasks.source_task_id` 列与 `task_manager` 形参是历史遗留(仅持久化,无业务消费),勿据此误判功能仍在
 - **性能优化**:`MarketData` 启动时预聚合周/月线 + 预计算所有指标列(`indicators.py`),`get_bar_at` 用 numpy 二分查找,比 `get_price` 快 ~9.6×。Context 的 `get_indicator(name, symbol)` 直接读 DataFrame 列,O(1)
-- `aggregate_kline()`(`services/stock_data.py`)处理 W-FRI / M 聚合,被 MarketData 启动时调用
-- **DuckDB 查询层**(`services/duckdb_store.py`):用 `read_parquet()` 注册视图(`v_a_daily / v_hk_daily / v_us_daily / v_*_adjust_factor / v_*_{income,balance,cashflow,indicator}`),不导入数据
+- `aggregate_kline()`(`services/market_data/stock_data.py`)处理 W-FRI / M 聚合,被 MarketData 启动时调用
+- **DuckDB 查询层**(`services/market_data/duckdb_store.py`):用 `read_parquet()` 注册视图(`v_a_daily / v_hk_daily / v_us_daily / v_*_adjust_factor / v_*_{income,balance,cashflow,indicator}`),不导入数据
 - **前端从 Vue 迁到 React**(2025 末):旧版备份保留在 `frontend/src_vue_backup/`
 - **回测页三 Tab 结构**:策略回测(BacktestAnalysis)/ 策略雷达(StrategyRadar)/ 市场监控(MarketMonitor)
 - **K 线图**(`KlineChart.tsx`,lightweight-charts v5):默认显示 150 根,价格 MA5/10/20/30/60 可切换、Volume MA5/10、MACD pane,鼠标跟随 Tooltip,左右价格刻度可配
@@ -114,16 +114,20 @@ stock_investment/
 │   ├── models/                         # basic / market / financial / event Pydantic
 │   ├── repositories/                   # base / basic_repo / market_repo / financial_repo / event_repo
 │   ├── routers/                        # stock / stock_search / market_kline / data_update / market_update / backtest / screener / portfolio / valuation / dividend / financial / agent / system_config / auth_stub / meta
-│   ├── services/
-│   │   ├── stock_data.py               # aggregate_kline (W-FRI / M)
-│   │   ├── duckdb_store.py             # parquet 视图查询层
-│   │   ├── stock_index.py              # 全市场代码索引
-│   │   ├── qfq_cache.py                # 前复权缓存(派生)
-│   │   ├── market_updater.py           # 多市场并行增量
-
-│   │   ├── dividend_updater.py / financial_updater.py / valuation_updater.py
-│   │   ├── circulating_shares.py / indicator_store.py / indicator.py
-│   │   ├── api_utils.py / db_schema.py
+│   ├── services/                       # 五大模块各成子包 + 共享基建(2026-06-14 重构)
+│   │   ├── api_utils.py / db_schema.py # 共享基建:通用工具 + SQLite DDL(backtest+agent chat 表共用,故留根)
+│   │   ├── market_data/                # 首页·市场数据子系统(原扁平 14 文件收敛成包)
+│   │   │   ├── duckdb_store.py         # parquet 视图查询层(唯一业务数据入口)
+│   │   │   ├── stock_index.py          # 全市场代码索引
+│   │   │   ├── stock_data.py           # aggregate_kline (W-FRI / M)
+│   │   │   ├── indicator.py            # 指标计算工具
+│   │   │   ├── adjust_factor_audit.py  # 复权因子异常审计(剔除 yfinance 幻灵拆股)
+│   │   │   └── updaters/               # 各市场/品类数据更新器
+│   │   │       ├── market_updater.py   # A/HK/US 多市场并行增量(K线+复权+财务)
+│   │   │       ├── financial_sync.py   # 财务 4 表周期同步
+│   │   │       ├── dividend_market_updater.py / dividend_yf_updater.py  # A 股 / HK·US 分红
+│   │   │       ├── hk_connect_updater.py / hk_industry_updater.py       # 港股通成分 / 港股行业
+│   │   │       └── holder_updater.py / index_updater.py / circulating_shares.py  # 股东 / 指数 / 流通股
 │   │   ├── backtest/                   # Phase 6 后单一 Strategy 模型
 │   │   │   ├── engine.py               # 统一引擎:run() 完整回测 + run_scan() 雷达扫描
 │   │   │   ├── base.py                 # Strategy 单一类(screen + on_buy/on_sell hooks)
@@ -138,9 +142,11 @@ stock_investment/
 │   │   │   ├── strategy_loader.py      # importlib 扫描 + frequency
 │   │   │   ├── task_manager.py         # SQLite 持久化 + 进度
 │   │   │   └── date_utils.py           # format_match_date / date_belongs_to / detect_frequency
-│   │   └── portfolio/
-│   │       ├── db.py / manager.py
-│   └── tests/                          # 1332 cases
+│   │   ├── portfolio/
+│   │   │   ├── db.py / manager.py
+│   │   ├── agent/                      # 问股多 agent 平台(coordinator + core/ + agents/)
+│   │   └── system_config/              # 设置·LLM 渠道 / 通知配置
+│   └── tests/                          # 1300+ cases
 ├── strategies/deployed/             # 已发布策略(UI 只扫这里),现存 5 个(2026-06-14 精简)
 │   ├── hk_garp_strategy.py             # H股 GARP 冠军(frequency = "monthly")
 │   ├── low_valuation_quarterly_strategy.py            # A股 低估值季度
@@ -154,14 +160,13 @@ stock_investment/
 │   │   ├── App.tsx                     # 路由 + AuthProvider + Shell
 │   │   ├── main.tsx
 │   │   ├── pages/                      # HomePage / BacktestPage / PortfolioPage / ChatPage / SettingsPage / LoginPage / NotFoundPage
-│   │   ├── components/
-│   │   │   ├── KlineChart.tsx          # lightweight-charts v5,MA/MACD/Volume MA/Tooltip
-│   │   │   ├── backtest/               # BacktestAnalysis / Config / History / Result / StrategyRadar / MarketMonitor
-│   │   │   ├── common/                 # ~25 通用 UI 组件
-│   │   │   ├── layout/                 # Shell / SidebarNav / ShellHeader
-│   │   │   ├── settings/               # LLMChannelEditor / NotificationTestPanel 等
-│   │   │   ├── report/                 # ReportMarkdown / ReportNews 等
-│   │   │   ├── tasks/ history/ dashboard/ theme/ StockAutocomplete/
+│   │   ├── components/                 # 按五大模块分组(2026-06-14 重构,零裸露文件)
+│   │   │   ├── stock/                  # 首页·个股:KlineChart(lightweight-charts v5)/ StockAutocomplete
+│   │   │   ├── agent/                  # 问股:PhaseProgressCard / dashboard
+│   │   │   ├── backtest/               # 回测:BacktestAnalysis / Config / History / Result / StrategyRadar / MarketMonitor
+│   │   │   ├── settings/ theme/        # 设置 + 主题:LLMChannelEditor / NotificationTestPanel 等
+│   │   │   ├── common/                 # ~25 通用 UI 组件(共享)
+│   │   │   ├── layout/                 # Shell / SidebarNav / ShellHeader(共享)
 │   │   ├── api/                        # backtest / portfolio / stocks / agent / auth / history / analysis / systemConfig
 │   │   ├── stores/                     # agentChatStore / analysisStore / stockPoolStore (zustand)
 │   │   ├── contexts/AuthContext.tsx

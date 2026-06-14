@@ -52,7 +52,7 @@ def sync_a_share_financial(
 
         repo = FinancialRepository(MARKET_DIR / "A" / "financial")
     if codes is None:
-        from services.duckdb_store import get_store
+        from services.market_data.duckdb_store import get_store
 
         codes = get_store().list_symbols("A")
     if log_dir is None:

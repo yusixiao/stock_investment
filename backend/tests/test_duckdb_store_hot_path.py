@@ -12,8 +12,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from services.duckdb_store import DuckDBStore
-import services.duckdb_store as duckdb_store_module
+from services.market_data.duckdb_store import DuckDBStore
+import services.market_data.duckdb_store as duckdb_store_module
 from services.backtest.data_cache import MarketBundle
 
 

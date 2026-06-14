@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import { StockAutocomplete } from '../components/StockAutocomplete';
-import { KlineChart, type KlineDataPoint, type MacdDataPoint, type VolMaDataPoint, type PriceMaDataPoint } from '../components/KlineChart';
+import { StockAutocomplete } from '../components/stock/StockAutocomplete';
+import { KlineChart, type KlineDataPoint, type MacdDataPoint, type VolMaDataPoint, type PriceMaDataPoint } from '../components/stock/KlineChart';
 import apiClient from '../api';
 
 type Period = 'daily' | 'weekly' | 'monthly';

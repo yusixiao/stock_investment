@@ -9,9 +9,9 @@ import { Component, useRef, useState, useEffect } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useStockSearch } from '../../hooks/useStockSearch';
+import { useStockSearch } from '../../../hooks/useStockSearch';
 import { SuggestionsList } from './SuggestionsList';
-import { cn } from '../../utils/cn';
+import { cn } from '../../../utils/cn';
 
 const AUTOCOMPLETE_INPUT_CLASS =
   'input-surface input-focus-glow h-11 w-full rounded-xl border bg-transparent px-4 text-sm transition-all focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';

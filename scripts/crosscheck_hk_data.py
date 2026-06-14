@@ -28,8 +28,8 @@ import sys
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
-from backend.services.adjust_factor_audit import audit_factors  # noqa: E402
-from backend.services.duckdb_store import get_store  # noqa: E402
+from backend.services.market_data.adjust_factor_audit import audit_factors  # noqa: E402
+from backend.services.market_data.duckdb_store import get_store  # noqa: E402
 
 ADJUST_DIR = ROOT / "data" / "market" / "HK" / "adjust_factor"
 REPORT_MD = ROOT / "exported" / "hk_data_crosscheck.md"

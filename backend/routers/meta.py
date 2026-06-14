@@ -2,12 +2,12 @@
 
 from fastapi import APIRouter
 
-from services.circulating_shares import (
+from services.market_data.updaters.circulating_shares import (
     update_circulating_shares,
     get_circulating_shares,
 )
 from services.api_utils import BackgroundTaskRunner
-from services.duckdb_store import reload_views, get_store
+from services.market_data.duckdb_store import reload_views, get_store
 
 router = APIRouter(prefix="/api/meta", tags=["meta"])
 

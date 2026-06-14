@@ -7,8 +7,8 @@ import { agentApi } from '../api/agent';
 import { ApiErrorAlert, Badge, Button, ConfirmDialog, EmptyState, InlineAlert, ScrollArea, Tooltip } from '../components/common';
 import { getParsedApiError } from '../api/error';
 import type { SkillInfo } from '../api/agent';
-import { DashboardStateBlock } from '../components/dashboard';
-import PhaseProgressCard from '../components/PhaseProgressCard';
+import { DashboardStateBlock } from '../components/agent/dashboard';
+import PhaseProgressCard from '../components/agent/PhaseProgressCard';
 import {
   useAgentChatStore,
   type Message,

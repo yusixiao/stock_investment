@@ -6,7 +6,7 @@ scheduler = BackgroundScheduler()
 
 def _snapshot_job():
     """每日收盘快照:从 DuckDB 取 A 股最新收盘价 → 持仓估值。"""
-    from services.duckdb_store import get_store
+    from services.market_data.duckdb_store import get_store
     from services.portfolio.db import get_connection, init_db
     from services.portfolio.manager import PortfolioManager
 
@@ -40,7 +40,7 @@ def _market_update_job():
     logger = logging.getLogger(__name__)
     logger.info("Scheduled market update started")
     try:
-        from services.market_updater import update_all_markets
+        from services.market_data.updaters.market_updater import update_all_markets
 
         update_all_markets(parallel=True)
     except Exception as e:
@@ -50,7 +50,7 @@ def _market_update_job():
     # 刷新流通股快照(依赖 v_a_indicator 财务指标视图,需在市场更新之后)
     # data_pack §2 市值/流通市值 + EV/EBITDA 等衍生指标依赖此 parquet
     try:
-        from services.circulating_shares import update_circulating_shares
+        from services.market_data.updaters.circulating_shares import update_circulating_shares
 
         result = update_circulating_shares()
         logger.info(f"circulating_shares refreshed: {result}")
@@ -80,7 +80,7 @@ def _financial_sync_job():
     logger = logging.getLogger(__name__)
     logger.info("Scheduled financial sync started")
     try:
-        from services.financial_sync import sync_a_share_financial
+        from services.market_data.updaters.financial_sync import sync_a_share_financial
 
         result = sync_a_share_financial()
         logger.info(
@@ -99,7 +99,7 @@ def _hk_connect_refresh_job():
     logger = logging.getLogger(__name__)
     logger.info("Scheduled hk_connect refresh started")
     try:
-        from services.hk_connect_updater import fetch_and_save_hk_connect
+        from services.market_data.updaters.hk_connect_updater import fetch_and_save_hk_connect
 
         result = fetch_and_save_hk_connect()
         logger.info(f"hk_connect refresh done: {result}")
@@ -115,7 +115,7 @@ def _hk_industry_refresh_job():
     logger = logging.getLogger(__name__)
     logger.info("Scheduled hk_industry refresh started")
     try:
-        from services.hk_industry_updater import fetch_and_save_hk_industry
+        from services.market_data.updaters.hk_industry_updater import fetch_and_save_hk_industry
 
         result = fetch_and_save_hk_industry()
         logger.info(f"hk_industry refresh done: {result}")
@@ -131,7 +131,7 @@ def _index_update_job():
     logger = logging.getLogger(__name__)
     logger.info("Scheduled index update started")
     try:
-        from services.index_updater import update_all_indices
+        from services.market_data.updaters.index_updater import update_all_indices
 
         results = update_all_indices(full=False)
         logger.info(f"index update done: {results}")

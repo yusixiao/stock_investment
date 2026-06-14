@@ -10,7 +10,7 @@ import pytest
 
 from backend.models.holder import Top10HolderRecord, HolderCountRecord
 from backend.repositories.holder_repo import HolderRepository
-from backend.services.holder_updater import HolderUpdater
+from backend.services.market_data.updaters.holder_updater import HolderUpdater
 
 
 @pytest.fixture

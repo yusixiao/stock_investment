@@ -1,7 +1,7 @@
 import sqlite3
 from fastapi import APIRouter, HTTPException, Body
 
-from services.duckdb_store import get_store
+from services.market_data.duckdb_store import get_store
 from services.portfolio.db import get_connection, init_db
 from services.portfolio.manager import PortfolioManager
 from services.backtest.task_manager import task_manager

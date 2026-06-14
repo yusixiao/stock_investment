@@ -1,6 +1,6 @@
 import React from 'react';
-import { cn } from '../utils/cn';
-import type { ProgressStep } from '../stores/agentChatStore';
+import { cn } from '../../utils/cn';
+import type { ProgressStep } from '../../stores/agentChatStore';
 
 // CPA 三阶段:工具名 → 阶段标签
 const PHASE_DEFS: Array<{ tool: string; label: string; desc: string }> = [

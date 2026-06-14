@@ -224,7 +224,7 @@ def update_all_indices(full: bool = False) -> List[dict]:
 
     # 落库后刷新视图,业务侧立即可查
     try:
-        from backend.services.duckdb_store import get_store
+        from backend.services.market_data.duckdb_store import get_store
 
         store = get_store()
         for market in {item["market"] for item in INDEX_CATALOG}:

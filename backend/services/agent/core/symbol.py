@@ -98,7 +98,7 @@ def extract(
     Args:
       message: 用户输入消息(可能含股票码)
       context: 前端传入的会话上下文 dict,期望含 stock_code / stock_name
-      stock_index: services.stock_index 模块或具备 get_name(code) 方法的对象
+      stock_index: services.market_data.stock_index 模块或具备 get_name(code) 方法的对象
 
     Returns:
       StockRef(code/name/market)或 None

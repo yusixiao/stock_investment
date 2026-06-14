@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from services import stock_index
+from services.market_data import stock_index
 
 
 def _seed_index(monkeypatch, tmp_path):
@@ -44,7 +44,7 @@ def _seed_index(monkeypatch, tmp_path):
     # market 目录留空,不影响 A 股加载
     market_dir = tmp_path / "market"
     market_dir.mkdir()
-    monkeypatch.setattr("services.stock_index.MARKET_DIR", market_dir)
+    monkeypatch.setattr("services.market_data.stock_index.MARKET_DIR", market_dir)
     stock_index.init_stock_index()
 
 

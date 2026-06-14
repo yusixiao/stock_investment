@@ -13,7 +13,7 @@ import pandas as pd
 sys.path.insert(0, "backend")
 sys.path.insert(0, "scripts")
 
-from services.duckdb_store import init_duckdb  # noqa: E402
+from services.market_data.duckdb_store import init_duckdb  # noqa: E402
 
 from backtest_low_pb_value import (  # noqa: E402
     build_roe_lookup,
@@ -54,7 +54,7 @@ def main():
 
     # 加载股票名称映射(可选,从 v_a_indicator 取)
     print("加载股票名称 ...")
-    from services.duckdb_store import get_store
+    from services.market_data.duckdb_store import get_store
 
     name_map = {}
     try:

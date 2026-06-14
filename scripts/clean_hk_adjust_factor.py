@@ -31,12 +31,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
-from backend.services.adjust_factor_audit import (  # noqa: E402
+from backend.services.market_data.adjust_factor_audit import (  # noqa: E402
     audit_factors,
     recompute_factors,
 )
-from backend.services.duckdb_store import get_store  # noqa: E402
-from backend.services.market_updater import _get_repo  # noqa: E402
+from backend.services.market_data.duckdb_store import get_store  # noqa: E402
+from backend.services.market_data.updaters.market_updater import _get_repo  # noqa: E402
 
 def _adjust_dir(market: str) -> Path:
     return ROOT / "data" / "market" / market / "adjust_factor"

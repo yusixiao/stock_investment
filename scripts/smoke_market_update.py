@@ -18,8 +18,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-from services import market_updater
-from services.market_updater import _update_market_kline, _get_repo
+from services.market_data.updaters import market_updater
+from services.market_data.updaters.market_updater import _update_market_kline, _get_repo
 
 MARKET = sys.argv[1] if len(sys.argv) > 1 else "US"
 LIMIT = int(sys.argv[2]) if len(sys.argv) > 2 else 20
