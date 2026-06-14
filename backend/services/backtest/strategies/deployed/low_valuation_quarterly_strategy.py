@@ -44,8 +44,8 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from strategies.base import Strategy
-from strategies.utils import financial
+from services.backtest.strategy_base import Strategy
+from services.backtest.strategies.utils import financial
 
 
 # ===== isST 稀疏 cache(只装 isST=='1' 的 (sym, date) 对,A 股专用) =====

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from tests.utils_test_helpers import MockContext
 
-from strategies.utils.conservative import reject_roe_decline_3y
+from services.backtest.strategies.utils.conservative import reject_roe_decline_3y
 
 
 def _set_roe_3y(ctx, sym, roe_list):

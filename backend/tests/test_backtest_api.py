@@ -66,7 +66,7 @@ class TestBacktestRun:
         from pathlib import Path
 
         strategies_dir = (
-            Path(__file__).resolve().parent.parent.parent / "strategies" / "deployed"
+            Path(__file__).resolve().parent.parent / "services" / "backtest" / "strategies" / "deployed"
         )
         screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
 
@@ -113,7 +113,7 @@ class TestBacktestRun:
         mock_load.return_value = _make_test_bundle({"TEST.SH": df})
 
         strategies_dir = (
-            Path(__file__).resolve().parent.parent.parent / "strategies" / "deployed"
+            Path(__file__).resolve().parent.parent / "services" / "backtest" / "strategies" / "deployed"
         )
         screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
 
@@ -171,7 +171,7 @@ class TestBacktestRun:
         from pathlib import Path
 
         strategies_dir = (
-            Path(__file__).resolve().parent.parent.parent / "strategies" / "deployed"
+            Path(__file__).resolve().parent.parent / "services" / "backtest" / "strategies" / "deployed"
         )
         screener_path = str(strategies_dir / "ma_tangle_value_strategy.py")
 

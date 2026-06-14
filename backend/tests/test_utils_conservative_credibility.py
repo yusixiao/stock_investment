@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from tests.utils_test_helpers import MockContext
 
-from strategies.utils.conservative import (
+from services.backtest.strategies.utils.conservative import (
     _compute_profit_adjustment_5y,
     _compute_revenue_cv_5y,
     _count_lambda_warnings,

@@ -1,6 +1,6 @@
 import pandas as pd
 from tests.utils_test_helpers import MockContext
-from strategies.utils import dividend
+from services.backtest.strategies.utils import dividend
 
 
 def _div_df(rows):

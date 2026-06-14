@@ -45,7 +45,7 @@ def test_ma_windows_present_and_correct():
 
 def test_ema_and_macd_columns_match_legacy_ema():
     """新 EMA 末尾值应与 strategies/utils/kline._ema 末尾一致(项目硬性约定)。"""
-    from strategies.utils.kline import _ema as legacy_ema
+    from services.backtest.strategies.utils.kline import _ema as legacy_ema
 
     closes = [10.0 + 0.1 * i for i in range(60)]
     df = compute_indicators(_make_df(closes))

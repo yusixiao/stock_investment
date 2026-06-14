@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from services.backtest import data_cache
 from services.backtest.context import ScreenContext
 from services.backtest.market_data import MarketData
-from strategies.utils import conservative
+from services.backtest.strategies.utils import conservative
 
 START = "2017-01-01"
 END = "2026-05-28"

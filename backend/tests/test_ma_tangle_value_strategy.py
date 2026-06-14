@@ -1,8 +1,8 @@
 """MaTangleValueStrategy 元信息 + screen() 集成测试(Phase 2.3 / 2.4)。"""
 
 import pytest
-from strategies.deployed import ma_tangle_value_strategy as strategy_module
-from strategies.deployed.ma_tangle_value_strategy import MaTangleValueStrategy
+from services.backtest.strategies.deployed import ma_tangle_value_strategy as strategy_module
+from services.backtest.strategies.deployed.ma_tangle_value_strategy import MaTangleValueStrategy
 from backend.tests.utils_test_helpers import MockContext, make_tangle_breakout_stub
 
 
@@ -55,7 +55,7 @@ def test_default_settings_inherits_strategy_defaults():
 
 
 def test_inherits_from_new_strategy_base():
-    from strategies.base import Strategy
+    from services.backtest.strategy_base import Strategy
 
     assert issubclass(MaTangleValueStrategy, Strategy)
 

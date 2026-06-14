@@ -3,7 +3,7 @@
 本测试仅覆盖新增 Strategy 类。"""
 
 import pytest
-from strategies.base import Strategy
+from services.backtest.strategy_base import Strategy
 
 
 def test_default_screen_returns_input_symbols():

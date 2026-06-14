@@ -19,7 +19,7 @@ from services.backtest.market_filter import apply_market_filter, resolve_data_ma
 from services.backtest.strategy_loader import load_strategy_from_file, scan_strategies
 from services.backtest.task_manager import task_manager
 from services.market_data.stock_index import get_name as get_stock_name
-from strategies.base import Strategy
+from services.backtest.strategy_base import Strategy
 
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])

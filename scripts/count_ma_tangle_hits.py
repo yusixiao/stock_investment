@@ -25,7 +25,7 @@ log = logging.getLogger("count_hits")
 
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
-from strategies.deployed.ma_tangle_value_strategy import MaTangleValueStrategy
+from services.backtest.strategies.deployed.ma_tangle_value_strategy import MaTangleValueStrategy
 
 START = sys.argv[1] if len(sys.argv) > 1 else "2017-01-01"
 END = sys.argv[2] if len(sys.argv) > 2 else "2026-05-24"

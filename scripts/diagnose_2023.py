@@ -35,8 +35,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
 from services.market_data.duckdb_store import get_store
-from strategies.deployed.hk_garp_strategy import HkGarpStrategy
-from strategies.utils import growth_hk, hk_industry
+from services.backtest.strategies.deployed.hk_garp_strategy import HkGarpStrategy
+from services.backtest.strategies.utils import growth_hk, hk_industry
 
 try:
     from services.market_data import stock_index

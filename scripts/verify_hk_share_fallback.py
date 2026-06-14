@@ -21,8 +21,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 from services.backtest import data_cache
 from services.backtest.context import ScreenContext
 from services.backtest.market_data import MarketData
-from strategies.utils import conservative
-from strategies.utils.dividend import filter_by_dividend_years
+from services.backtest.strategies.utils import conservative
+from services.backtest.strategies.utils.dividend import filter_by_dividend_years
 
 
 START = "2017-01-01"

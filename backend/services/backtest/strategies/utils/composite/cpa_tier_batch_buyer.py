@@ -19,7 +19,7 @@
 参数:
     max_per_stock_pct(默认 0.20):单股仓位绝对上限,full=20%
     buy_weeks(默认 4):分批周数
-    tier_pct_map:可覆盖 TIER_PCT(默认从 strategies.utils.conservative 导入)
+    tier_pct_map:可覆盖 TIER_PCT(默认从 services.backtest.strategies.utils.conservative 导入)
 
 使用:
     self._buyer = CpaTierBatchBuyer(max_per_stock_pct=0.20, buy_weeks=4)
@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from datetime import date as _date
 
-from strategies.utils.conservative import TIER_PCT as _DEFAULT_TIER_PCT
+from services.backtest.strategies.utils.conservative import TIER_PCT as _DEFAULT_TIER_PCT
 
 
 class CpaTierBatchBuyer:

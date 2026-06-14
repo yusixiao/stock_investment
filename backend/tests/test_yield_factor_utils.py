@@ -6,7 +6,7 @@ import pandas as pd
 
 from tests.utils_test_helpers import MockContext
 
-from strategies.utils import yield_factor
+from services.backtest.strategies.utils import yield_factor
 
 
 def _ctx_with(

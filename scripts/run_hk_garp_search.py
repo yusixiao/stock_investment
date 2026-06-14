@@ -26,8 +26,8 @@ log = logging.getLogger("hk_garp")
 
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
-from strategies.utils import growth_hk, hk_industry
-from strategies.deployed.hk_garp_strategy import HkGarpStrategy
+from services.backtest.strategies.utils import growth_hk, hk_industry
+from services.backtest.strategies.deployed.hk_garp_strategy import HkGarpStrategy
 
 START = "2010-01-01"
 END = "2026-06-01"

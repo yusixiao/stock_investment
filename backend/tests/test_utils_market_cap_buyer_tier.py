@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from tests.utils_test_helpers import MockContext
 
-from strategies.utils.composite.market_cap_weighted_batch_buyer import (
+from services.backtest.strategies.utils.composite.market_cap_weighted_batch_buyer import (
     MarketCapWeightedBatchBuyer,
 )
 

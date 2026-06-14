@@ -277,7 +277,7 @@ class MockContext:
 
 
 def make_tangle_breakout_stub(ctx: "MockContext"):
-    """生成可替换 strategies.utils.kline.detect_ma_tangle_breakout 的 stub。
+    """生成可替换 services.backtest.strategies.utils.kline.detect_ma_tangle_breakout 的 stub。
 
     短路逻辑:symbol ∈ ctx._tangle_hits → 返回 True,否则 False;同步打 log。
     """

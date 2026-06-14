@@ -9,7 +9,7 @@
 - **排序**:PEG 升序 / 成长降序 / 复合,取 Top N 等权,定期调仓完全替换
 
 数据源:
-- 成长/ROE:`strategies.utils.growth_hk`(v_hk_income + v_hk_indicator,发布滞后
+- 成长/ROE:`services.backtest.strategies.utils.growth_hk`(v_hk_income + v_hk_indicator,发布滞后
   年报 +120 天 / 中报 +90 天,严防未来函数)
 - 估值:`ctx.get_valuation`(日线 peTTM / pbMRQ,PIT)
 
@@ -24,8 +24,8 @@ from datetime import date
 
 import pandas as pd
 
-from strategies.base import Strategy
-from strategies.utils import growth_hk, hk_industry
+from services.backtest.strategy_base import Strategy
+from services.backtest.strategies.utils import growth_hk, hk_industry
 
 
 class HkGarpStrategy(Strategy):

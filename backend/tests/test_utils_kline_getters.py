@@ -1,7 +1,7 @@
 import math
 
 from tests.utils_test_helpers import MockContext
-from strategies.utils import kline
+from services.backtest.strategies.utils import kline
 
 
 def _bars(closes, opens=None, highs=None, lows=None, vols=None):

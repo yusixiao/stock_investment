@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from tests.utils_test_helpers import MockContext
 
-from strategies.utils import quality
+from services.backtest.strategies.utils import quality
 
 
 # ===== 行业判断 =====

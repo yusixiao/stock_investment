@@ -37,11 +37,11 @@ cpa Agent 个股深度分析的精算 GG 不可机械化(每步都需 LLM 对会
   入场时记录 baseline(D/E、毛利率、payout)供规则 4/6/7 对比。
 """
 
-from strategies.base import Strategy
-from strategies.utils import conservative
-from strategies.utils import conservative_sell
-from strategies.utils import dividend
-from strategies.utils.composite.cpa_tier_batch_buyer import CpaTierBatchBuyer
+from services.backtest.strategy_base import Strategy
+from services.backtest.strategies.utils import conservative
+from services.backtest.strategies.utils import conservative_sell
+from services.backtest.strategies.utils import dividend
+from services.backtest.strategies.utils.composite.cpa_tier_batch_buyer import CpaTierBatchBuyer
 
 
 class ConservativeRoughStrategy(Strategy):

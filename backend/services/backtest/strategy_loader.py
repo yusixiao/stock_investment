@@ -2,7 +2,7 @@ import importlib.util
 import inspect
 from pathlib import Path
 
-from strategies.base import Strategy
+from services.backtest.strategy_base import Strategy
 
 
 def load_strategy_from_file(filepath: Path) -> list[type]:

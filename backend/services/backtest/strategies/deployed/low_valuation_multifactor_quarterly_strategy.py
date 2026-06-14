@@ -29,9 +29,9 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from strategies.base import Strategy
-from strategies.deployed.low_valuation_quarterly_strategy import _is_st_on
-from strategies.utils import financial, quality, yield_factor
+from services.backtest.strategy_base import Strategy
+from services.backtest.strategies.deployed.low_valuation_quarterly_strategy import _is_st_on
+from services.backtest.strategies.utils import financial, quality, yield_factor
 
 
 def _z_score(values: np.ndarray) -> np.ndarray:

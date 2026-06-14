@@ -30,8 +30,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from services.backtest import data_cache  # noqa: E402
 from services.backtest.engine import BacktestEngine  # noqa: E402
-from strategies.utils import growth_hk, hk_industry  # noqa: E402
-from strategies.deployed.hk_garp_strategy import HkGarpStrategy  # noqa: E402
+from services.backtest.strategies.utils import growth_hk, hk_industry  # noqa: E402
+from services.backtest.strategies.deployed.hk_garp_strategy import HkGarpStrategy  # noqa: E402
 
 START = "2010-01-01"
 END = "2026-06-01"

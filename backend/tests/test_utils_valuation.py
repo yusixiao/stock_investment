@@ -1,5 +1,5 @@
 from tests.utils_test_helpers import MockContext
-from strategies.utils import valuation
+from services.backtest.strategies.utils import valuation
 
 
 def test_get_pe_returns_value():

@@ -21,7 +21,7 @@ import pandas as pd
 import pytest
 
 from services.backtest.engine import BacktestEngine
-from strategies.base import Strategy
+from services.backtest.strategy_base import Strategy
 
 
 def _make_daily(dates: list[str], base: float = 10.0) -> pd.DataFrame:

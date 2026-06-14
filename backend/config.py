@@ -9,8 +9,9 @@ MARKET_DIR = DATA_DIR / "market"
 # 问股 · 定性分析产物缓存(business-analysis agent)
 # 跨任务共享(cpa Phase 0 / BA agent 都读这里),所以归 data/ 不是 report/
 QUALITATIVE_DIR = DATA_DIR / "qualitative"
-STRATEGY_DIR = BASE_DIR / "strategies"
-# UI/回测只加载已发布策略:strategies/deployed/。在研策略放 strategies/experiments/,不进 UI
+# 策略已迁入回测子系统:backend/services/backtest/strategies/(2026-06-14)
+STRATEGY_DIR = Path(__file__).resolve().parent / "services" / "backtest" / "strategies"
+# UI/回测只加载已发布策略:.../strategies/deployed/。在研策略放 .../strategies/experiments/,不进 UI
 DEPLOYED_STRATEGY_DIR = STRATEGY_DIR / "deployed"
 LOG_DIR = BASE_DIR / "logs"
 PORTFOLIO_DB = DATA_DIR / "portfolio.db"

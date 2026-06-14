@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
 from services.backtest import data_cache  # noqa: E402
-from strategies.utils import growth_hk, hk_industry  # noqa: E402
+from services.backtest.strategies.utils import growth_hk, hk_industry  # noqa: E402
 
 growth_hk.reset_cache()
 hk_industry.reset_cache()

@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from tests.utils_test_helpers import MockContext
-from strategies.utils import financial
+from services.backtest.strategies.utils import financial
 
 
 def test_get_roe_returns_value():

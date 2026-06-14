@@ -4,7 +4,7 @@
 """
 
 from tests.utils_test_helpers import MockContext
-from strategies.utils import kline
+from services.backtest.strategies.utils import kline
 
 
 def _bars_from_closes(closes, opens=None, vols=None):

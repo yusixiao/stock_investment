@@ -2,7 +2,7 @@
 
 import pytest
 
-from strategies.utils import conservative_sell as cs
+from services.backtest.strategies.utils import conservative_sell as cs
 
 from .utils_test_helpers import MockContext
 

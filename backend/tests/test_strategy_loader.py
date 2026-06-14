@@ -4,10 +4,10 @@ from services.backtest.strategy_loader import (
     load_strategy_from_file,
     scan_strategies,
 )
-from strategies.base import Strategy
+from services.backtest.strategy_base import Strategy
 
 
-DEPLOYED_DIR = Path(__file__).resolve().parent.parent.parent / "strategies" / "deployed"
+DEPLOYED_DIR = Path(__file__).resolve().parent.parent / "services" / "backtest" / "strategies" / "deployed"
 
 
 class TestLoadStrategyFromFile:
@@ -88,7 +88,7 @@ class TestStrategyBaseExclusion:
         # 直接定义一个仅含 Strategy 基类(无子类)的文件,扫描结果应为空
         f = tmp_path / "only_base.py"
         f.write_text(
-            "from strategies.base import Strategy\n"
+            "from services.backtest.strategy_base import Strategy\n"
             "X = Strategy  # 仅引用,不创建子类\n"
         )
         results = scan_strategies(tmp_path)
@@ -98,7 +98,7 @@ class TestStrategyBaseExclusion:
         # 在临时目录中定义一个 Strategy 子类,应该被加载
         f = tmp_path / "mine.py"
         f.write_text(
-            "from strategies.base import Strategy\n"
+            "from services.backtest.strategy_base import Strategy\n"
             "class MyStrat(Strategy):\n"
             "    name = 'mine'\n"
             "    description = 'd'\n"

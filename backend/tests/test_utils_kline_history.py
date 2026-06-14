@@ -1,5 +1,5 @@
 from tests.utils_test_helpers import MockContext
-from strategies.utils import kline
+from services.backtest.strategies.utils import kline
 
 
 def _bar(date, open_, close, low=None, high=None, volume=1000):

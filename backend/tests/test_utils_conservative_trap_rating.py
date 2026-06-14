@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from tests.utils_test_helpers import MockContext
 
-from strategies.utils.conservative import (
+from services.backtest.strategies.utils.conservative import (
     compute_trap_rating,
     record_trap_rating,
 )

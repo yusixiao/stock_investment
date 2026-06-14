@@ -13,10 +13,10 @@ import pandas as pd
 
 from tests.utils_test_helpers import MockContext
 
-from strategies.deployed import (
+from services.backtest.strategies.deployed import (
     low_valuation_multifactor_quarterly_strategy as mod,
 )
-from strategies.deployed.low_valuation_multifactor_quarterly_strategy import (
+from services.backtest.strategies.deployed.low_valuation_multifactor_quarterly_strategy import (
     LowValuationMultiFactorQuarterlyStrategy,
 )
 

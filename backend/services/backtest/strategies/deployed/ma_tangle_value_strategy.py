@@ -30,10 +30,10 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from strategies.base import Strategy
-from strategies.utils import dividend, valuation, financial, kline
-from strategies.utils.kline import get_macd_hist_series
-from strategies.utils.composite.market_cap_weighted_batch_buyer import (
+from services.backtest.strategy_base import Strategy
+from services.backtest.strategies.utils import dividend, valuation, financial, kline
+from services.backtest.strategies.utils.kline import get_macd_hist_series
+from services.backtest.strategies.utils.composite.market_cap_weighted_batch_buyer import (
     MarketCapWeightedBatchBuyer,
 )
 

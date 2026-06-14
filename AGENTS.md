@@ -24,13 +24,13 @@
   - **🚨 铁律(2026-05-21):所有业务数据来源**必须**是 `data/market/`,绝对禁止读取 `data/{kline,financial,dividend,valuation,indicators}/...` 等任何旧路径**。新增数据(分红、估值等当前缺失类目)也**必须落到 `data/market/{A,HK,US}/<category>/`** 下,按市场分区组织,统一英文 schema(对齐 EastMoney/YFinance 原始字段)
   - **唯一业务数据源 = DuckDB**(2026-05-18 决策):所有业务代码(回测、选股、K 线展示、财务/估值/分红查询)**必须**经 `services/market_data/duckdb_store.py` 访问数据,**禁止**直接 `glob` parquet 或读旧路径文件。新增数据访问 API 必须先在 `DuckDBStore` 上加方法/视图
   - **DuckDB 唯一来源 = `data/market/`**:`data/market/{A,HK,US}/{daily,adjust_factor,financial/{income,balance,cashflow,indicator}}/*.parquet`(DuckDB 视图 `v_a_daily / v_a_adjust_factor / v_a_income / v_a_indicator / ...` 等)。财务表统一英文 schema(`REPORT_DATE / NETPROFIT / BASIC_EPS / ROEJQ / EPSJB / BPS / ...`)
-  - **旧路径完全废弃**(2026-05-21 重申):`data/kline/`、`data/financial/A/`(中文 schema)、`data/dividend/A/`、`data/valuation/A/`、`data/indicators/A/` 全部不再被任何业务代码读取。**代码层残留已基本清理**(2026-06-14):`config.py` 旧常量(`VALUATION_DIR/DIVIDEND_DIR/FINANCIAL_DIR/INDICATOR_DIR/KLINE_DIR/BASIC_DIR`)已移除;`data_cache._load_{valuation,dividend,financial}` 已走 DuckDB(无旧路径字面量);A 股代码索引源 `stock_index` 已从 `data/basic/A/stock_list.parquet` 迁到 **`data/market/A/stock_list.parquet`**(`A_INDEX_DIR = MARKET_DIR/"A"`,与 HK/US 的 `data/market/<mkt>/stock_list.*` 对齐)。**唯一未清残留 = `strategies/utils/{conservative,growth,financial,quality,...}.py` 中文字段名**(待单独清理)。**6 个零活引用废弃目录已归入 `data/old/`**(2026-06-14):`data/old/{basic,dividend,financial,indicators,kline,valuation}`(~4.2GB,与 `market/` 平级),业务代码零引用,**可随时整体 `rm -rf data/old/`**(本次未删)。唯一指向旧路径的是 `scripts/migrate_*.py`、`backfill_industry.py`、`diff_market_vs_kline.py` 等归档/诊断脚本(不在运行链路,部分已因 config 删常量失效),若要重跑需手动加 `old/` 前缀
+  - **旧路径完全废弃**(2026-05-21 重申):`data/kline/`、`data/financial/A/`(中文 schema)、`data/dividend/A/`、`data/valuation/A/`、`data/indicators/A/` 全部不再被任何业务代码读取。**代码层残留已基本清理**(2026-06-14):`config.py` 旧常量(`VALUATION_DIR/DIVIDEND_DIR/FINANCIAL_DIR/INDICATOR_DIR/KLINE_DIR/BASIC_DIR`)已移除;`data_cache._load_{valuation,dividend,financial}` 已走 DuckDB(无旧路径字面量);A 股代码索引源 `stock_index` 已从 `data/basic/A/stock_list.parquet` 迁到 **`data/market/A/stock_list.parquet`**(`A_INDEX_DIR = MARKET_DIR/"A"`,与 HK/US 的 `data/market/<mkt>/stock_list.*` 对齐)。**唯一未清残留 = `services/backtest/strategies/utils/{conservative,growth,financial,quality,...}.py` 中文字段名**(待单独清理)。**6 个零活引用废弃目录已归入 `data/old/`**(2026-06-14):`data/old/{basic,dividend,financial,indicators,kline,valuation}`(~4.2GB,与 `market/` 平级),业务代码零引用,**可随时整体 `rm -rf data/old/`**(本次未删)。唯一指向旧路径的是 `scripts/migrate_*.py`、`backfill_industry.py`、`diff_market_vs_kline.py` 等归档/诊断脚本(不在运行链路,部分已因 config 删常量失效),若要重跑需手动加 `old/` 前缀
   - 复权因子:`data/market/{market}/adjust_factor/*.parquet`
    - 业务库:`data/portfolio.db`(SQLite)**跨 3 模块共享**:持仓(`portfolios / trades / snapshots / stock_exclusions`)+ 回测(`backtest_tasks`)+ 问股(`chat_sessions / chat_messages`)。**不只是回测用**
 - **代码注释**:复杂/非显然逻辑必须加注释;日志保持信息量
 - **MACD bar**:`2 × (DIF - DEA)`(用户明确要求)
-- **🚨 策略目录铁律(2026-06-14)**:`strategies/deployed/` = **已发布策略**(UI/回测 `/api/backtest/strategies` 只扫这里,经 `config.DEPLOYED_STRATEGY_DIR`);`strategies/experiments/` = **在研策略**(策略研究优先写这里,**不暴露给 UI**)。两者都通过 `importlib` 按文件路径加载(信任本地用户)。原 `strategies/examples/` 已重命名为 `deployed/`
-- **策略定义**:已发布策略放 `strategies/deployed/*.py`,在研策略放 `strategies/experiments/*.py`
+- **🚨 策略目录铁律(2026-06-14 迁入 backtest)**:策略已从顶层 `strategies/` **整体迁入回测子系统** `backend/services/backtest/strategies/`(理由:策略均为开发者自写、与回测引擎深度耦合,Phase 6.2「作者无需感知 backend」的反转依赖理由已不成立)。`.../strategies/deployed/` = **已发布策略**(UI/回测 `/api/backtest/strategies` 只扫这里,经 `config.DEPLOYED_STRATEGY_DIR`);`.../strategies/experiments/` = **在研策略**(策略研究优先写这里,**不暴露给 UI**)。两者都通过 `importlib` 按文件路径加载(信任本地用户)。`strategies/`、`deployed/`、`experiments/` 均补了 `__init__.py` 成为正规包(与 `backtest/` 正规包对齐,避免 `37b5db1` 命名空间包子线程隐患)。原顶层 `strategies/base.py` 已合并 `ParamAccessor` → `backend/services/backtest/strategy_base.py`(旧 `services/backtest/base.py` 已删)
+- **策略定义**:已发布策略放 `backend/services/backtest/strategies/deployed/*.py`,在研策略放 `backend/services/backtest/strategies/experiments/*.py`;基类 `from services.backtest.strategy_base import Strategy`
 - **回测架构**:事件驱动,Broker 处理 T+1、涨跌停、佣金万三+印花税千一、滑点(策略模型见下方「策略模型(Phase 6)」单一 Strategy 类)
 - **成交价**:默认 `(open + close) / 2` 中间价。Broker 支持自定义 `price_func`(如月线 `(high+low)/2`)
 - **回测数据**:使用 `qfq/`(前复权);K 线显示支持 raw/qfq 切换
@@ -38,7 +38,7 @@
 - **持仓估值**:用 parquet 最新收盘价(非实时 API)。**持仓本身不入库**,由 trades 在内存推导
 - **`write` 工具对超大内容会中止** — 拆成多次小写
 - **前端端口**:3001(`vite.config.ts`),代理 `/api → 127.0.0.1:8000`
-- **策略模型(2026-05 重构,Phase 6)**:**Pipeline + Screener/Buyer/Seller 三角拆分模型已废弃**。当前为**单一 Strategy 类**(`strategies/base.py::Strategy` / `ScreenerStrategy`),策略实现 `screen(ctx, symbols) -> List[str]` + 可选 `on_buy(ctx, symbol)` / `on_sell(ctx, symbol)` hooks。示例:`strategies/deployed/ma_tangle_value_strategy.py`、`hk_garp_strategy.py`
+- **策略模型(2026-05 重构,Phase 6)**:**Pipeline + Screener/Buyer/Seller 三角拆分模型已废弃**。当前为**单一 Strategy 类**(`services/backtest/strategy_base.py::Strategy` / `ScreenerStrategy`),策略实现 `screen(ctx, symbols) -> List[str]` + 可选 `on_buy(ctx, symbol)` / `on_sell(ctx, symbol)` hooks。示例:`services/backtest/strategies/deployed/ma_tangle_value_strategy.py`、`hk_garp_strategy.py`
 - **API 兼容**:`/api/screener/run` 与 `/api/backtest/run` 仍接收 `pipeline: []` 数组,但**只取首元素**加载策略类(importlib),应用参数覆盖,执行 `screen` / 完整回测
 - **统一 Context**(`backend/services/backtest/context.py`):`Context` 类**取代旧 ScreenerContext / TraderContext**,集中管理市场数据访问、broker 下单、决策日志、symbol pool 注入(每根 bar 由 Engine 注入)、因子收集(`record_factor` / `get_factors` / `reset_factors`)。轻量版 `ScreenContext` 用于 `/api/screener/run` 与 scan-radar(无 broker、可选 `log_sink`)
 - **MarketData 适配器**(`backend/services/backtest/market_data.py`):BacktestEngine 数据层。预计算 numpy 缓存(daily OHLC 数组、日期数组、估值/财务表),日期索引用二分查找(O(log N))。**启动时预聚合周/月线**(`aggregate_kline`),其余频率懒加载。`get_bar_at` 比 `get_price` 快 ~9.6×。strict 模式仅在目标日期精确匹配 period 末日时返回 bar
@@ -97,7 +97,7 @@
 - **子项目 1-3 全部完成**:数据管理+K 线 / 选股+回测 / 持仓管理
 - **多市场数据层**(2025 末-2026 初):`adapters/`(base/baostock/eastmoney/yfinance + data_source 装配)+ `models/`(4 Pydantic 实体)+ `repositories/`(parquet I/O)+ `market_updater`(A/HK/US 并行增量)+ `duckdb_store`(视图查询)+ `backup_to_baidu`(周备份)+ scheduler(06:00 更新/15:30 快照/周日 03:00 备份)
 - **财务/分红/估值子系统**:dividend/financial/valuation updater + router,circulating_shares / indicator_store / stock_index / qfq_cache,Context `get_dividend/get_financial/get_valuation`
-- **回测引擎 Phase 6**:三角拆分模型 + StrategyGroup 废弃,统一单一 `Strategy` 类 + `BacktestEngine.run()/run_scan()`;因子逻辑下沉 `strategies/utils/`
+- **回测引擎 Phase 6**:三角拆分模型 + StrategyGroup 废弃,统一单一 `Strategy` 类 + `BacktestEngine.run()/run_scan()`;因子逻辑下沉 `services/backtest/strategies/utils/`
 - **前端 React 重构**:Vue 3 → React 19 + TS + Tailwind v4 + zustand + react-router 7;Shell 布局 + 主题切换 + Auth;7 页(Home/Backtest/Portfolio/Chat/Settings/Login/NotFound)+ ~25 通用组件 + 3 store;vitest + Playwright smoke
 - **持续增强**:数据更新带日期选择 + poll 优雅停止;任务历史表;回测详情页显示 pipeline 配置/参数/日期范围
 
@@ -129,7 +129,7 @@ stock_investment/
 │   │   │       └── holder_updater.py / index_updater.py / circulating_shares.py  # 股东 / 指数 / 流通股
 │   │   ├── backtest/                   # Phase 6 后单一 Strategy 模型
 │   │   │   ├── engine.py               # 统一引擎:run() 完整回测 + run_scan() 雷达扫描
-│   │   │   ├── base.py                 # Strategy 单一类(screen + on_buy/on_sell hooks)
+│   │   │   ├── strategy_base.py        # Strategy 单一类 + ParamAccessor(2026-06-14 合并自旧 base.py)
 │   │   │   ├── context.py              # Context 统一(取代旧 ScreenerContext / TraderContext)
 │   │   │   ├── market_data.py          # numpy 缓存 + 二分查找;启动预聚合周/月线
 │   │   │   ├── indicators.py           # 加载阶段一次性算 MA/EMA/MACD/Vol MA + Context O(1) 查
@@ -140,20 +140,22 @@ stock_investment/
 │   │   │   ├── analyzer.py             # 指标计算
 │   │   │   ├── strategy_loader.py      # importlib 扫描 + frequency
 │   │   │   ├── task_manager.py         # SQLite 持久化 + 进度
-│   │   │   └── date_utils.py           # format_match_date / date_belongs_to / detect_frequency
+│   │   │   ├── date_utils.py           # format_match_date / date_belongs_to / detect_frequency
+│   │   │   └── strategies/             # 策略包(2026-06-14 从顶层 strategies/ 迁入)
+│   │   │       ├── deployed/           # 已发布策略(UI 只扫这里),现存 5 个
+│   │   │       │   ├── hk_garp_strategy.py                       # H股 GARP 冠军(frequency = "monthly")
+│   │   │       │   ├── low_valuation_quarterly_strategy.py       # A股 低估值季度
+│   │   │       │   ├── low_valuation_multifactor_quarterly_strategy.py # A股 低估值多因子季度
+│   │   │       │   ├── ma_tangle_value_strategy.py               # A股 月线均线缠绕价值
+│   │   │       │   └── conservative_rough_strategy.py            # A股 现金流保守(粗算)
+│   │   │       ├── experiments/        # 在研策略(优先写这里,不暴露给 UI)
+│   │   │       └── utils/              # 因子工具:conservative/growth/financial/quality/kline/composite
 │   │   ├── portfolio/
 │   │   │   ├── db.py / manager.py
  │   │   ├── agent/                      # 问股多 agent 平台(coordinator + core/ + agents/)
 │   │   ├── system_config/              # 设置·LLM 渠道 / 通知配置
 │   │   └── migrations/                 # 参考性 SQL 存档(merge-strategies;实际迁移由 db_schema.py 幂等下发)
 │   └── tests/                          # 1300+ cases
-├── strategies/deployed/             # 已发布策略(UI 只扫这里),现存 5 个(2026-06-14 精简)
-│   ├── hk_garp_strategy.py             # H股 GARP 冠军(frequency = "monthly")
-│   ├── low_valuation_quarterly_strategy.py            # A股 低估值季度
-│   ├── low_valuation_multifactor_quarterly_strategy.py # A股 低估值多因子季度
-│   ├── ma_tangle_value_strategy.py     # A股 月线均线缠绕价值
-│   └── conservative_rough_strategy.py  # A股 现金流保守(粗算)
-├── strategies/experiments/          # 在研策略(策略研究优先写这里,不暴露给 UI)
 ├── frontend/                           # name: dsa-web,React 19 + TS + Tailwind v4
 │   ├── vite.config.ts                  # port 3001, proxy /api → :8000
 │   ├── src/
@@ -319,7 +321,7 @@ backend/services/agent/
 - **用途**:
   1. 给 cpa Agent 提供候选股票池(5400+ → 几十)
   2. 作为 cpa LLM 真实精算结果的回测基线对比
-- **代码位置**:`strategies/utils/conservative.py` + `strategies/deployed/conservative_rough_strategy.py`,docstring 显式标注「粗算 / 不是 cpa 精算 KK」
+- **代码位置**:`services/backtest/strategies/utils/conservative.py` + `services/backtest/strategies/deployed/conservative_rough_strategy.py`,docstring 显式标注「粗算 / 不是 cpa 精算 KK」
 
 ### 三层模型 Roadmap(详见 `docs/design_conservative_strategy_layers.md`)
 

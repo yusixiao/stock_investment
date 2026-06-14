@@ -9,7 +9,7 @@ import pandas as pd
 
 from tests.utils_test_helpers import MockContext
 
-from strategies.deployed.conservative_rough_strategy import ConservativeRoughStrategy
+from services.backtest.strategies.deployed.conservative_rough_strategy import ConservativeRoughStrategy
 
 
 def _build_ctx_high_quality(sym="GOOD"):

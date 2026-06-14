@@ -4,7 +4,7 @@
 日期降序,字段 date/open/high/low/close/volume/amount)。
 
 用法:
-    from strategies.utils.index_timing import csi300_is_bull
+    from services.backtest.strategies.utils.index_timing import csi300_is_bull
     if not csi300_is_bull(date_str, ma_period=200):
         return []  # 空仓
 """

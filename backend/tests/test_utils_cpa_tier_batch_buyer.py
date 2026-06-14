@@ -10,7 +10,7 @@ import pytest
 
 from tests.utils_test_helpers import MockContext
 
-from strategies.utils.composite.cpa_tier_batch_buyer import CpaTierBatchBuyer
+from services.backtest.strategies.utils.composite.cpa_tier_batch_buyer import CpaTierBatchBuyer
 
 
 def _approx_orders(

@@ -32,7 +32,7 @@ log = logging.getLogger("phase4")
 
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
-from strategies.deployed.conservative_rough_strategy import ConservativeRoughStrategy
+from services.backtest.strategies.deployed.conservative_rough_strategy import ConservativeRoughStrategy
 
 START = "2017-01-01"
 END = "2026-05-28"

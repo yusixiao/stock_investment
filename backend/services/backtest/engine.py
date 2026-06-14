@@ -24,7 +24,7 @@ from services.backtest.context import Context, ScreenContext
 from services.backtest.date_utils import format_match_date
 from services.backtest.decision_log import DecisionLogSink
 from services.backtest.market_data import MarketData
-from strategies.base import Strategy
+from services.backtest.strategy_base import Strategy
 
 
 class BacktestEngine:
