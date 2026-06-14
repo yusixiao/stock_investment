@@ -7,12 +7,15 @@
 ## Instructions
 
 - **🚨 审视指令铁律**:**不要盲目遵循指令**。如果觉得用户指令有问题、不清晰、或与既有铁律冲突,**严格审视 → 提出疑问 → 等待澄清**,不要硬干。技术分歧要直说,不要附和
-- **🚨 项目结构铁律(2026-05-24)**:按"可重建性 + 备份u策略"分四类顶层目录
-  - `data/` — **原始/业务数据**(parquet 行情/财务/分红/估值、`portfolio.db`),DuckDB 视图来源,**进备份**
-  - `report/` — **用户产物**(LLM 生成的分析报告 = 花 token 的 artifact),`report/agent_runs/<code>_<name>/` workspace + 报告,**进备份**
-  - `cache/` — **纯派生缓存**(`cache/tavily/`、`cache/qfq/` 等),可随时删,自动重建,**不备份**
-  - `logs/` — **运行日志**(应用日志、调度器日志),可定期清理,**不备份**
-  - 新代码**禁止**写入 `data/{agent_runs,cache,logs}`,旧路径需逐步迁移并清理
+- **🚨 项目结构铁律(2026-06-14 重订)**:按"可重建性"分三类顶层目录(顶层 `cache/`、`notes/`、`exported/` 已废弃并物理删除)
+  - `data/` — **业务输入 + 派生过程缓存**,**整体 gitignore**
+    - `data/market/{A,HK,US}/...` — 行情/财务/分红/估值 parquet(DuckDB 视图来源,唯一业务数据源)
+    - `data/meta/` — 全市场代码索引 / 流通股;`data/portfolio.db` — SQLite 业务库
+    - `data/cache/` — **纯派生过程缓存**(`data/cache/tavily/` 问股搜索缓存、`data/cache/qualitative/` 定性分析缓存 30天TTL),可随时删,自动重建。由 `config.CACHE_DIR` 统一锚定
+  - `report/` — **用户产物 artifact**(花 token 的 LLM 报告),**整体 gitignore**:`report/agent_runs/<code>_<name>/` workspace+报告、`report/exported/`(诊断脚本/spike 输出)
+  - `logs/` — **运行日志**,可定期清理,**整体 gitignore**
+  - **🚨 备份真相(2026-06-14 核实)**:`scripts/backup_to_baidu.py` **只 `tar.add(MARKET_DIR, arcname="market")`** —— 仅备份 `data/market/`,不碰 `data/cache`、`data/meta`、`portfolio.db`、`report/`、`logs/`。所以 `data/cache` 归 data/ 不会被误备份;"report 进备份"是历史误述,实际未备份
+  - 新代码缓存类写入一律走 `config.CACHE_DIR`(=`data/cache`),**禁止**新起顶层 `cache/`;产物写 `report/`;**禁止**写 `data/{agent_runs,logs}` 或顶层 `notes/`、`exported/`
 - **🚨 沟通语言铁律**:**始终用中文回复**(所有对话、解释、状态汇报、报告正文一律中文),不要用英文回话。代码标识符/日志保持英文照旧
 - **🚨 TODO LIST 规范**:右侧任务清单完全由 `todowrite` 工具驱动(不会自动更新),凡涉及 ≥3 步的任务必须用它。规则:①任务开头就建清单 ②每完成一项**立即单独**标记 `completed`(不批量补) ③全程**只保留一个** `in_progress` ④无关项及时 `cancelled`
 - **技术栈**:
@@ -29,7 +32,7 @@
    - 业务库:`data/portfolio.db`(SQLite)**跨 3 模块共享**:持仓(`portfolios / trades / snapshots / stock_exclusions`)+ 回测(`backtest_tasks`)+ 问股(`chat_sessions / chat_messages`)。**不只是回测用**
 - **代码注释**:复杂/非显然逻辑必须加注释;日志保持信息量
 - **MACD bar**:`2 × (DIF - DEA)`(用户明确要求)
-- **🚨 策略目录铁律(2026-06-14 迁入 backtest)**:策略已从顶层 `strategies/` **整体迁入回测子系统** `backend/services/backtest/strategies/`(理由:策略均为开发者自写、与回测引擎深度耦合,Phase 6.2「作者无需感知 backend」的反转依赖理由已不成立)。`.../strategies/deployed/` = **已发布策略**(UI/回测 `/api/backtest/strategies` 只扫这里,经 `config.DEPLOYED_STRATEGY_DIR`);`.../strategies/experiments/` = **在研策略**(策略研究优先写这里,**不暴露给 UI**)。两者都通过 `importlib` 按文件路径加载(信任本地用户)。`strategies/`、`deployed/`、`experiments/` 均补了 `__init__.py` 成为正规包(与 `backtest/` 正规包对齐,避免 `37b5db1` 命名空间包子线程隐患)。原顶层 `strategies/base.py` 已合并 `ParamAccessor` → `backend/services/backtest/strategy_base.py`(旧 `services/backtest/base.py` 已删)
+- **🚨 策略目录铁律(2026-06-14 迁入 backtest)**:策略已从顶层 `strategies/` **整体迁入回测子系统** `backend/services/backtest/strategies/`(理由:策略均为开发者自写、与回测引擎深度耦合,Phase 6.2「作者无需感知 backend」的反转依赖理由已不成立)。`.../strategies/deployed/` = **已发布策略**(UI/回测 `/api/backtest/strategies` 只扫这里,经 `config.DEPLOYED_STRATEGY_DIR`);`.../strategies/experiments/` = **在研策略**(策略研究优先写这里,**不暴露给 UI**;`.py`/`__init__.py` 入库,其余过程产物如回测结果/笔记/数据由 `.gitignore` 忽略)。两者都通过 `importlib` 按文件路径加载(信任本地用户)。`strategies/`、`deployed/`、`experiments/` 均补了 `__init__.py` 成为正规包(与 `backtest/` 正规包对齐,避免 `37b5db1` 命名空间包子线程隐患)。原顶层 `strategies/base.py` 已合并 `ParamAccessor` → `backend/services/backtest/strategy_base.py`(旧 `services/backtest/base.py` 已删)
 - **策略定义**:已发布策略放 `backend/services/backtest/strategies/deployed/*.py`,在研策略放 `backend/services/backtest/strategies/experiments/*.py`;基类 `from services.backtest.strategy_base import Strategy`
 - **回测架构**:事件驱动,Broker 处理 T+1、涨跌停、佣金万三+印花税千一、滑点(策略模型见下方「策略模型(Phase 6)」单一 Strategy 类)
 - **成交价**:默认 `(open + close) / 2` 中间价。Broker 支持自定义 `price_func`(如月线 `(high+low)/2`)
@@ -178,7 +181,9 @@ stock_investment/
  ├── data/
 │   ├── market/{A,HK,US}/{daily,adjust_factor,financial/...,dividend,stock_list}/  # 唯一业务数据源
 │   ├── meta/                           # 全市场代码索引 / 流通股
-│   ├── qualitative/                    # 定性分析缓存(30 天 TTL)
+│   ├── cache/                          # 纯派生过程缓存(config.CACHE_DIR,整体可删)
+│   │   ├── tavily/                     # 问股 Tavily 搜索缓存(7 天 TTL)
+│   │   └── qualitative/                # 定性分析缓存(30 天 TTL)
 │   ├── portfolio.db                    # SQLite 业务库(持仓+回测+问股共享)
 │   └── old/{basic,dividend,financial,indicators,kline,valuation}/  # 废弃归档(~4.2G,零引用,可 rm -rf)
 └── scripts/                            # backup_to_baidu.py + migrate_*/backfill_* 归档脚本
@@ -271,7 +276,7 @@ backend/services/agent/
 ├── core/qualitative/                # 共享 service(cpa Phase 0 / business_analysis 复用)
 │   ├── schema.py                    # DimensionReport / QualitativeParams(14 字段) / QualitativeReport
 │   ├── runner.py                    # run_qualitative(ref, store, tavily, llm) 编排 6 维度
-│   ├── cache.py                     # data/qualitative/<code>_<name>/ 30 天 TTL + REPORT_DATE 失效
+│   ├── cache.py                     # data/cache/qualitative/<code>_<name>/ 30 天 TTL + REPORT_DATE 失效
 │   ├── dimensions/d{1..6}.py        # 6 维度真实实现
 │   └── prompts/d{1..6}.md           # LLM prompt(评级指引固化保守策略口径)
 └── agents/business_analysis/        # 用户入口 agent(SSE 6 事件)
@@ -307,6 +312,7 @@ backend/services/agent/
 
 ## TODO
 
+- **agent_runs 产物/过程分家**(2026-06-14 单列):`report/agent_runs/<code>_<name>/` 当前混放过程文件(`_meta.json` 状态 / `data_pack_market.md` / `phase3_quantitative.md` / `_quant_results.json`)与产物(`*_分析报告.md`)。拆分非纯移动:coordinator Layer1 `_has_completed_report` 靠 glob `*_分析报告.md` 判定→qa_followup,`_meta.json` 状态机 + SSE 进度 + `Workspace(root=)` 注入都依赖该目录,改动需同步 `coordinator.py` / `core/workspace.py` / `routers/agent.py`
 - L3 LLM 意图分类器(coordinator `_classify_intent` 实现 + 4 层 fallback 测试)
 - team agent 骨架(`agents/team/`,多角色协作)
 - §17.8 D&A → EV/EBITDA

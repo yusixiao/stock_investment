@@ -85,7 +85,7 @@ class DimensionReport(BaseModel):
 class QualitativeReport(BaseModel):
     """完整定性分析报告 — 6 维度组合 + 末尾结构化参数表。
 
-    持久化:json 落 data/qualitative/<code>_<name>/report_<YYYYMMDD>.json
+    持久化:json 落 data/cache/qualitative/<code>_<name>/report_<YYYYMMDD>.json
     渲染:同时落 .md(Agent C / 用户阅读)
     """
 

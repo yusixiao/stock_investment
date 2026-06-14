@@ -37,8 +37,8 @@ from services.backtest.strategies.deployed.hk_garp_strategy import HkGarpStrateg
 
 START = "2010-01-01"
 END = "2026-06-01"
-OUT_DIR = ROOT / "exported"
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = ROOT / "report" / "exported"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # R17 锁定的最优选股内核(收益最高):BASE_R14 + 净利 CAGR≥25%
 BASE_G25 = {

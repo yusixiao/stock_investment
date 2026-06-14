@@ -11,7 +11,7 @@
   4. 报告 .md 作为 artifact + 助手消息持久化 + done 事件
 
 注意:
-  - cache 内部已写盘 data/qualitative/<code>_<name>/report_<date>.{json,md}
+  - cache 内部已写盘 data/cache/qualitative/<code>_<name>/report_<date>.{json,md}
   - BA agent 不再用 cpa workspace,artifact 路径以 cache 目录为基准
 """
 

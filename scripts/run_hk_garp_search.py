@@ -32,8 +32,8 @@ from services.backtest.strategies.deployed.hk_garp_strategy import HkGarpStrateg
 START = "2010-01-01"
 END = "2026-06-01"
 
-OUT_DIR = ROOT / "exported"
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = ROOT / "report" / "exported"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ---------------- 各轮参数配置 ----------------

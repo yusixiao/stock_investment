@@ -30,8 +30,8 @@ from services.backtest.strategies.deployed.ma_tangle_value_strategy import MaTan
 START = sys.argv[1] if len(sys.argv) > 1 else "2017-01-01"
 END = sys.argv[2] if len(sys.argv) > 2 else "2026-05-24"
 
-OUT_DIR = ROOT / "exported"
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = ROOT / "report" / "exported"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def main():

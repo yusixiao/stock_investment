@@ -6,7 +6,7 @@
 输出:
 - 6 维度事件流
 - 每维度耗时
-- 落盘路径 data/qualitative/<code>_<name>/
+- 落盘路径 data/cache/qualitative/<code>_<name>/
 - 14 参数 JSON 摘要
 """
 

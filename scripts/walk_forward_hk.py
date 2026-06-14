@@ -49,8 +49,8 @@ from services.backtest.strategies.deployed.hk_garp_strategy import HkGarpStrateg
 
 START = "2010-01-01"
 END = "2026-06-01"
-OUT_DIR = ROOT / "exported"
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = ROOT / "report" / "exported"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---- 复用 run_hk_garp_search 的基座定义(保持口径一致) ----
 BASE7 = {"top_n": 30, "min_amount_hkd": 1e7, "rebalance_months": [6], "cagr_years": 5}

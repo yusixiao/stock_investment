@@ -75,8 +75,8 @@ def main() -> None:
         )
 
     raw_view = f"v_{market.lower()}_daily_raw"
-    report_md = ROOT / "exported" / f"{market.lower()}_factor_corruption.md"
-    report_json = ROOT / "exported" / f"{market.lower()}_factor_corruption.json"
+    report_md = ROOT / "report" / "exported" / f"{market.lower()}_factor_corruption.md"
+    report_json = ROOT / "report" / "exported" / f"{market.lower()}_factor_corruption.json"
 
     store = get_store()
     repo = _get_repo(market)

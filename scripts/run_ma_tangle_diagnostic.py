@@ -104,8 +104,8 @@ START = sys.argv[1] if len(sys.argv) > 1 else "2010-01-01"
 END = sys.argv[2] if len(sys.argv) > 2 else "2026-05-23"
 SELECTED = set(sys.argv[3].split(",")) if len(sys.argv) > 3 else None
 
-OUT_DIR = ROOT / "exported"
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR = ROOT / "report" / "exported"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 RUN_TAG = f"ma_tangle_diag_{START}_{END}"
 
 

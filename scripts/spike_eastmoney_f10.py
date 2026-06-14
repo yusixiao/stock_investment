@@ -145,8 +145,8 @@ def _summarize(records: list[dict]) -> tuple[list[str], dict]:
 
 
 def main(codes: list[str]) -> None:
-    notes_dir = ROOT / "notes"
-    notes_dir.mkdir(exist_ok=True)
+    notes_dir = ROOT / "report" / "exported"
+    notes_dir.mkdir(parents=True, exist_ok=True)
     out_path = notes_dir / "eastmoney_f10_spike.md"
 
     lines: list[str] = ["# EastMoney F10 §7 spike 笔记", ""]

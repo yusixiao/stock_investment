@@ -32,7 +32,7 @@ from backend.services.market_data.adjust_factor_audit import audit_factors  # no
 from backend.services.market_data.duckdb_store import get_store  # noqa: E402
 
 ADJUST_DIR = ROOT / "data" / "market" / "HK" / "adjust_factor"
-REPORT_MD = ROOT / "exported" / "hk_data_crosscheck.md"
+REPORT_MD = ROOT / "report" / "exported" / "hk_data_crosscheck.md"
 
 # 2025 窗口(检验"修复后 raw 与 qfq 是否仅差合法分红")
 WIN_START, WIN_END = "2025-01-01", "2025-12-31"

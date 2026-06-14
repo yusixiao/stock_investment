@@ -146,8 +146,8 @@ def main():
         "held_symbols": held_symbols,
     }
 
-    exp = ROOT / "exported"
-    exp.mkdir(exist_ok=True)
+    exp = ROOT / "report" / "exported"
+    exp.mkdir(parents=True, exist_ok=True)
     (exp / "champion_holdings_r16_pe20.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
 

@@ -20,11 +20,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# 锚定项目根:uvicorn 启动 cwd 可能是 backend/,直接 "cache/tavily"
-# 会解析到 backend/cache/tavily/(错位,违反项目结构铁律 cache/ 顶层)
-from config import BASE_DIR  # noqa: E402
+# 统一走 config.CACHE_DIR(= data/cache),tavily 是问股纯派生过程缓存
+# 不在 data/cache 之外另起 cache/ 顶层目录(项目结构铁律:cache 归 data/cache)
+from config import CACHE_DIR  # noqa: E402
 
-DEFAULT_CACHE_DIR = BASE_DIR / "cache" / "tavily"
+DEFAULT_CACHE_DIR = CACHE_DIR / "tavily"
 
 
 class TavilyClient:

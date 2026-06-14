@@ -3,7 +3,7 @@ import json
 import glob
 import os
 
-EXP = "exported"
+EXP = "report/exported"
 
 
 def load(f):

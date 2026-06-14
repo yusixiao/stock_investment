@@ -1,7 +1,7 @@
 """Agent 测试共用 fixtures。
 
 自动隔离 DSA_QUALITATIVE_DIR 到 tmp 目录,避免 cpa Phase 0 / BA agent
-路由测试污染真实 data/qualitative/。
+路由测试污染真实 data/cache/qualitative/。
 """
 
 import pytest

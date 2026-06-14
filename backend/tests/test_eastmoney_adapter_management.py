@@ -6,7 +6,7 @@ emweb F10 PageAjax 路径(2026-05-26 spike 验证):
 - 返 {gglb: 高管列表, cgbd: 持股变动}
 
 测试覆盖:
-1. 真实 fixture(notes/em_mgmt_raw_600519_emweb_CompanyManagement.json)解析
+1. 真实 fixture(tests/fixtures/em_mgmt_raw_600519_emweb_CompanyManagement.json)解析
 2. URL / 市场前缀拼接正确(SH/SZ)
 3. 非 A 股代码(00700.HK / AAPL.US)直接返回空,不发请求
 4. 网络异常 / JSON 异常优雅降级
@@ -24,8 +24,8 @@ from backend.models.management import ExecutiveRecord, ExecutiveHoldChangeRecord
 
 
 FIXTURE = (
-    Path(__file__).resolve().parent.parent.parent
-    / "notes"
+    Path(__file__).resolve().parent
+    / "fixtures"
     / "em_mgmt_raw_600519_emweb_CompanyManagement.json"
 )
 

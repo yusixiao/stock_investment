@@ -28,8 +28,8 @@ if str(ROOT) not in sys.path:
 
 import requests  # noqa: E402
 
-NOTES_DIR = ROOT / "notes"
-NOTES_DIR.mkdir(exist_ok=True)
+NOTES_DIR = ROOT / "report" / "exported"
+NOTES_DIR.mkdir(parents=True, exist_ok=True)
 
 TIMEOUT = 12
 

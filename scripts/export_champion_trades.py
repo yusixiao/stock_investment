@@ -194,8 +194,8 @@ def main():
         "trade_detail": detail,
         "summary": summary,
     }
-    exp = ROOT / "exported"
-    exp.mkdir(exist_ok=True)
+    exp = ROOT / "report" / "exported"
+    exp.mkdir(parents=True, exist_ok=True)
     (exp / "champion_trades_r21_pe15.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
 

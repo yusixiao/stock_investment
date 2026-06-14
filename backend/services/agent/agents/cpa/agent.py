@@ -178,7 +178,7 @@ class CpaAgent:
         """Phase 0:静默调 run_qualitative(on_event=None,不污染外层 SSE)。
 
         命中缓存秒过;未命中时各维度顺序执行(目前是 mock,Phase 2 接真实)。
-        定性产物写盘到 data/qualitative/<code>_<name>/,Phase 3.2 后续可读取。
+        定性产物写盘到 data/cache/qualitative/<code>_<name>/,Phase 3.2 后续可读取。
         """
         # 取 DuckDB 最新 REPORT_DATE 作为 cache 失效信号(失败容忍 → None)
         try:

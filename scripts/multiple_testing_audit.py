@@ -21,7 +21,7 @@ import statistics
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-EXPORTED = ROOT / "exported"
+EXPORTED = ROOT / "report" / "exported"
 
 # 干净全期结果文件名:hk_garp_r<纯数字>.json
 CLEAN_RE = re.compile(r"^hk_garp_r(\d+)\.json$")

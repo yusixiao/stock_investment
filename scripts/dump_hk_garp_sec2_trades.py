@@ -35,7 +35,7 @@ from services.backtest.strategies.deployed.hk_garp_strategy import HkGarpStrateg
 
 START = "2010-01-01"
 END = "2026-06-01"
-OUT_XLSX = ROOT / "exported" / "hk_garp_sec2_trades.xlsx"
+OUT_XLSX = ROOT / "report" / "exported" / "hk_garp_sec2_trades.xlsx"
 
 BASE7 = {"top_n": 30, "min_amount_hkd": 1e7, "rebalance_months": [6], "cagr_years": 5}
 BASE8 = {**BASE7, "trend_ma_days": 120}
@@ -262,7 +262,7 @@ def main():
     )
 
     # ---------- 写 Excel ----------
-    OUT_XLSX.parent.mkdir(exist_ok=True)
+    OUT_XLSX.parent.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(OUT_XLSX, engine="openpyxl") as w:
         overview.to_excel(w, sheet_name="概览", index=False)
         events.to_excel(w, sheet_name="买卖事件", index=False)

@@ -1,18 +1,24 @@
-data/kline/
-data/logs/
-logs/
-cache/
-report/
+# === 数据 / 产物 / 日志(三分类,均不入库)===
+data/                       # 市场输入 + 中间过程缓存(data/cache) + portfolio.db,整体不入库
+report/                    # 用户产物 artifact(LLM 报告 / 诊断脚本 exported 输出)
+logs/                      # 运行日志
+
+# === 在研策略过程产物(不入库,仅 .py 策略源码入库)===
+# experiments/ 下回测结果 / 笔记 / 数据等过程文件忽略,.py(含 __init__.py)仍入库
+backend/services/backtest/strategies/experiments/**
+!backend/services/backtest/strategies/experiments/**/
+!backend/services/backtest/strategies/experiments/**/*.py
+
+# === 构建产物 / 依赖 ===
 node_modules/
 frontend/dist/
 __pycache__/
 *.pyc
+
+# === 本地配置 / IDE / 工具 ===
 .idea/
 .venv/
-data/
 config/system_config.yaml
 .superpowers/
 .worktrees/
-exported/
 ui_samples/
-

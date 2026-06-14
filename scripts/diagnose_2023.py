@@ -281,8 +281,8 @@ def main():
         "per_symbol_worst15": sym_rows[:15],
         "per_symbol_best10": sym_rows[-10:][::-1],
     }
-    exp = ROOT / "exported"
-    exp.mkdir(exist_ok=True)
+    exp = ROOT / "report" / "exported"
+    exp.mkdir(parents=True, exist_ok=True)
     (exp / "diagnose_2023.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
 

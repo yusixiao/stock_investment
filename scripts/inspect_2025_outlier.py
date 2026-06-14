@@ -34,7 +34,7 @@ from services.backtest.strategies.deployed.hk_garp_strategy import HkGarpStrateg
 START = "2010-01-01"
 END = "2026-06-01"
 YEAR = "2025"
-OUT_DIR = ROOT / "exported"
+OUT_DIR = ROOT / "report" / "exported"
 
 BASE_G25 = {
     "top_n": 12, "min_amount_hkd": 1e7, "rebalance_months": [6],
