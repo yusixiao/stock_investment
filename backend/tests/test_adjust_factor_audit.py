@@ -1,6 +1,6 @@
 """前复权因子审计模块测试 — 幻灵拆股检测 + 重算。"""
 
-from backend.services.market_data.adjust_factor_audit import (
+from backend.adapters.adjust_factor_audit import (
     audit_factors,
     recompute_factors,
 )

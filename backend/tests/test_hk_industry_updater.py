@@ -218,8 +218,8 @@ def test_stock_index_loads_hk_industry(tmp_path, monkeypatch):
     ).to_parquet(membership / "hk_industry.parquet", index=False)
 
     monkeypatch.setattr(stock_index, "MARKET_DIR", market)
-    # A 股目录不存在:fallback 路径会跳过 A,只看 HK
-    monkeypatch.setattr(stock_index, "BASIC_DIR", data_root / "basic" / "A")
+    # A 股 stock_list 不存在:fallback 路径会跳过 A,只看 HK
+    monkeypatch.setattr(stock_index, "A_INDEX_DIR", data_root / "market" / "A")
 
     stock_index.init_stock_index()
 

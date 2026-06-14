@@ -7,11 +7,13 @@ from typing import List, Optional
 
 import pandas as pd
 
-from config import DATA_DIR, MARKET_DIR
+from config import MARKET_DIR
 
 logger = logging.getLogger(__name__)
 
-BASIC_DIR = DATA_DIR / "basic" / "A"
+# A 股代码索引源:与 HK/US 的 data/market/<mkt>/stock_list.* 对齐,
+# 统一收口到 data/market/A/(旧路径 data/basic/A/ 已废弃)
+A_INDEX_DIR = MARKET_DIR / "A"
 
 
 @dataclass
@@ -141,7 +143,7 @@ def init_stock_index() -> None:
     entries: List[StockIndexEntry] = []
 
     # A股：从 stock_list.parquet 加载 code+name
-    a_list_path = BASIC_DIR / "stock_list.parquet"
+    a_list_path = A_INDEX_DIR / "stock_list.parquet"
     if a_list_path.exists():
         # 兼容旧 parquet 无 industry 列的情况
         try:

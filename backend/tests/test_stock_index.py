@@ -37,13 +37,12 @@ def _seed_index(monkeypatch, tmp_path):
             "industry",
         ],
     )
-    basic_dir = tmp_path / "basic" / "A"
-    basic_dir.mkdir(parents=True)
-    df.to_parquet(basic_dir / "stock_list.parquet")
-    monkeypatch.setattr(stock_index, "BASIC_DIR", basic_dir)
-    # market 目录留空,不影响 A 股加载
+    a_index_dir = tmp_path / "market" / "A"
+    a_index_dir.mkdir(parents=True)
+    df.to_parquet(a_index_dir / "stock_list.parquet")
+    monkeypatch.setattr(stock_index, "A_INDEX_DIR", a_index_dir)
+    # market 其余目录留空,不影响 A 股加载
     market_dir = tmp_path / "market"
-    market_dir.mkdir()
     monkeypatch.setattr("services.market_data.stock_index.MARKET_DIR", market_dir)
     stock_index.init_stock_index()
 

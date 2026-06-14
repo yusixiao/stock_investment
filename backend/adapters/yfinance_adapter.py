@@ -9,7 +9,7 @@ from backend.adapters.base import MarketDataAdapter, EventDataAdapter
 from backend.models.market import DailyKlineRecord, AdjustFactorRecord
 from backend.models.event import DividendRecord
 from backend.models.management import ExecutiveRecord, ExecutiveHoldChangeRecord
-from backend.services.market_data.adjust_factor_audit import audit_factors, recompute_factors
+from backend.adapters.adjust_factor_audit import audit_factors, recompute_factors
 
 logger = logging.getLogger(__name__)
 

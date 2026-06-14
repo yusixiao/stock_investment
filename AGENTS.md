@@ -24,9 +24,9 @@
   - **🚨 铁律(2026-05-21):所有业务数据来源**必须**是 `data/market/`,绝对禁止读取 `data/{kline,financial,dividend,valuation,indicators}/...` 等任何旧路径**。新增数据(分红、估值等当前缺失类目)也**必须落到 `data/market/{A,HK,US}/<category>/`** 下,按市场分区组织,统一英文 schema(对齐 EastMoney/YFinance 原始字段)
   - **唯一业务数据源 = DuckDB**(2026-05-18 决策):所有业务代码(回测、选股、K 线展示、财务/估值/分红查询)**必须**经 `services/market_data/duckdb_store.py` 访问数据,**禁止**直接 `glob` parquet 或读旧路径文件。新增数据访问 API 必须先在 `DuckDBStore` 上加方法/视图
   - **DuckDB 唯一来源 = `data/market/`**:`data/market/{A,HK,US}/{daily,adjust_factor,financial/{income,balance,cashflow,indicator}}/*.parquet`(DuckDB 视图 `v_a_daily / v_a_adjust_factor / v_a_income / v_a_indicator / ...` 等)。财务表统一英文 schema(`REPORT_DATE / NETPROFIT / BASIC_EPS / ROEJQ / EPSJB / BPS / ...`)
-  - **旧路径完全废弃**(2026-05-21 重申):`data/kline/`、`data/financial/A/`(中文 schema)、`data/dividend/A/`、`data/valuation/A/`、`data/indicators/A/` 全部不再被任何业务代码读取。当前残留引用(`config.py` 的 `VALUATION_DIR/DIVIDEND_DIR/FINANCIAL_DIR/INDICATOR_DIR`、`data_cache._load_valuation/_load_dividend/_load_financial`、`valuation_updater/dividend_updater` 写路径、`strategies/utils/{dividend,valuation,financial}.py` 中文字段名)需要逐步清理。物理目录可手动删除
+  - **旧路径完全废弃**(2026-05-21 重申):`data/kline/`、`data/financial/A/`(中文 schema)、`data/dividend/A/`、`data/valuation/A/`、`data/indicators/A/` 全部不再被任何业务代码读取。**代码层残留已基本清理**(2026-06-14):`config.py` 旧常量(`VALUATION_DIR/DIVIDEND_DIR/FINANCIAL_DIR/INDICATOR_DIR/KLINE_DIR/BASIC_DIR`)已移除;`data_cache._load_{valuation,dividend,financial}` 已走 DuckDB(无旧路径字面量);A 股代码索引源 `stock_index` 已从 `data/basic/A/stock_list.parquet` 迁到 **`data/market/A/stock_list.parquet`**(`A_INDEX_DIR = MARKET_DIR/"A"`,与 HK/US 的 `data/market/<mkt>/stock_list.*` 对齐)。**唯一未清残留 = `strategies/utils/{conservative,growth,financial,quality,...}.py` 中文字段名**(待单独清理)。**6 个零活引用废弃目录已归入 `data/old/`**(2026-06-14):`data/old/{basic,dividend,financial,indicators,kline,valuation}`(~4.2GB,与 `market/` 平级),业务代码零引用,**可随时整体 `rm -rf data/old/`**(本次未删)。唯一指向旧路径的是 `scripts/migrate_*.py`、`backfill_industry.py`、`diff_market_vs_kline.py` 等归档/诊断脚本(不在运行链路,部分已因 config 删常量失效),若要重跑需手动加 `old/` 前缀
   - 复权因子:`data/market/{market}/adjust_factor/*.parquet`
-  - 业务库:`data/portfolio.db`(SQLite)— portfolios / trades / snapshots / backtest_tasks
+   - 业务库:`data/portfolio.db`(SQLite)**跨 3 模块共享**:持仓(`portfolios / trades / snapshots / stock_exclusions`)+ 回测(`backtest_tasks`)+ 问股(`chat_sessions / chat_messages`)。**不只是回测用**
 - **代码注释**:复杂/非显然逻辑必须加注释;日志保持信息量
 - **MACD bar**:`2 × (DIF - DEA)`(用户明确要求)
 - **🚨 策略目录铁律(2026-06-14)**:`strategies/deployed/` = **已发布策略**(UI/回测 `/api/backtest/strategies` 只扫这里,经 `config.DEPLOYED_STRATEGY_DIR`);`strategies/experiments/` = **在研策略**(策略研究优先写这里,**不暴露给 UI**)。两者都通过 `importlib` 按文件路径加载(信任本地用户)。原 `strategies/examples/` 已重命名为 `deployed/`
@@ -87,7 +87,7 @@
 - **前端从 Vue 迁到 React**(2025 末):旧版备份保留在 `frontend/src_vue_backup/`
 - **回测页三 Tab 结构**:策略回测(BacktestAnalysis)/ 策略雷达(StrategyRadar)/ 市场监控(MarketMonitor)
 - **K 线图**(`KlineChart.tsx`,lightweight-charts v5):默认显示 150 根,价格 MA5/10/20/30/60 可切换、Volume MA5/10、MACD pane,鼠标跟随 Tooltip,左右价格刻度可配
-- 后端 `backend/main.py` 启动时把项目根加入 `sys.path`,因为 `backend/` 没有 `__init__.py`
+- **双 import 风格刻意并存**(2026-05-19 `37b5db1` 确立,**勿擅自统一**):①生产 `from backend.xxx` 靠 `main.py` 把项目根插入 `sys.path` + `backend/__init__.py`(后者为修 ThreadPoolExecutor 子线程 `No module named backend` 而加,5/18 调度更新曾因此失败);②`from services.xxx`/`from config`(测试 + 大量业务代码,~74 文件)靠 `pytest.ini` 的 `pythonpath = . backend`。两者均被设计为可用,统一需评估子线程/调度路径风险
 - 前端 npm name 是 `dsa-web`(早期 daily_stock_analysis 遗留)
 
 ## Accomplished
@@ -109,11 +109,11 @@ stock_investment/
 │   ├── main.py                         # FastAPI app, lifespan: init_db + init_duckdb + init_stock_index + scheduler
 │   ├── config.py                       # 全部数据路径常量
 │   ├── scheduler.py                    # 06:00 market update / 15:30 snapshot / 周日 03:00 backup
-│   ├── adapters/                       # base, baostock, eastmoney, yfinance, data_source
+ │   ├── adapters/                       # base, baostock, eastmoney, yfinance, data_source, adjust_factor_audit(复权因子异常审计,剔除 yfinance 幻灵拆股)
 │   ├── domain/                         # stock 领域常量
 │   ├── models/                         # basic / market / financial / event Pydantic
 │   ├── repositories/                   # base / basic_repo / market_repo / financial_repo / event_repo
-│   ├── routers/                        # stock / stock_search / market_kline / data_update / market_update / backtest / screener / portfolio / valuation / dividend / financial / agent / system_config / auth_stub / meta
+ │   ├── routers/                        # stock / stock_search / market_kline / market_update / backtest / backtest_cache / screener / portfolio / hk_connect / agent / system_config / auth_stub / meta(13 个,均在 main.py 注册)
 │   ├── services/                       # 五大模块各成子包 + 共享基建(2026-06-14 重构)
 │   │   ├── api_utils.py / db_schema.py # 共享基建:通用工具 + SQLite DDL(backtest+agent chat 表共用,故留根)
 │   │   ├── market_data/                # 首页·市场数据子系统(原扁平 14 文件收敛成包)
@@ -121,7 +121,6 @@ stock_investment/
 │   │   │   ├── stock_index.py          # 全市场代码索引
 │   │   │   ├── stock_data.py           # aggregate_kline (W-FRI / M)
 │   │   │   ├── indicator.py            # 指标计算工具
-│   │   │   ├── adjust_factor_audit.py  # 复权因子异常审计(剔除 yfinance 幻灵拆股)
 │   │   │   └── updaters/               # 各市场/品类数据更新器
 │   │   │       ├── market_updater.py   # A/HK/US 多市场并行增量(K线+复权+财务)
 │   │   │       ├── financial_sync.py   # 财务 4 表周期同步
@@ -144,8 +143,9 @@ stock_investment/
 │   │   │   └── date_utils.py           # format_match_date / date_belongs_to / detect_frequency
 │   │   ├── portfolio/
 │   │   │   ├── db.py / manager.py
-│   │   ├── agent/                      # 问股多 agent 平台(coordinator + core/ + agents/)
-│   │   └── system_config/              # 设置·LLM 渠道 / 通知配置
+ │   │   ├── agent/                      # 问股多 agent 平台(coordinator + core/ + agents/)
+│   │   ├── system_config/              # 设置·LLM 渠道 / 通知配置
+│   │   └── migrations/                 # 参考性 SQL 存档(merge-strategies;实际迁移由 db_schema.py 幂等下发)
 │   └── tests/                          # 1300+ cases
 ├── strategies/deployed/             # 已发布策略(UI 只扫这里),现存 5 个(2026-06-14 精简)
 │   ├── hk_garp_strategy.py             # H股 GARP 冠军(frequency = "monthly")
@@ -173,14 +173,13 @@ stock_investment/
 │   │   ├── hooks/                      # useAuth / useTaskStream / useStockSearch 等
 │   │   ├── types/ utils/ locales/
 │   └── src_vue_backup/                 # Vue 旧版备份
-├── data/
-│   ├── market/{A,HK,US}/{daily,adjust_factor}/  # 新主路径
-│   ├── kline/A/{raw,qfq}/              # 旧路径(qfq 已转缓存模型)
-│   ├── valuation/A/ dividend/A/ financial/A/ indicators/A/
-│   ├── meta/                           # 全市场代码索引等
-│   ├── portfolio.db                    # SQLite
-│   └── logs/
-└── scripts/                            # backup_to_baidu.py 等
+ ├── data/
+│   ├── market/{A,HK,US}/{daily,adjust_factor,financial/...,dividend,stock_list}/  # 唯一业务数据源
+│   ├── meta/                           # 全市场代码索引 / 流通股
+│   ├── qualitative/                    # 定性分析缓存(30 天 TTL)
+│   ├── portfolio.db                    # SQLite 业务库(持仓+回测+问股共享)
+│   └── old/{basic,dividend,financial,indicators,kline,valuation}/  # 废弃归档(~4.2G,零引用,可 rm -rf)
+└── scripts/                            # backup_to_baidu.py + migrate_*/backfill_* 归档脚本
 ```
 
 ## Testing
