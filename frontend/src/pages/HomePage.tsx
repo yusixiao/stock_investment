@@ -60,14 +60,17 @@ const HomePage: React.FC = () => {
     if (!code) return;
     setSelectedCode(code);
     setSelectedName(name || code);
-    loadKline(code, period, adjust);
-  }, [query, loadKline, period, adjust]);
+  }, [query]);
 
+  // 统一加载入口:selectedCode / period / adjust 任一变化即重载,避免 handleSearch
+  // 直接调用 loadKline 造成的重复请求
   useEffect(() => {
     if (selectedCode) {
+      // 合法模式:依赖变化时拉取 K 线数据(loadKline 内部置 loading + 写入结果)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadKline(selectedCode, period, adjust);
     }
-  }, [period, adjust]);
+  }, [selectedCode, period, adjust, loadKline]);
 
   return (
     <div

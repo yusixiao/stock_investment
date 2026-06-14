@@ -420,6 +420,9 @@ const PortfolioPage: React.FC = () => {
     await Promise.all([loadSnapshotAndRisk(), loadEventsPage(page)]);
   }, [eventPage, loadEventsPage, loadSnapshotAndRisk]);
 
+  // 合法模式:以下三个都是数据获取 effect(loader 内部置 loading + 写入结果),
+  // React 对此无 effect 内替代写法,块级 disable 覆盖
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     void loadAccounts();
     void loadBrokers();
@@ -432,25 +435,40 @@ const PortfolioPage: React.FC = () => {
   useEffect(() => {
     void loadEvents();
   }, [loadEvents]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
+    // 合法模式:refreshViewKey 变化时自增请求序号(ref 副作用,须留在 effect)并
+    // 复位 fx 刷新态;ref 写入不可移到渲染期,故整体保留 effect
     refreshContextRef.current = {
       viewKey: refreshViewKey,
       requestId: refreshContextRef.current.requestId + 1,
     };
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFxRefreshing(false);
     setFxRefreshFeedback(null);
   }, [refreshViewKey]);
 
-  useEffect(() => {
+  // 筛选条件变化时翻回第一页 —— React 官方「渲染期根据依赖变化调整 state」模式,
+  // 用复合 key + prev-tracking 取代 setState-in-effect
+  const eventFilterKey = [
+    eventType, queryAccountId ?? '', eventDateFrom, eventDateTo,
+    eventSymbol, eventSide, eventDirection, eventActionType,
+  ].join('|');
+  const [prevEventFilterKey, setPrevEventFilterKey] = useState(eventFilterKey);
+  if (eventFilterKey !== prevEventFilterKey) {
+    setPrevEventFilterKey(eventFilterKey);
     setEventPage(1);
-  }, [eventType, queryAccountId, eventDateFrom, eventDateTo, eventSymbol, eventSide, eventDirection, eventActionType]);
+  }
 
-  useEffect(() => {
+  // 切到可写视图时清掉写入告警(同上渲染期调整模式)
+  const [prevWriteBlocked, setPrevWriteBlocked] = useState(writeBlocked);
+  if (writeBlocked !== prevWriteBlocked) {
+    setPrevWriteBlocked(writeBlocked);
     if (!writeBlocked) {
       setWriteWarning(null);
     }
-  }, [writeBlocked]);
+  }
 
   const positionRows: FlatPosition[] = useMemo(() => {
     if (!snapshot) return [];

@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { authApi } from '../../api/auth';
 import { getParsedApiError, isParsedApiError, type ParsedApiError } from '../../api/error';
 import { useAuth } from '../../hooks';
@@ -20,6 +20,13 @@ function createNextModeLabel(authEnabled: boolean, desiredEnabled: boolean) {
 export const AuthSettingsCard: React.FC = () => {
   const { authEnabled, setupState, refreshStatus } = useAuth();
   const [desiredEnabled, setDesiredEnabled] = useState(authEnabled);
+  // 当 authEnabled(来自 server)变化时,把本地编辑态重置回它 —— React 官方
+  // 「渲染期根据 prop 变化调整 state」模式,取代 setState-in-effect
+  const [prevAuthEnabled, setPrevAuthEnabled] = useState(authEnabled);
+  if (authEnabled !== prevAuthEnabled) {
+    setPrevAuthEnabled(authEnabled);
+    setDesiredEnabled(authEnabled);
+  }
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
@@ -44,10 +51,6 @@ export const AuthSettingsCard: React.FC = () => {
         return '管理员认证可保护 Web 设置页及 API 接口，防止未经授权的访问。';
     }
   }, [setupState, desiredEnabled]);
-
-  useEffect(() => {
-    setDesiredEnabled(authEnabled);
-  }, [authEnabled]);
 
   const resetForm = () => {
     setCurrentPassword('');

@@ -79,7 +79,9 @@ describe('SettingsField', () => {
       />
     );
 
-    expect(screen.getAllByRole('button', { name: '显示内容' })).toHaveLength(2);
+    // Sensitive values are never sent to the browser, so the meaningless
+    // "show password" toggle was intentionally removed; only delete actions remain.
+    expect(screen.queryByRole('button', { name: '显示内容' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: '删除' })).toHaveLength(2);
   });
 

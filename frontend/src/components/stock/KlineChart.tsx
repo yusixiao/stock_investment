@@ -137,7 +137,7 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
     }, 0);
 
     // Pane 0: 价格均线
-    const maSeriesMap: Record<MaKey, ISeriesApi<'Line'>> = {} as any;
+    const maSeriesMap = {} as Record<MaKey, ISeriesApi<'Line'>>;
     for (const cfg of MA_CONFIGS) {
       const s = chart.addSeries(LineSeries, {
         color: cfg.color,
@@ -345,6 +345,9 @@ export function KlineChart({ data, macd, volMa, priceMa, className }: KlineChart
       if (series) series.setData(seriesData[cfg.key]);
     }
     const lastPriceMa = priceMa[priceMa.length - 1];
+    // 合法模式:此 effect 把 priceMa 同步到 lightweight-charts series(外部系统),
+    // 顺带把 hover 态初始化为最新点;与外部图表同步绑定,不宜拆出渲染期
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHoverPriceMa(lastPriceMa || null);
   }, [priceMa]);
 

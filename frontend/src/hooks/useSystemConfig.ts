@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createParsedApiError, getParsedApiError, type ParsedApiError } from '../api/error';
 import { systemConfigApi, SystemConfigConflictError, SystemConfigValidationError } from '../api/systemConfig';
 import type {
@@ -97,9 +97,14 @@ export function useSystemConfig() {
     for (const item of serverItems) {
       map[item.key] = item;
     }
-    serverItemByKeyRef.current = map;
     return map;
   }, [serverItems]);
+
+  // 镜像到 ref 供 applyServerPayload 读取「上一次的 server map」;ref 写入须在
+  // commit 后(effect)而非渲染期,避免 react-hooks/refs 告警
+  useEffect(() => {
+    serverItemByKeyRef.current = serverItemByKey;
+  }, [serverItemByKey]);
 
   const categories = useMemo<SystemConfigCategorySchema[]>(() => {
     // Infer tabs from loaded config item schema metadata.

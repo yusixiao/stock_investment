@@ -152,6 +152,8 @@ const ChatPage: React.FC = () => {
     const shouldAutoScroll = shouldStickToBottomRef.current;
     if (!shouldAutoScroll) {
       if (messages.length > 0 || progressSteps.length > 0 || loading) {
+        // 合法模式:此 effect 同步外部滚动位置(DOM),据此决定是否显示「回到底部」
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setShowJumpToBottom(true);
       }
       return;
@@ -267,6 +269,8 @@ const ChatPage: React.FC = () => {
     }
 
     const hydrationToken = ++followUpHydrationTokenRef.current;
+    // 合法模式:从 URL query(外部输入)水合追问输入框 + 异步解析上下文
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInput(buildFollowUpPrompt(stock, name));
     followUpContextRef.current = {
       stock_code: stock,

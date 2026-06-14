@@ -72,6 +72,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // 合法模式:挂载时拉取认证状态(fetchStatus 内部置 loading + 写入结果)。
+    // 典型数据获取 effect,无 effect 内替代写法
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchStatus();
   }, [fetchStatus]);
 

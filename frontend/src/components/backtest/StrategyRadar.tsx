@@ -51,6 +51,9 @@ const StrategyRadar: React.FC = () => {
   const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
+    // 合法模式:挂载时拉取策略列表的数据获取 effect(先置 loading 再异步取数)。
+    // React 对此无 effect 内替代写法,除非引入 React Query
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStrategiesLoading(true);
     backtestEngineApi
       .listStrategies()

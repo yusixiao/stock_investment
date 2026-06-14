@@ -615,16 +615,9 @@ describe('SettingsPage', () => {
     expect(load).toHaveBeenCalledTimes(1);
   });
 
-  it('refreshes server state after llm channel editor saves', async () => {
-    useSystemConfigMock.mockReturnValue(buildSystemConfigState({ activeCategory: 'ai_model' }));
-
-    render(<SettingsPage />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'save llm channels' }));
-
-    expect(refreshAfterExternalSave).toHaveBeenCalledWith(['LLM_CHANNELS']);
-    expect(load).toHaveBeenCalledTimes(1);
-  });
+  // NOTE: LLMChannelEditor 已停用(与后端 channels.py SSOT 字段命名不一致),
+  // SettingsPage 不再渲染它,对应的 "save llm channels" 集成测试已随功能移除。
+  // 后续若重写 channel UI 需补回测试。
 
   it('renders notification test panel before notification fields', () => {
     useSystemConfigMock.mockReturnValue(buildSystemConfigState({ activeCategory: 'notification' }));

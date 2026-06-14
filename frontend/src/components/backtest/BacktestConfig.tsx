@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { RiPlayFill } from '@remixicon/react';
 import { backtestEngineApi } from '../../api/backtestEngine';
 import type { StrategyInfo } from '../../api/backtestEngine';
@@ -43,8 +43,14 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
       .finally(() => setLoadingStrategies(false));
   }, []);
 
-  const selectedStrategy = strategies.find(s => s.className === strategy);
+  const selectedStrategy = useMemo(
+    () => strategies.find(s => s.className === strategy),
+    [strategies, strategy],
+  );
 
+  // 合法模式:选中策略变化时,把参数表/周期同步到该策略的默认值。属「依赖变化时
+  // 重置 state」,且多语句聚合,用块级 disable 覆盖整个 effect
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (selectedStrategy?.params) {
       const defaults: Record<string, unknown> = {};
@@ -59,7 +65,8 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
     if (selectedStrategy && !selectedStrategy.frequencyOverridable && selectedStrategy.frequency) {
       setPeriod(selectedStrategy.frequency);
     }
-  }, [selectedStrategy?.className]);
+  }, [selectedStrategy]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // 个股模式按 symbol 后缀推断市场:.HK → HK,US 后缀 → US,其他默认 A
   const inferMarketFromSymbol = (raw: string): 'A' | 'HK' | 'US' => {
