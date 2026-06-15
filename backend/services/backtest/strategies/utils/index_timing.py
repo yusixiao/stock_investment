@@ -1,7 +1,7 @@
 """指数择时工具(沪深300 MA200 等),用于策略层的「大盘趋势过滤」。
 
-数据来源:`data/market/A/index/sh000300.parquet`(由 scripts 离线 baostock 拉取,
-日期降序,字段 date/open/high/low/close/volume/amount)。
+数据来源:`data/market/A/index/CSI300.parquet`(baostock 拉取,字段含 date/close 等,
+日期降序)。路径锚定 `config.MARKET_DIR`(唯一数据根),不再用脆弱的相对 parents。
 
 用法:
     from services.backtest.strategies.utils.index_timing import csi300_is_bull
@@ -12,19 +12,13 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-_INDEX_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "data"
-    / "market"
-    / "A"
-    / "index"
-    / "sh000300.parquet"
-)
+from backend.config import MARKET_DIR
+
+_INDEX_PATH = MARKET_DIR / "A" / "index" / "CSI300.parquet"
 
 
 @lru_cache(maxsize=1)
