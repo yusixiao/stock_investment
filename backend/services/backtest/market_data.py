@@ -260,9 +260,16 @@ class MarketData:
             for sym, df in syms_df.items():
                 self._indicator_arrays[period][sym] = self._extract_indicators(df)
 
-        # 时间轴:取第一只股票全历史日历(参考股票),升序
-        ref_sym = next(iter(daily_cache))
-        self.dates: list[str] = daily_cache[ref_sym]["date"].tolist()
+        # 时间轴:全市场交易日历 = 所有股票 date 列的并集(升序去重)。
+        # ⚠️ 2026-06-15 修复:旧实现取"第一只股票"的日历作时间轴,但 slice_bundle
+        # 用 set(symbols) 哈希序构建子集 dict,"第一只股"是任意的 —— 全市场回测时
+        # 可能命中一只晚上市的股,导致迭代窗口被静默截断(如 16 年回测只跑到 4.5 年)。
+        # 改用全体并集后:迭代轴覆盖全市场交易日,个股停牌/未上市当日由
+        # get_bar_at(strict=True) 返回 None 被 _build_bar 自然跳过。
+        _date_arrays = [df["date"].to_numpy() for df in daily_cache.values()]
+        self.dates: list[str] = (
+            np.unique(np.concatenate(_date_arrays)).tolist() if _date_arrays else []
+        )
 
         # 向后兼容:若策略 frequency 为 weekly/monthly 但调用方未提供预算
         # weekly/monthly_data,启动时按需聚合一次(此前 MarketData 的固定行为)。

@@ -488,9 +488,15 @@ def slice_bundle(
             iter_end_idx=-1,
         )
 
-    # 用参考股的全历史 date 列作为迭代时间轴
-    ref_sym = next(iter(stock))
-    ref_dates = stock[ref_sym]["date"].to_numpy()
+    # 迭代时间轴 = 子集内所有股票 date 列的并集(升序去重),与
+    # MarketData.dates 的算法保持一致,保证 iter_start/iter_end 落在同一索引空间。
+    # ⚠️ 2026-06-15 修复:旧实现取 next(iter(stock)) 单股日历作轴,而 stock 是按
+    # set(symbols) 哈希序构建的 dict,"第一只股"是任意的 —— 全市场回测时可能命中
+    # 一只晚上市的股,把长窗口静默截断(如 16 年回测被截成 ~4.5 年)。
+    _date_arrays = [df["date"].to_numpy() for df in stock.values()]
+    ref_dates = (
+        np.unique(np.concatenate(_date_arrays)) if _date_arrays else np.array([])
+    )
     n = len(ref_dates)
 
     if n == 0:
