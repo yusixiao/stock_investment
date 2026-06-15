@@ -1,7 +1,11 @@
 # === 数据 / 产物 / 日志(三分类,均不入库)===
-data/                       # 市场输入 + 中间过程缓存(data/cache) + portfolio.db,整体不入库
-report/                    # 用户产物 artifact(LLM 报告 / 诊断脚本 exported 输出)
-logs/                      # 运行日志
+# 注意:git 不支持行尾注释,pattern 必须单独成行(否则空格+# 会被当作字面路径)
+# data/  : 市场输入 + 中间过程缓存(data/cache) + portfolio.db,整体不入库
+# report/: 用户产物 artifact(LLM 报告 / 诊断脚本 exported 输出)
+# logs/  : 运行日志
+data/
+report/
+logs/
 
 # === 在研策略过程产物(不入库,仅 .py 策略源码入库)===
 # experiments/ 下回测结果 / 笔记 / 数据等过程文件忽略,.py(含 __init__.py)仍入库
