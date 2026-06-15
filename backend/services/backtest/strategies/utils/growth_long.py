@@ -24,7 +24,7 @@ _ANNUAL_FIELDS = ["ROEJQ", "PARENTNETPROFIT", "TOTALOPERATEREVE"]
 
 
 def _build(market: str = "A") -> dict[str, pd.DataFrame]:
-    from services.duckdb_store import get_store
+    from services.market_data.duckdb_store import get_store
 
     if market.upper() != "A":
         return {}
@@ -99,6 +99,22 @@ def get_net_profit_cagr(ctx, symbol: str, years: int = 3) -> Optional[float]:
         return None
     start = hist.iloc[0]["PARENTNETPROFIT"]
     end = hist.iloc[-1]["PARENTNETPROFIT"]
+    if pd.isna(start) or pd.isna(end) or start <= 0 or end <= 0:
+        return None
+    return float((end / start) ** (1.0 / years) - 1.0)
+
+
+def get_revenue_cagr(ctx, symbol: str, years: int = 3) -> Optional[float]:
+    """计算 years 年营业总收入 CAGR(单位:小数,如 0.25 = 25%)。
+
+    需要至少 years+1 个年报点。任一端点 ≤0 或缺失返回 None。
+    与 get_net_profit_cagr 同口径,仅字段换 TOTALOPERATEREVE。
+    """
+    hist = get_annual_history(ctx, symbol, n_years=years + 1)
+    if hist is None or len(hist) < years + 1:
+        return None
+    start = hist.iloc[0]["TOTALOPERATEREVE"]
+    end = hist.iloc[-1]["TOTALOPERATEREVE"]
     if pd.isna(start) or pd.isna(end) or start <= 0 or end <= 0:
         return None
     return float((end / start) ** (1.0 / years) - 1.0)
