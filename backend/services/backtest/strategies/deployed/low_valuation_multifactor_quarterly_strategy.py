@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 from services.backtest.strategy_base import Strategy
-from services.backtest.strategies.deployed.low_valuation_quarterly_strategy import _is_st_on
+from services.backtest.strategies.utils.st_filter import _is_st_on
 from services.backtest.strategies.utils import financial, quality, yield_factor
 
 

@@ -67,7 +67,7 @@ def _load() -> None:
     with _LOCK:
         if _LOADED:
             return
-        from services.duckdb_store import get_store
+        from services.market_data.duckdb_store import get_store
 
         store = get_store()
         inc_sql = ", ".join([f"i.{f} AS {f}" for f in _INCOME_FIELDS])

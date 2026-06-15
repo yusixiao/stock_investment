@@ -38,7 +38,7 @@ def _build_growth_lookup(market: str = "A") -> dict[str, pd.DataFrame]:
     去重铁律:同 (code, NOTICE_DATE) 取 max(REPORT_DATE)。
     HK/US 暂返回空 dict,fallback to None。
     """
-    from services.duckdb_store import get_store
+    from services.market_data.duckdb_store import get_store
 
     market_norm = market.upper()
     if market_norm == "HK_CONNECT":

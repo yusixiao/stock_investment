@@ -207,7 +207,7 @@ class HkGarpStrategy(Strategy):
             return
         self._regime_loaded = True
         try:
-            from services.duckdb_store import get_store
+            from services.market_data.duckdb_store import get_store
 
             df = get_store().query_index("HK", str(self.p.regime_index))
             if df is not None and not df.empty and "close" in df.columns:

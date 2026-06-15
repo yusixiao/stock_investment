@@ -96,7 +96,7 @@ def _build_roe_notice_lookup(
     annual_only=True 时只保留 REPORT_DATE 月份=12 的年报。
     """
     # 延迟 import,避免污染 utils 模块顶层依赖
-    from services.duckdb_store import get_store
+    from services.market_data.duckdb_store import get_store
 
     store = get_store()
     market_norm = market.upper()

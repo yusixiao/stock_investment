@@ -38,7 +38,6 @@ CAGR 13.92% / Sharpe 0.83 / DD -28.2%(详见 scripts/backtest_low_pb_value.py)�
 
 from __future__ import annotations
 
-import threading
 from datetime import date
 
 import numpy as np
@@ -47,53 +46,9 @@ import pandas as pd
 from services.backtest.strategy_base import Strategy
 from services.backtest.strategies.utils import financial
 
-
-# ===== isST 稀疏 cache(只装 isST=='1' 的 (sym, date) 对,A 股专用) =====
-
-_ST_LOOKUP: dict[str, set[str]] | None = None
-_ST_LOCK = threading.Lock()
-
-
-def _build_st_lookup() -> dict[str, set[str]]:
-    """从 v_a_daily 拉所有 isST='1' 的 (sym, date),按 sym 聚成 set。
-
-    A 股全市场 ST 历史记录稀疏(约 1% 行),预计百万级,几十 MB。
-    """
-    from services.duckdb_store import get_store
-
-    store = get_store()
-    sql = """
-        SELECT _symbol AS code, date
-        FROM v_a_daily
-        WHERE isST = '1'
-    """
-    df = store._conn.execute(sql).fetchdf()
-    df["date"] = df["date"].astype(str)
-    out: dict[str, set[str]] = {}
-    for code, sub in df.groupby("code"):
-        out[code] = set(sub["date"].tolist())
-    return out
-
-
-def _get_st_lookup() -> dict[str, set[str]]:
-    global _ST_LOOKUP
-    if _ST_LOOKUP is not None:
-        return _ST_LOOKUP
-    with _ST_LOCK:
-        if _ST_LOOKUP is None:
-            _ST_LOOKUP = _build_st_lookup()
-    return _ST_LOOKUP
-
-
-def reset_st_cache() -> None:
-    """测试 / 数据更新后重置 cache。"""
-    global _ST_LOOKUP
-    with _ST_LOCK:
-        _ST_LOOKUP = None
-
-
-def _is_st_on(symbol: str, date_str: str) -> bool:
-    return date_str in _get_st_lookup().get(symbol, set())
+# A 股 ST 状态查询已抽到通用工具 utils/st_filter.py(跨策略复用)。
+# 这里 re-import 进本模块命名空间,保持调用点 `_is_st_on(...)` 与测试 monkeypatch 兼容。
+from services.backtest.strategies.utils.st_filter import _is_st_on, reset_st_cache  # noqa: F401
 
 
 # ===== 主策略 =====
