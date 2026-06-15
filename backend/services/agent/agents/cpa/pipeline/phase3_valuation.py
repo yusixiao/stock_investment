@@ -29,8 +29,15 @@ async def run_phase3_valuation(
     symbol: str,
     quant_results: dict[str, Any],
     on_chunk: OnChunk = None,
+    report_dir: Optional[Path] = None,
 ) -> Path:
-    """执行 Phase 3.2,返回最终报告路径。"""
+    """执行 Phase 3.2,返回最终报告路径。
+
+    workspace  : 过程目录(读 data_pack_market.md / phase3_quantitative.md,
+                 写 _quant_results.json 中间快照)。
+    report_dir : 产物目录(写最终分析报告)。默认回退 workspace,保持旧调用兼容。
+    """
+    report_dir = Path(report_dir) if report_dir is not None else workspace
     pack_path = workspace / "data_pack_market.md"
     quant_path = workspace / "phase3_quantitative.md"
     if not pack_path.exists():
@@ -69,7 +76,8 @@ async def run_phase3_valuation(
     )
 
     fname = f"{_safe_filename(company_name)}_{_safe_filename(symbol)}_分析报告.md"
-    out_path = workspace / fname
+    report_dir.mkdir(parents=True, exist_ok=True)
+    out_path = report_dir / fname
     with out_path.open("w", encoding="utf-8") as f:
         async for chunk in llm.stream(prompt):
             if not chunk:

@@ -120,11 +120,11 @@ async def test_full_pipeline_happy_path(tmp_path, patched_builder):
     assert quant_llm.calls == 1
     assert val_llm.calls == 1
 
-    # 报告写盘
+    # 中间产物落 work/,最终报告落 report/
     d = ws.resolve_dir(ref)
-    assert (d / "data_pack_market.md").exists()
-    assert (d / "phase3_quantitative.md").exists()
-    reports = list(d.glob("*_分析报告.md"))
+    assert (d / "work" / "data_pack_market.md").exists()
+    assert (d / "work" / "phase3_quantitative.md").exists()
+    reports = list((d / "report").glob("*_分析报告.md"))
     assert len(reports) == 1
 
     # done 事件 artifacts 列表里包含报告路径
@@ -205,7 +205,7 @@ async def test_full_pipeline_persists_assistant_message_with_artifacts(
     # artifacts 必须包含报告路径
     artifacts = call.kwargs.get("artifacts") or []
     assert artifacts, "助手消息必须带 artifacts"
-    reports = list(ws.resolve_dir(ref).glob("*_分析报告.md"))
+    reports = list((ws.resolve_dir(ref) / "report").glob("*_分析报告.md"))
     assert any(reports[0].name in str(a) for a in artifacts)
 
 

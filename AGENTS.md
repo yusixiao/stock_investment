@@ -12,7 +12,7 @@
     - `data/market/{A,HK,US}/...` — 行情/财务/分红/估值 parquet(DuckDB 视图来源,唯一业务数据源)
     - `data/meta/` — 全市场代码索引 / 流通股;`data/portfolio.db` — SQLite 业务库
     - `data/cache/` — **纯派生过程缓存**(`data/cache/tavily/` 问股搜索缓存、`data/cache/qualitative/` 定性分析缓存 30天TTL),可随时删,自动重建。由 `config.CACHE_DIR` 统一锚定
-  - `report/` — **用户产物 artifact**(花 token 的 LLM 报告),**整体 gitignore**:`report/agent_runs/<code>_<name>/` workspace+报告、`report/exported/`(诊断脚本/spike 输出)
+  - `report/` — **用户产物 artifact**(花 token 的 LLM 报告),**整体 gitignore**:`report/agent_runs/<code>_<name>/` 内再分 `report/`(最终分析报告)+ `work/`(可复用中间产物 + `_meta.json` 状态机,可清理)、`report/exported/`(诊断脚本/spike 输出)
   - `logs/` — **运行日志**,可定期清理,**整体 gitignore**
   - **🚨 备份真相(2026-06-14 核实)**:`scripts/backup_to_baidu.py` **只 `tar.add(MARKET_DIR, arcname="market")`** —— 仅备份 `data/market/`,不碰 `data/cache`、`data/meta`、`portfolio.db`、`report/`、`logs/`。所以 `data/cache` 归 data/ 不会被误备份;"report 进备份"是历史误述,实际未备份
   - 新代码缓存类写入一律走 `config.CACHE_DIR`(=`data/cache`),**禁止**新起顶层 `cache/`;产物写 `report/`;**禁止**写 `data/{agent_runs,logs}` 或顶层 `notes/`、`exported/`
@@ -312,7 +312,7 @@ backend/services/agent/
 
 ## TODO
 
-- **agent_runs 产物/过程分家**(2026-06-14 单列):`report/agent_runs/<code>_<name>/` 当前混放过程文件(`_meta.json` 状态 / `data_pack_market.md` / `phase3_quantitative.md` / `_quant_results.json`)与产物(`*_分析报告.md`)。拆分非纯移动:coordinator Layer1 `_has_completed_report` 靠 glob `*_分析报告.md` 判定→qa_followup,`_meta.json` 状态机 + SSE 进度 + `Workspace(root=)` 注入都依赖该目录,改动需同步 `coordinator.py` / `core/workspace.py` / `routers/agent.py`
+- ✅ **agent_runs 产物/过程分家**(2026-06-15 完成):`report/agent_runs/<code>_<name>/` 现拆 `report/`(产物 `*_分析报告.md`)+ `work/`(可复用中间产物 `_meta.json` / `data_pack_market.md` / `phase3_quantitative.md` / `_quant_results.json`)。**复用语义**:cpa 流水线跑前先看 `work/`,`data_pack_market.md` 在则跳过 Phase1 构建、`phase3_quantitative.md` 在则跳过 Phase3.1 LLM(读回解析还原 quant_parsed),缺失才调 LLM(断点续跑)。`Workspace` 新增 `work_dir()/report_dir()` + 文件名常量(`DATA_PACK_NAME/QUANT_MD_NAME/...`),`read_meta` 改读 `work/_meta.json` 并回退旧平铺位置;`coordinator._run_qa_followup` glob 改 `report/` 子目录带旧目录回退;`run_phase3_valuation` 加 `report_dir` 参数(默认回退 workspace)。注:Layer1 `_has_completed_report` 判定靠**读 `_meta.json` 的 `phase3_valuation.status==done`**(非 glob)
 - L3 LLM 意图分类器(coordinator `_classify_intent` 实现 + 4 层 fallback 测试)
 - team agent 骨架(`agents/team/`,多角色协作)
 - §17.8 D&A → EV/EBITDA

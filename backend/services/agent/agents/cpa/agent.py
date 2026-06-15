@@ -17,6 +17,8 @@ from services.agent.agents.cpa.pipeline.phase1_data_pack.builder import DataPack
 from services.agent.agents.cpa.pipeline.phase3_quant import run_phase3_quant
 from services.agent.agents.cpa.pipeline.phase3_valuation import run_phase3_valuation
 from services.agent.core import sse
+from services.agent.core.parser import parse_phase3_quant_results
+from services.agent.core.workspace import DATA_PACK_NAME, QUANT_MD_NAME
 from services.agent.core.qualitative import run_qualitative
 from services.agent.core.qualitative.cache import QualitativeCache
 from services.agent.core.qualitative.dimensions import MOCK_DIMENSION_FNS
@@ -63,6 +65,9 @@ class CpaAgent:
     async def run(self, session_id: str, ref: StockRef) -> None:
         """完整流水线:Phase 1 数据包 → Phase 3.1 量化 → Phase 3.2 估值。"""
         d = self.workspace.ensure(ref)
+        # work/ 放可复用中间产物 + 状态机;report/ 放最终产物
+        work = self.workspace.work_dir(d)
+        rep = self.workspace.report_dir(d)
         # 把 output_dir 写回 session,使后续追问命中 qa_followup
         try:
             self.repo.upsert(
@@ -87,11 +92,17 @@ class CpaAgent:
             )
 
         # ---------- Phase 1:数据包 ----------
+        # 复用:work/ 已有 data_pack_market.md 则跳过构建(数据包确定性,可安全复用)
+        def _build():
+            if (work / DATA_PACK_NAME).exists():
+                return
+            self._build_data_pack(ref, work)
+
         if not await self._run_phase(
             phase="phase1_data_pack",
             display_name="生成数据包",
             workdir=d,
-            fn=lambda: self._build_data_pack(ref, d),
+            fn=_build,
         ):
             return
 
@@ -100,13 +111,21 @@ class CpaAgent:
 
         async def _phase3_quant():
             nonlocal quant_parsed
+            # 复用:work/ 已有 phase3_quantitative.md 则跳过 LLM,直接解析还原参数
+            quant_md = work / QUANT_MD_NAME
+            if quant_md.exists():
+                quant_parsed = parse_phase3_quant_results(
+                    quant_md.read_text(encoding="utf-8")
+                )
+                return
+
             llm = self._wrap_stream_llm(self.llm_factory("phase3_quant"))
 
             async def _on_chunk(s: str):
                 await self.sse_send(sse.generating(s))
 
             _, quant_parsed = await run_phase3_quant(
-                workspace=d,
+                workspace=work,
                 llm=llm,
                 on_chunk=_on_chunk,
             )
@@ -130,12 +149,13 @@ class CpaAgent:
                 await self.sse_send(sse.generating(s))
 
             report_path_holder["path"] = await run_phase3_valuation(
-                workspace=d,
+                workspace=work,
                 llm=llm,
                 company_name=ref.name,
                 symbol=ref.code,
                 quant_results=quant_parsed,
                 on_chunk=_on_chunk,
+                report_dir=rep,
             )
 
         if not await self._run_phase(

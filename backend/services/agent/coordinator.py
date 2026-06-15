@@ -193,8 +193,10 @@ class Coordinator:
         self, session_id: str, message: str, output_dir: Path
     ) -> None:
         await self.sse_send(sse.thinking("加载已有分析报告作上下文..."))
-        # 取 output_dir 下唯一的 *_分析报告.md
-        reports = list(output_dir.glob("*_分析报告.md"))
+        # 取报告:产物落 <output_dir>/report/,旧版本平铺在 <output_dir>/ 根目录(回退)
+        reports = list((output_dir / "report").glob("*_分析报告.md"))
+        if not reports:
+            reports = list(output_dir.glob("*_分析报告.md"))
         report_text = reports[0].read_text(encoding="utf-8") if reports else ""
         # 取最近 10 条历史(避免上下文超长)
         history = (self.repo.list_messages(session_id) or [])[-10:]
