@@ -13,24 +13,30 @@ NOTICE_DATE-as-of 口径(严格防 look-ahead)。
     momentum_drop_pct      0.2  -> 0.3       剔最差 30% 动量
     score_weight_roe       1.0  -> 2.0
     score_weight_div_yield 1.0  -> 2.0
-    top_n                  15   -> 30
-    max_per_industry       3    -> 4
+    top_n                  15   -> 30   (惰性:实际平均持仓仅 ~10 只,top_n≥20 即不 binding)
+    max_per_industry       3    -> 2    强制跨行业分散(破净池高度集中于银行/地产/钢铁)
     rebalance_months  [5,9,11] -> [3,6,9,12]  规整季度调仓
   成长 gate:
     growth_min_yoy         0.0   归母净利同比增速下限 %(0=g0:仅要求非负/有披露)
     growth_gate_require_data True 未披露成长数据的股票剔除(保守)
 
 == 回测结论(2010-01 ~ 2026-06,A 股全市场,/tmp/garp_value_eval.py)==
-  变体              年化     回撤    Sharpe  Calmar  交易
-  C_full_t30(底座) 11.50%  35.4%   0.554   0.325   1341
-  本策略 g0(净利≥0)12.11%  31.3%   0.590   0.387    796   ← 全维度优于底座
-- g0 相对底座:年化↑、回撤↓、Sharpe↑、换手↓,几乎「免费」的改进。
-- OOS 7 个独立 regime 窗口(各 fresh capital,/tmp/garp_oos_eval.py):5 WIN / 1≈ / 1 LOSE,
-  每窗口均跑赢 CSI300;修复了价值底座最大短板(结构牛 2019-2021:底座 0.79% → g0 6.41%)。
-  唯一弱点 = 2024-2026 近端反弹略逊底座(-2.1pct)。
+  变体                         年化     回撤    Sharpe  PF    交易
+  C_full_t30(底座)            11.50%  35.4%   0.554  -      1341
+  g0 旧(max_per_industry=4)   12.11%  31.3%   0.590  3.64    796
+  g0 现(max_per_industry=2)   14.21%  25.5%   0.690  4.03    -    ← 全维度优于旧 g0
+- max_per_industry 4→2 决策(2026-06-17,/tmp/garp_topind_eval.py + ind2/邻居 OOS):
+  破净股票池高度集中于银行/地产/钢铁,4→2 强制跨行业分散,全周期年化 +2.10pct、
+  回撤 -5.8pct、Sharpe/PF 全升。OOS 验证为结构性增益而非噪声/单段 beta:
+    · 两半场全胜:H1 +1.75pct、H2(2018-2026 干净 OOS)+2.12pct
+    · 5 个独立 regime 段 3WIN/2LOSE,胜段跨疯牛灾(+4.93)/结构牛(+4.17)/熊(+6.07)
+      三种不同行情,不依赖单一 beta;失血段慢牛熊(-2.31)/反弹(-2.00)温和可控
+    · 邻域 OOS 确认改进带 = cap∈{2,3} 平滑山脊(ind3 同为 3W/2L),非孤立尖峰;
+      ind1(每行业仅 1 只)过度分散,regime 仅 1W/4L,已排除
+- top_n=30 为惰性冗余值:实际平均持仓仅 ~10 只,top50 与 base 回测字节级相同。
 - 真实基准对比(2013-2026,易方达沪深300ETF 510310 前复权,/tmp/g0_vs_510310.py):
-  每月定投 5000,g0 XIRR 15.11% / 终值 235 万 vs 510310 XIRR 7.50% / 终值 135 万。
-结果存档:logs/smoke/garp_{value,oos}_eval.{log,json}、g0_vs_510310.{log,json}。
+  每月定投 5000,旧 g0 XIRR 15.11% / 终值 235 万 vs 510310 XIRR 7.50% / 终值 135 万。
+结果存档:logs/smoke/garp_{value,oos,topind,ind2oos,indnbr}_eval.{log,json}、g0_vs_510310.{log,json}。
 
 == 与已证伪的 a_garp 的区别 ==
 a_garp 是「成长优先」GARP(先按 CAGR 选高成长再做估值检查),已证伪。本策略是
@@ -54,7 +60,7 @@ _C_FULL_T30_OVERRIDES = {
     "score_weight_roe": 2.0,
     "score_weight_div_yield": 2.0,
     "top_n": 30,
-    "max_per_industry": 4,
+    "max_per_industry": 2,
     "rebalance_months": [3, 6, 9, 12],
 }
 
