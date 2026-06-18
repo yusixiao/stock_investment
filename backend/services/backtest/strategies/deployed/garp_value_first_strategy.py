@@ -11,7 +11,7 @@ NOTICE_DATE-as-of 口径(严格防 look-ahead)。
 == 配置(本交付版固化的全部参数,自包含,不依赖 experiments)==
   底座 C_full_t30 覆盖(相对 deployed 父类默认):
     momentum_drop_pct      0.2  -> 0.3       剔最差 30% 动量
-    score_weight_roe       1.0  -> 2.0
+    score_weight_roe       1.0  (退回父类等权,2026-06-17 OOS:原 2.0 覆盖无依据)
     score_weight_div_yield 1.0  -> 2.0
     top_n                  15   -> 30   (惰性:实际平均持仓仅 ~10 只,top_n≥20 即不 binding)
     max_per_industry       3    -> 2    强制跨行业分散(破净池高度集中于银行/地产/钢铁)
@@ -33,10 +33,18 @@ NOTICE_DATE-as-of 口径(严格防 look-ahead)。
       三种不同行情,不依赖单一 beta;失血段慢牛熊(-2.31)/反弹(-2.00)温和可控
     · 邻域 OOS 确认改进带 = cap∈{2,3} 平滑山脊(ind3 同为 3W/2L),非孤立尖峰;
       ind1(每行业仅 1 只)过度分散,regime 仅 1W/4L,已排除
+- score_weight_roe 2.0→1.0 决策(2026-06-17,/tmp/garp_Bknobs_eval.py + 完全等权补测):
+  原 2.0 系从 C_full_t30 底座继承、从未独立 OOS 验证。退回父类等权 1.0 是更少拟合方向。
+  8 段 battery 6WIN/2LOSE:全周期 +0.32pct、H2 干净 OOS +0.38pct(回撤 -2.0pct)、
+  补强 base 最弱的慢牛熊 +1.83pct(回撤 -2.7pct)、base 最强的熊段也 +1.21pct;
+  仅结构牛 -1.27/疯牛 -0.22(flat)温和让步。与被证伪的 roe_min 松紧(roe5)伪 alpha
+  性质相反(roe5 仅疯牛赢、多段质量+回撤双恶化)。
+  · 完全等权补测(div_yield 也退 1.0):eqw 仅 4W/4L 且干净 OOS H2 -0.34 输给 base,
+    z-score 加权下叠加非线性,div 分量在干净 OOS/反弹拖累 → 只退 roe 单动,div_yield 保留 2.0。
 - top_n=30 为惰性冗余值:实际平均持仓仅 ~10 只,top50 与 base 回测字节级相同。
 - 真实基准对比(2013-2026,易方达沪深300ETF 510310 前复权,/tmp/g0_vs_510310.py):
   每月定投 5000,旧 g0 XIRR 15.11% / 终值 235 万 vs 510310 XIRR 7.50% / 终值 135 万。
-结果存档:logs/smoke/garp_{value,oos,topind,ind2oos,indnbr}_eval.{log,json}、g0_vs_510310.{log,json}。
+结果存档:logs/smoke/garp_{value,oos,topind,ind2oos,indnbr,Aknobs,Bknobs,eqw}_eval.{log,json}、g0_vs_510310.{log,json}。
 
 == 与已证伪的 a_garp 的区别 ==
 a_garp 是「成长优先」GARP(先按 CAGR 选高成长再做估值检查),已证伪。本策略是
@@ -57,7 +65,7 @@ from services.backtest.strategies.utils import growth
 # C_full_t30 底座:相对 deployed 父类默认值的覆盖项
 _C_FULL_T30_OVERRIDES = {
     "momentum_drop_pct": 0.3,
-    "score_weight_roe": 2.0,
+    "score_weight_roe": 1.0,
     "score_weight_div_yield": 2.0,
     "top_n": 30,
     "max_per_industry": 2,
