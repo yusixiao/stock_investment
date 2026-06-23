@@ -4,17 +4,24 @@
 REPORT_DATE。若直接用 REPORT_DATE <= current_date 作可见性判定,会引入严重
 look-ahead bias(财报实际披露日远晚于报告期末)。
 
-港交所主板规则:
-- 年报(REPORT_DATE 以 -12-31 结尾)正式刊发不晚于报告期末后 4 个月 → 滞后 120 天
-- 中报(-06-30)不晚于 3 个月 → 滞后 90 天
-- 其余季末(-03-31/-09-30,HK 少见)→ 滞后 90 天
+🚨 年报识别(per-company 财年):实测 v_hk_income **每一行都是该公司自身财年结的年报**
+(90.6% 公司整段历史只有 1 个 MM-DD;~9% 是中途改过财年结,两段都是年报;真·中报近乎
+不入库)。故 `is_annual = True`,不再用 `REPORT_DATE.endswith("-12-31")`——后者会把约 20%
+(551 只)非 12 月财年公司的真实年报误判为"非年报"而剔除。
+
+发布滞后(统一 90 天):本 util 只用业绩公告里的数字(净利/营收/EPS/ROE),港交所主板
+规则业绩公告须在财年结束后 **3 个月**内刊发,故统一 +90 天即可。这样错峰调仓
+04-01 / 07-01 / 10-01 正好能看到 12-31 / 03-31 / 06-30 财年公司的最新年报。
+⚠️ 残留偏差:卡 90 天整,踩 deadline 晚发(>90 天)的少数公司会被假定已可见 → 轻微
+look-ahead;主体公司按时披露,影响有限。
 
 实现:一次性从 DuckDB 拉 v_hk_income + v_hk_indicator(join on REPORT_DATE),
-为每行算 available_date = REPORT_DATE + lag,按 (code, available_date) 升序建索引,
+为每行算 available_date = REPORT_DATE + 90,按 (code, available_date) 升序建索引,
 二分 as-of 查找,只回看 available_date <= current_date 的报告。
 
 ⚠️ 不依赖 ctx.market(回测 Context 里 market 可能为 None)。市场固定 HK。
-⚠️ 已知偏差:数据仅含当前在市的 2734 只港股,**退市股缺失 → survivorship bias**。
+⚠️ 已知偏差:数据仅含当前在市港股,**退市股缺失 → survivorship bias**;改过财年结的
+少数公司过渡期 stub 报告点可能轻微扭曲 CAGR,主体单一财年结公司完全干净。
 """
 
 from __future__ import annotations
@@ -26,8 +33,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-_ANNUAL_LAG_DAYS = 120
-_INTERIM_LAG_DAYS = 90
+# 业绩公告口径:每行都是年报,统一 90 天发布滞后(港交所主板 3 个月内须刊发)
+_ANNUAL_LAG_DAYS = 90
 
 # code -> DataFrame(按 available_date 升序;含年报+中报)
 _HK_LOOKUP: dict[str, pd.DataFrame] = {}
@@ -51,13 +58,12 @@ _INDICATOR_FIELDS = [
 
 
 def _available_date(report_date: str) -> str:
-    """REPORT_DATE(YYYY-MM-DD)→ 加发布滞后后的可见日(字符串)。"""
+    """REPORT_DATE(YYYY-MM-DD)→ 加发布滞后(统一 90 天)后的可见日(字符串)。"""
     try:
         d = date.fromisoformat(report_date[:10])
     except (ValueError, TypeError):
         return report_date
-    lag = _ANNUAL_LAG_DAYS if d.month == 12 else _INTERIM_LAG_DAYS
-    return (d + timedelta(days=lag)).isoformat()
+    return (d + timedelta(days=_ANNUAL_LAG_DAYS)).isoformat()
 
 
 def _load() -> None:
@@ -90,7 +96,9 @@ def _load() -> None:
         df["REPORT_DATE"] = df["REPORT_DATE"].astype(str)
         df = df.drop_duplicates(["code", "REPORT_DATE"], keep="last")
         df["available_date"] = df["REPORT_DATE"].map(_available_date)
-        df["is_annual"] = df["REPORT_DATE"].str.endswith("-12-31")
+        # 🚨 per-company 财年:HK v_hk_income 每行都是该公司财年结的年报(非 12 月财年亦然),
+        # 不能用 endswith("-12-31") 识别(会误杀约 20% 非 12 月财年公司)。
+        df["is_annual"] = True
 
         for code, sub in df.groupby("code"):
             sub = sub.sort_values("available_date").reset_index(drop=True)

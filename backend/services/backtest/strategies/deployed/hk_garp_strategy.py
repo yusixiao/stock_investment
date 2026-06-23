@@ -1,6 +1,6 @@
 """港股 GARP(合理价格成长股)策略 —— HkGarpStrategy。
 
-目标:在全 H股(2734 只)2010-2026 上探索能否达到平均年化 ≥15%。
+目标:在当前在市全 H 股(约 2700 只)2015-2026 上达到平均年化 ≥15%。
 
 逻辑(GARP = Growth At Reasonable Price):
 - **成长**:3 年归母净利 CAGR + 营收 CAGR(年报口径,发布滞后防 look-ahead)
@@ -8,9 +8,17 @@
 - **估值**:peTTM / pbMRQ(来自日线 bar,天然 point-in-time);PEG 上限
 - **排序**:PEG 升序 / 成长降序 / 复合,取 Top N 等权,定期调仓完全替换
 
+🚨 调仓节奏:默认错峰季度调仓 [4, 7, 10](每年这些月的第一个交易日全市场重筛)。
+   每个调仓月精确踩在一批公司新年报刚可见的节奏上(90 天滞后):
+   - 04 月:12-31 财年公司(主力);07 月:03-31 财年;10 月:06-30 财年。
+   实测优于旧版单次 [6] 调仓(0 闸全样本:年化 30.9% vs 25.6%、回撤 34.5% vs 40.6%、
+   Sharpe 1.05 vs 0.91)。注:1 月无对应新财年披露,加 1 月凑成 [1,4,7,10] 反而拖累
+   盈亏比(PF 4.28→2.86),故不采用。
+
 数据源:
-- 成长/ROE:`services.backtest.strategies.utils.growth_hk`(v_hk_income + v_hk_indicator,发布滞后
-  年报 +120 天 / 中报 +90 天,严防未来函数)
+- 成长/ROE:`services.backtest.strategies.utils.growth_hk`(v_hk_income + v_hk_indicator;
+  per-company 财年识别——每行都是该公司财年结年报,非 12 月财年公司亦救回;统一发布滞后
+  +90 天,严防未来函数)
 - 估值:`ctx.get_valuation`(日线 peTTM / pbMRQ,PIT)
 
 ⚠️ 已知偏差:数据仅含当前在市港股,**退市股缺失 → survivorship bias**,
@@ -135,9 +143,9 @@ class HkGarpStrategy(Strategy):
             "label": "估值数据时效上限(交易日,防退市股 stale)",
         },
         "rebalance_months": {
-            "default": [6],
+            "default": [4, 7, 10],
             "type": "list[int]",
-            "label": "调仓月份(每年这些月的第一个交易日)",
+            "label": "调仓月份(每年这些月的第一个交易日);默认错峰季度 4/7/10(踩新年报披露节奏)",
         },
         # ---- R18: HSI 市场 regime 择时(降回撤)----
         "risk_off_exposure": {
