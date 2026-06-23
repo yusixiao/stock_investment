@@ -119,21 +119,16 @@ def get_update_progress() -> dict:
     return asdict(_progress)
 
 
-def _fetch_with_retry(
-    adapter,
-    code: str,
-    start_date: str,
-    end_date: str,
-    max_retries: int = MAX_RETRIES,
-):
-    """带重试的 K线拉取。
+def _retry_call(fn: Callable, label: str, max_retries: int = MAX_RETRIES):
+    """带重试的网络调用通用封装(K线 / 复权因子共用)。
 
     限流错误使用更长的退避(基础 10s × 指数);其它错误用普通指数退避。
+    fn 为无参可调用(实参用 lambda 绑定),label 仅用于日志定位。
     """
     last_error = None
     for attempt in range(max_retries):
         try:
-            return adapter.fetch_daily_kline(code, start_date, end_date)
+            return fn()
         except Exception as e:
             last_error = e
             if _is_rate_limit_error(e):
@@ -141,11 +136,26 @@ def _fetch_with_retry(
             else:
                 wait = min(2**attempt, RETRY_BACKOFF_CAP)
             logger.warning(
-                f"Fetch failed {code} attempt {attempt + 1}/{max_retries}, "
+                f"Fetch failed {label} attempt {attempt + 1}/{max_retries}, "
                 f"wait {wait}s: {e}"
             )
             time.sleep(wait)
-    raise RuntimeError(f"{code} failed after {max_retries} retries: {last_error}")
+    raise RuntimeError(f"{label} failed after {max_retries} retries: {last_error}")
+
+
+def _fetch_with_retry(
+    adapter,
+    code: str,
+    start_date: str,
+    end_date: str,
+    max_retries: int = MAX_RETRIES,
+):
+    """带重试的 K线拉取(委托 _retry_call,行为不变)。"""
+    return _retry_call(
+        lambda: adapter.fetch_daily_kline(code, start_date, end_date),
+        code,
+        max_retries,
+    )
 
 
 def _update_market_kline(
@@ -233,23 +243,62 @@ def _update_market_kline(
 
 
 def _update_market_adjust_factor(market: str) -> int:
-    """更新单个市场的复权因子（全量覆盖）"""
+    """全量覆盖更新单个市场的复权因子。
+
+    复用 K线更新同款基建:单 session 复用 + 限流重试 + 节流 + 进度日志。
+    - baostock(A):若不在此登录,fetch_adjust_factor 会对每只股票各自
+      login/logout(数千次),既慢又易被封;此处统一登录复用一个 session。
+    - yfinance(HK/US):数千只全量极易触发 Yahoo 429,故逐只 throttle + 重试。
+    """
     adapter = _get_adapter(market)
     repo = _get_repo(market)
 
-    codes = repo.list_codes()
-    updated = 0
+    if hasattr(adapter, "login"):
+        adapter.login()
 
-    for code in codes:
+    codes = repo.list_codes()
+    total = len(codes)
+    throttle_sec = THROTTLE_SEC_BY_MARKET.get(market, 0.0)
+    logger.info(
+        f"[{market}] Adjust factor full update start: {total} codes, "
+        f"throttle={throttle_sec}s"
+    )
+
+    updated = 0
+    failed = 0
+    t0 = time.time()
+
+    for idx, code in enumerate(codes, 1):
         try:
-            records = adapter.fetch_adjust_factor(code)
+            records = _retry_call(
+                lambda c=code: adapter.fetch_adjust_factor(c), code
+            )
             if records:
                 repo.write_adjust_factor(code, records)
                 updated += 1
         except Exception as e:
+            # 重试耗尽(含限流)仍失败:计 failed,不阻塞后续个股
+            failed += 1
             logger.warning(f"[{market}] Adjust factor failed {code}: {e}")
 
-    logger.info(f"[{market}] Adjust factor updated: {updated}/{len(codes)}")
+        if throttle_sec > 0:
+            time.sleep(throttle_sec)
+
+        if idx % 200 == 0:
+            elapsed = time.time() - t0
+            speed = idx / elapsed * 3600 if elapsed > 0 else 0
+            logger.info(
+                f"[{market}] Adjust factor progress {idx}/{total} "
+                f"updated={updated} failed={failed} | {speed:.0f}/h"
+            )
+
+    if hasattr(adapter, "logout"):
+        adapter.logout()
+
+    logger.info(
+        f"[{market}] Adjust factor done: updated={updated} failed={failed} "
+        f"total={total} elapsed={time.time() - t0:.0f}s"
+    )
     return updated
 
 

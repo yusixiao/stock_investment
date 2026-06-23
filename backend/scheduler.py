@@ -91,6 +91,29 @@ def _financial_sync_job():
         logger.error(f"Scheduled financial sync failed: {e}")
 
 
+def _adjust_factor_update_job():
+    """每周六 02:00 全量刷新 A/HK/US 复权因子(baostock / yfinance)。
+
+    放在周六:避开周日 02:00 A股财务 + 03:00 备份的拥挤窗口,且周日 03:00
+    备份能纳入周六刷新好的因子。除权除息事件落在周一~周五交易日,周六刷新
+    可完整捕获本周事件。yfinance(HK/US)数千只全量耗时较久,更新器内部已带
+    单 session 复用 + retry + throttle + 进度日志。
+    注:qfq 视图 / data_cache 由每个工作日 06:00 市场更新负责重建,因此周末
+    回测在周一 06:00 前仍用上周因子(可接受的批处理滞后)。
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("Scheduled adjust factor update started")
+    try:
+        from services.market_data.updaters.market_updater import update_adjust_factors
+
+        results = update_adjust_factors()
+        logger.info(f"adjust factor update done: {results}")
+    except Exception as e:
+        logger.error(f"adjust factor update failed: {e}")
+
+
 def _hk_connect_refresh_job():
     """每周一 06:30 刷新港股通成分股快照(EastMoney push2)。
     放在 06:00 市场更新之后,不强依赖。"""
@@ -222,6 +245,16 @@ def start_scheduler():
         hour=7,
         minute=0,
         id="weekly_hk_industry_refresh",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        _adjust_factor_update_job,
+        "cron",
+        day_of_week="sat",
+        hour=2,
+        minute=0,
+        id="weekly_adjust_factor_update",
         replace_existing=True,
         misfire_grace_time=3600,
     )
