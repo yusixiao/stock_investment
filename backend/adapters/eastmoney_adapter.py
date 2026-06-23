@@ -6,6 +6,7 @@ import requests
 import pandas as pd
 
 from backend.adapters.base import FinancialDataAdapter, EventDataAdapter
+from backend.models.market import DailyKlineRecord
 from backend.models.financial import (
     IncomeStatement,
     BalanceSheet,
@@ -262,6 +263,27 @@ def _em_dividend_to_record(code: str, em: dict) -> DividendRecord | None:
         return None
 
 
+def _to_kline_secid(code: str) -> str:
+    """标准代码 -> push2his secid。
+
+    HK:    00700.HK  -> 116.00700(5 位带前导 0)
+    A股 SH: 600519.SH -> 1.600519
+    A股 SZ/BJ: 000001.SZ -> 0.000001
+    美股暂不支持(EM secid 前缀依交易所 105/106/107,无法由代码独立推出)。
+    """
+    if "." not in code:
+        raise ValueError(f"无法解析 secid,缺少市场后缀: {code}")
+    num, market = code.split(".", 1)
+    market = market.upper()
+    if market == "HK":
+        return f"116.{num.zfill(5)}"
+    if market == "SH":
+        return f"1.{num.zfill(6)}"
+    if market in ("SZ", "BJ"):
+        return f"0.{num.zfill(6)}"
+    raise ValueError(f"EastMoney K线暂不支持市场: {market} ({code})")
+
+
 class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
     """东方财富直接API适配器 — 财务数据 + 分红事件"""
 
@@ -430,6 +452,97 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
         """所有历史经营评述(按 REPORT_DATE 降序)。"""
         records = _fetch_report("RPT_F10_OP_BUSINESSANALYSIS", code)
         return _records_to_models(records, BusinessReviewRecord)
+
+    # ---------- 日K线(push2his,yfinance 二源交叉校验用) ----------
+    def fetch_daily_kline(
+        self, code: str, start_date: str, end_date: str, fqt: int = 0
+    ) -> List[DailyKlineRecord]:
+        """东方财富日K线(push2his)。
+
+        非主行情源 —— 仅用于与 yfinance 港股K线交叉校验(二源数据一致性审计)。
+        主行情仍走 yfinance(HK/US)/ baostock(A)。
+
+        Args:
+            code: 标准代码,如 00700.HK / 600519.SH(美股暂不支持)
+            start_date / end_date: "YYYY-MM-DD"
+            fqt: 复权类型 0=不复权(默认,对齐 v_hk_daily_raw)/ 1=前复权 / 2=后复权
+
+        Returns:
+            DailyKlineRecord 列表(amount 为真实成交额,区别于 yfinance HK amount 恒 0);
+            klines 行内字段序为 日期,开,收,高,低,量,额(close 在 index 2)。
+            无数据返 [];网络错误经退避重试仍失败返 []。
+        """
+        secid = _to_kline_secid(code)
+        url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+        params = {
+            "secid": secid,
+            "klt": 101,  # 日线
+            "fqt": fqt,
+            "beg": start_date.replace("-", ""),
+            "end": end_date.replace("-", ""),
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57",
+            "lmt": 100000,
+        }
+        # push2his 与 push2 同族,限流敏感:仿浏览器 UA + Referer + Session + 退避重试
+        session = requests.Session()
+        session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+                ),
+                "Referer": "https://quote.eastmoney.com/",
+            }
+        )
+        data = None
+        for attempt in range(MAX_RETRIES + 2):
+            try:
+                resp = session.get(url, params=params, timeout=DEFAULT_TIMEOUT)
+                data = resp.json()
+                break
+            except Exception as e:
+                if attempt < MAX_RETRIES + 1:
+                    time.sleep(RETRY_BASE_DELAY * (2**attempt))
+                else:
+                    logger.error(f"东方财富K线拉取失败 {code} (secid={secid}): {e}")
+                    return []
+        if data is None:
+            return []
+
+        klines = (data.get("data") or {}).get("klines") or []
+        records: List[DailyKlineRecord] = []
+        prev_close = None
+        for line in klines:
+            parts = line.split(",")
+            if len(parts) < 7:
+                continue
+            try:
+                date_str = parts[0]
+                open_ = float(parts[1])
+                close = float(parts[2])
+                high = float(parts[3])
+                low = float(parts[4])
+                volume = float(parts[5])
+                amount = float(parts[6])
+            except (ValueError, IndexError):
+                continue
+            rec = {
+                "date": date_str,
+                "code": code,
+                "open": open_,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
+                "amount": amount,
+            }
+            if prev_close is not None and prev_close != 0:
+                rec["preclose"] = prev_close
+                rec["pctChg"] = (close - prev_close) / prev_close * 100
+            prev_close = close
+            records.append(DailyKlineRecord(**rec))
+        return records
 
     # ---------- 港股通成分股(push2 行情板块接口) ----------
     # 板块代码:
