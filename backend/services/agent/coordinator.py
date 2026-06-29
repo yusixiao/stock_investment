@@ -1,7 +1,8 @@
 """问股 Coordinator — 多 agent 路由器(4 层 fallback 设计)。
 
-路由顺序:
-  Layer 1 (规则): session.output_dir 已有完整报告 → qa_followup
+路由顺序(先 extract 识别本轮股票,再判定是否换股):
+  Layer 1 (规则): 已有完整报告 且 (本轮未问新股票 或 问的仍是同一只) → qa_followup
+                 (识别到不同股票码 = 换股,落到分析流水线,不被旧报告粘滞)
   Layer 2 (规则): 无股票上下文 + 消息无股票码 → clarify(硬编码澄清,不调 LLM)
   Layer 3 (LLM): 识别到股票码 → 意图分类器 → AGENT_REGISTRY[name].run()
                  (TODO 阶段 2:目前未实现,直接走 Layer 4 兜底)
@@ -89,16 +90,25 @@ class Coordinator:
         context: Optional[dict],
     ) -> None:
         try:
-            # ---- Layer 1: 已有完整报告 → qa_followup ----
+            # ---- 先识别本轮问的股票(决定是否换股,避免会话被旧报告粘滞)----
+            ref = extract(message, context, stock_index=self.stock_index)
+
             session = self.repo.get(session_id) or {}
             output_dir = session.get("output_dir")
-            if output_dir and self._has_completed_report(Path(output_dir)):
+            anchored_code = session.get("stock_code")
+            has_report = bool(output_dir) and self._has_completed_report(
+                Path(output_dir)
+            )
+
+            # ---- Layer 1: 已有完整报告 → qa_followup ----
+            # 仅当"本轮没问新股票(ref 为 None)"或"问的还是同一只股票"时才追问旧报告;
+            # 若识别到不同股票码,说明用户要换股 → 落到下方分析流水线(agent 会重锚定 session)。
+            if has_report and (ref is None or ref.code == anchored_code):
                 return await self._run_qa_followup(
                     session_id, message, Path(output_dir)
                 )
 
             # ---- Layer 2: 无股票上下文 → 硬编码澄清(不调 LLM)----
-            ref = extract(message, context, stock_index=self.stock_index)
             if ref is None:
                 return await self._run_clarify(session_id)
 

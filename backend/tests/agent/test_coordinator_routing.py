@@ -213,3 +213,71 @@ async def test_qa_followup_includes_recent_history():
     assert "m0" not in contents
     assert "m1" not in contents
     assert "m11" in contents
+
+
+# ===== 会话内换股(方向②):不被旧报告粘滞 =====
+
+
+async def test_switches_to_new_stock_instead_of_qa_followup(tmp_path):
+    """会话粘滞 bug 回归:会话已锚定旧股 01104.HK 且有完整报告,
+    用户在同一会话改问新股 603939.SH 时,应路由到分析流水线分析新股,
+    而不是拿旧报告走 qa_followup(否则 LLM 拿着 01104 报告答 603939,答非所问)。
+    """
+    from services.agent.core.symbol import StockRef
+    from services.agent.core.workspace import Workspace
+
+    sent: list[dict] = []
+
+    async def sse_send(ev):
+        sent.append(ev)
+
+    # 预置旧股 01104.HK 的"完整报告"(work/_meta.json phase3_valuation=done + report/*.md)
+    ws = Workspace(tmp_path / "ws")
+    old_ref = StockRef(code="01104.HK", name="APAC RESOURCES", market="HK")
+    d_old = ws.ensure(old_ref)
+    ws.mark_phase(d_old, "phase3_valuation", status="done")
+    (ws.report_dir(d_old) / "APAC RESOURCES_01104.HK_分析报告.md").write_text(
+        "# 旧报告 01104", encoding="utf-8"
+    )
+
+    repo = MagicMock()
+    repo.get.return_value = {
+        "session_id": "s1",
+        "stock_code": "01104.HK",
+        "output_dir": str(d_old),
+        "status": "done",
+    }
+
+    si = MagicMock()
+    si.get_name.return_value = "益丰药房"  # 603939.SH 命中 → extract 返回新股 ref
+
+    # qa_followup 用 complete();若被调用即说明仍粘滞(测试应红)
+    qa_complete = AsyncMock(
+        return_value=CompletionResult(text="旧报告答复", tokens_in=1, tokens_out=1)
+    )
+
+    def llm_factory(phase):
+        m = MagicMock()
+        m.complete = qa_complete
+        return m
+
+    coord = Coordinator(
+        sse_send=sse_send,
+        repo=repo,
+        workspace=ws,
+        stock_index=si,
+        llm_factory=llm_factory,
+        qualitative_dir=tmp_path / "qual",
+    )
+    await coord.run(
+        session_id="s1",
+        message="使用现金流分析一下603939.SH",
+        context=None,
+    )
+
+    # 不得走 qa_followup(拿旧报告让 LLM 续答)
+    qa_complete.assert_not_awaited()
+    # 应进入分析流水线(cpa 首阶段 phase0_qualitative)
+    tool_starts = [e for e in sent if e["type"] == "tool_start"]
+    assert tool_starts, "应进入分析流水线(至少一个 tool_start)"
+    assert tool_starts[0]["tool"] == "phase0_qualitative"
