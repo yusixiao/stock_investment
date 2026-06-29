@@ -1,4 +1,5 @@
 import logging
+import socket
 from contextlib import contextmanager
 from typing import List, Optional
 
@@ -11,6 +12,24 @@ from backend.models.basic import StockBasicInfo
 from backend.models.event import DividendRecord
 
 logger = logging.getLogger(__name__)
+
+# BaoStock 底层 socket 默认无超时，服务端不响应时 recv/connect 会永久阻塞
+# (2026-06-29 事故：手动重跑卡死 1.5h，login 亦曾卡 19min)。用 setdefaulttimeout
+# 让 login 时创建的 socket 继承该超时——socket 创建后自带超时值，随后恢复 default
+# 既不影响已建连接，也不污染进程内其它 socket。recv/connect 超时会抛异常，
+# 交由上层 _retry_call / _fetch_with_retry 重试，避免线程永久挂起。
+BAOSTOCK_SOCKET_TIMEOUT = 30.0
+
+
+@contextmanager
+def _socket_timeout(seconds: float):
+    old = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(seconds)
+    try:
+        yield
+    finally:
+        socket.setdefaulttimeout(old)
+
 
 KLINE_FIELDS = (
     "date,code,open,high,low,close,preclose,volume,amount,"
@@ -52,7 +71,8 @@ def _to_standard_code(bs_code: str) -> str:
 
 @contextmanager
 def _baostock_session():
-    lg = bs.login()
+    with _socket_timeout(BAOSTOCK_SOCKET_TIMEOUT):
+        lg = bs.login()
     if lg.error_code != "0":
         raise ConnectionError(f"BaoStock login failed: {lg.error_msg}")
     try:
@@ -95,7 +115,8 @@ class BaoStockAdapter(MarketDataAdapter, BasicDataAdapter, EventDataAdapter):
     def login(self):
         """手动登录，用于批量操作时保持长连接"""
         if not self._logged_in:
-            lg = bs.login()
+            with _socket_timeout(BAOSTOCK_SOCKET_TIMEOUT):
+                lg = bs.login()
             if lg.error_code != "0":
                 raise ConnectionError(f"BaoStock login failed: {lg.error_msg}")
             self._logged_in = True
