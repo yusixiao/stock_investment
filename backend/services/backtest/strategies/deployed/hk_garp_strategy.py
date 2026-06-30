@@ -37,7 +37,7 @@ from services.backtest.strategies.utils import growth_hk, hk_industry
 
 
 class HkGarpStrategy(Strategy):
-    name = "港股 GARP(成长+合理估值)"
+    name = "港股成长股策略"
     description = (
         "全 H股 GARP:3 年净利/营收 CAGR + ROE 质量门槛 + peTTM/PB 估值健康 → "
         "PEG 升序 Top N 等权,定期调仓。发布滞后防 look-ahead。目标 CAGR≥15%。"

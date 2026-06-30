@@ -12,13 +12,13 @@ DEPLOYED_DIR = Path(__file__).resolve().parent.parent / "services" / "backtest" 
 
 class TestLoadStrategyFromFile:
     def test_load_strategy(self):
-        filepath = DEPLOYED_DIR / "ma_tangle_value_strategy.py"
+        filepath = DEPLOYED_DIR / "lynch_slow_growers_strategy.py"
         strategies = load_strategy_from_file(filepath)
         assert len(strategies) >= 1
         s = strategies[0]
         assert isinstance(s, type)
         assert issubclass(s, Strategy)
-        assert s.name == "月线均线缠绕价值策略"
+        assert s.name == "彼得林奇缓慢增长策略"
 
     def test_load_nonexistent_file(self):
         filepath = Path("/nonexistent/file.py")
@@ -37,7 +37,7 @@ class TestScanStrategies:
         results = scan_strategies(DEPLOYED_DIR)
         assert len(results) >= 1
         names = [r["name"] for r in results]
-        assert "月线均线缠绕价值策略" in names
+        assert "彼得林奇缓慢增长策略" in names
 
     def test_scan_returns_correct_structure(self):
         results = scan_strategies(DEPLOYED_DIR)
@@ -76,8 +76,8 @@ class TestScanStrategies:
         # 新 Strategy 基类的子类应该被扫描到,且 strategy_type == "strategy"
         results = scan_strategies(DEPLOYED_DIR)
         names = [r["name"] for r in results]
-        assert "月线均线缠绕价值策略" in names
-        entry = next(r for r in results if r["name"] == "月线均线缠绕价值策略")
+        assert "彼得林奇缓慢增长策略" in names
+        entry = next(r for r in results if r["name"] == "彼得林奇缓慢增长策略")
         assert entry["strategy_type"] == "strategy"
         assert entry["frequency_overridable"] is False
         assert entry["frequency"] == "monthly"

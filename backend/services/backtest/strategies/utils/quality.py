@@ -10,7 +10,10 @@
 1. 数据缺失 → 返 None,**调用方决定**是放行还是淘汰(默认 passes_*=True 即放行)
 2. 金融行业(银行/保险/证券)的资产负债率 ≥ 90% 是常态,debt_ratio 检查需要豁免
 3. 所有读取走 `ctx.get_balance_annual / get_cashflow_annual_history / get_income_annual_history`,
-   走 NOTICE_DATE-as-of 防前视(market_data 内部已处理)
+   这些年报读取在 MarketData 内部按 **REPORT_DATE** as-of(注意:**不是 NOTICE_DATE**),
+   即理论上存在最多约 4 个月的披露滞后窗口(REPORT_DATE ≤ cur 但 NOTICE_DATE 可能 > cur)。
+   在「年度 6 月调仓」配置下不咬合(上年年报/当年 Q1 的 NOTICE_DATE 均 ≤4/30 < 6/1,决策日已披露);
+   但若在非 6 月或更高频调仓下启用 debt/cfo/roe 这类过滤,须自行评估该滞后是否引入前视。
 """
 
 from __future__ import annotations

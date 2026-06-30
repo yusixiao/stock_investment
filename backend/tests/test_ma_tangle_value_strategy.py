@@ -1,8 +1,8 @@
 """MaTangleValueStrategy 元信息 + screen() 集成测试(Phase 2.3 / 2.4)。"""
 
 import pytest
-from services.backtest.strategies.deployed import ma_tangle_value_strategy as strategy_module
-from services.backtest.strategies.deployed.ma_tangle_value_strategy import MaTangleValueStrategy
+from services.backtest.strategies.experiments.ma_tangle_value import ma_tangle_value_strategy as strategy_module
+from services.backtest.strategies.experiments.ma_tangle_value.ma_tangle_value_strategy import MaTangleValueStrategy
 from backend.tests.utils_test_helpers import MockContext, make_tangle_breakout_stub
 
 

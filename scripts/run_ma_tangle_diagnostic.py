@@ -30,7 +30,7 @@ log = logging.getLogger("diag")
 
 from services.backtest import data_cache
 from services.backtest.engine import BacktestEngine
-from services.backtest.strategies.deployed.ma_tangle_value_strategy import MaTangleValueStrategy
+from services.backtest.strategies.experiments.ma_tangle_value.ma_tangle_value_strategy import MaTangleValueStrategy
 
 VARIANTS = [
     {

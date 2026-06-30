@@ -29,7 +29,7 @@
 """
 import copy
 
-from services.backtest.strategies.deployed.low_valuation_multifactor_quarterly_strategy import (
+from services.backtest.strategies.experiments.low_valuation_multifactor.low_valuation_multifactor_quarterly_strategy import (
     LowValuationMultiFactorQuarterlyStrategy,
 )
 
