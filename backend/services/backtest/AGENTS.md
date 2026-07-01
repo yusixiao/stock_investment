@@ -16,19 +16,24 @@
 ## 策略模型(2026-05 重构,Phase 6)
 
 - **Pipeline + Screener/Buyer/Seller 三角拆分模型已废弃**;**StrategyGroup 整套已砍**(前端三层 UI 不要再做)。
-- 当前为**单一 Strategy 类**(`strategy_base.py::Strategy` / `ScreenerStrategy`),策略实现 `screen(ctx, symbols) -> List[str]` + 可选 `on_buy(ctx, symbol)` / `on_sell(ctx, symbol)` hooks。
-- 示例:`strategies/deployed/ma_tangle_value_strategy.py`、`hk_garp_strategy.py`。
-- 任何看到旧文档/代码提到 BuyStrategy/SellStrategy/TraderStrategy 的,都按"已合并到单一 Strategy"理解。
+- 当前为**单一 Strategy 类**(`strategy_base.py::Strategy`),策略实现 `screen(ctx, symbols) -> List[str]` + 可选 `on_buy(ctx)` / `on_sell(ctx)` hooks。
+- 示例:`strategies/deployed/hk_garp_strategy.py`、`strategies/deployed/lynch_slow_growers_strategy.py`(`ma_tangle_value` 已降级到 `experiments/ma_tangle_value/`)。
+- 任何看到旧文档/代码提到 ScreenerStrategy/TraderStrategy/BuyStrategy/SellStrategy 的,都按"已合并到单一 Strategy"理解。
 - **API 兼容**:`/api/screener/run` 与 `/api/backtest/run` 仍接收 `pipeline: []` 数组,但**只取首元素**加载策略类(importlib),应用参数覆盖,执行 `screen` / 完整回测。
 
-## 🚨 策略目录铁律(2026-06-14 迁入 backtest)
+## 🚨 策略目录铁律(2026-06-14 迁入 backtest;2026-07-01 增补自闭环)
 
 策略已从顶层 `strategies/` **整体迁入** `backend/services/backtest/strategies/`(理由:策略均为开发者自写、与回测引擎深度耦合,Phase 6.2「作者无需感知 backend」反转依赖理由已不成立)。
 
-- `strategies/deployed/` = **已发布策略**(UI/回测 `/api/backtest/strategies` 只扫这里,经 `config.DEPLOYED_STRATEGY_DIR`)。
-- `strategies/experiments/` = **在研策略**(策略研究优先写这里,**不暴露给 UI**;`.py`/`__init__.py` 入库,其余过程产物如回测结果/笔记/数据由 `.gitignore` 忽略)。
+- `strategies/deployed/` = **已发布策略**(UI/回测 `/api/backtest/strategies` 只扫这里,经 `config.DEPLOYED_STRATEGY_DIR`)。**现存 2 个**:`lynch_slow_growers_strategy.py`、`hk_garp_strategy.py`。
+- `strategies/experiments/` = **在研策略**(策略研究优先写这里,**不暴露给 UI**)。**每策略一个自闭环子目录** `experiments/<strategy>/`,现存 `a_garp` / `conservative_rough` / `garp_value_first` / `growth` / `low_valuation_multifactor` / `low_valuation_quarterly` / `lvmf_c_full_t30` / `ma_tangle_value` + `lynch/`(二级,含 fast_growers / slow_growers / stalwarts / turnarounds / cyclicals 五子策略 + 共享研究报告)。
+- **🚨 自闭环铁律(2026-07-01)**:一个策略的**配套资产全部放进它自己的 `experiments/<strategy>/` 子目录**,与策略代码同处、自成闭环 —— 包括:**跑批/诊断脚本(matrix / diag runner `.py`)、研究报告(`.md`)、回测结果(`.json` / `_overview.md`)、决策日志(`.jsonl`)**。目标是整目录可独立迁移 / 删除、对外零引用。**禁止**把这些散落到**项目根目录**、顶层 `scripts/`、`report/exported/` 等公共位置。
+  - 范例:`experiments/lynch/lynch_turnarounds/` = `lynch_turnarounds_strategy.py` + `run_lynch_turnarounds_matrix.py` + `lynch_tr_r1.json` + `lynch_tr_r1_overview.md`,四件套同目录闭环。
+  - 自闭环技术做法(见 lynch 各 matrix):脚本内 `ROOT = Path(__file__).resolve().parents[N]` 定位仓库根、`OUT_DIR = Path(__file__).resolve().parent` 让产物落回自身目录、跨策略引用走相对包 import,**不硬编码绝对路径、不依赖 CWD**。
+  - **git 与物理位置解耦**:自闭环是物理组织原则(便于整体迁移/删除),与是否入库无关。入库规则仍为 `.gitignore` 的 `experiments/**` + `!**/*.py` 例外 —— **仅 `.py` / `__init__.py` 进 git**,`.json` / `.md` / `.jsonl` 等过程产物被忽略(即使不入库也必须放策略子目录内,勿丢项目根)。
+- **🚨 文档职责边界(2026-07-01)**:本 AGENTS.md **只写架构 / 铁律 / 目录结构**,**不写任何具体策略的业务描述**(选股逻辑 / 因子口径 / 参数 / 回测结论 —— 易过时,须就近维护)。策略详情看两处:① 策略 `.py` 模块 docstring(设计意图 / 边界 / 选股管线);② 策略目录内 markdown —— 整类策略详情见如 `experiments/lynch/林奇六类型策略研究报告.md`,单轮回测结果见如 `experiments/lynch/lynch_turnarounds/lynch_tr_r1_overview.md`。
 - 两者都通过 `importlib` 按文件路径加载(信任本地用户)。
-- `strategies/`、`deployed/`、`experiments/` 均有 `__init__.py` 成为正规包(避免命名空间包子线程隐患)。
+- `strategies/`、`deployed/`、`experiments/` 及各策略子目录均有 `__init__.py` 成为正规包(避免命名空间包子线程隐患)。
 - 基类:`from services.backtest.strategy_base import Strategy`。原顶层 `strategies/base.py` 已合并 `ParamAccessor` → `strategy_base.py`(旧 `services/backtest/base.py` 已删)。
 - **唯一未清残留** = `strategies/utils/{conservative,growth,financial,quality,...}.py` 中文字段名(待单独清理)。
 
@@ -47,41 +52,16 @@
 - `aggregate_kline()`(`services/market_data/stock_data.py`)处理 W-FRI / M 聚合,被 MarketData 启动时调用。
 - `date_utils.py`:`format_match_date / date_belongs_to / detect_frequency`。
 
-## 港股通虚拟市场(HK_CONNECT,2026-06-01)
+## 港股通标的池(HK_CONNECT 过滤层)
 
-- **`HK_CONNECT` 是虚拟市场**,不是物理市场。回测/雷达的 `market` 入参除 `A/HK/US` 外新增 `HK_CONNECT`,语义 = 港股通成分股子集。
+- **港股通是真实的互联互通机制**(「内地与香港股票市场交易互联互通机制」南向,含沪港通/深港通下的港股通),标的 = 联交所上市股票中受监管的**特定子集**,由两地交易所定期调入调出。
+- **`HK_CONNECT` 不是独立市场,而是 HK 之上的成分过滤层(universe filter)**:回测/雷达 `market` 入参除 `A/HK/US` 外新增 `HK_CONNECT`,语义 = 仅在港股通标的子集内选股。
 - **物理数据复用 HK**:`market_filter.py::resolve_data_market("HK_CONNECT") → "HK"`,`data_cache.get_market` 必须收到 `HK`,不能收到 `HK_CONNECT`。
-- **symbols 维度过滤**:`apply_market_filter` 在 HK_CONNECT 时把 symbols 收敛为 `services.hk_connect_updater.get_latest_hk_connect_codes()` 的 `.HK` 后缀集合(601 只),无 requested 时返全集,有 requested 时返交集。
-- **数据来源**:`data/market/HK/membership/hk_connect.parquet`(updater 周更),DuckDB 视图 `v_hk_connect_membership`。
+- **symbols 维度过滤**:`apply_market_filter` 在 HK_CONNECT 时把 symbols 收敛为 `services.market_data.updaters.hk_connect_updater.get_latest_hk_connect_codes()` 的 `.HK` 后缀集合(当前快照全集,标的由两地交易所定期调入调出),无 requested 时返全集,有 requested 时返交集。
+- **数据来源**:`data/market/HK/membership/hk_connect.parquet`(updater 周更),DuckDB 视图 `v_hk_connect_latest`。
 - **🚨 已知偏差**:仅当前快照,**无 point-in-time 历史**;长区间回测会引入 ~2-3% look-ahead + survivorship bias。粗筛 / 资产配置可接受,严格 PIT 策略不适用。
 - **前端**:`BacktestConfig.tsx` 市场下拉新增"港股通",内部 `DisplayMarket = 'A'|'HK'|'US'|'HK_CONNECT'`,`toCacheMarket()` 映射回 HK;`api/backtestCache.ts::CacheMarket` 保持 3 值不变(API 契约不动)。
 - **路由覆盖**:`/api/backtest/run`、`/api/backtest/scan-radar` 已接 helper;`/api/backtest/cache/load`、`DELETE /api/backtest/cache/{market}` 先 `resolve_data_market` 再校验白名单。**`/api/screener/run` 暂未接入**(仅 A 股硬编码)。
-
-## 现金流保守策略(粗算版)— `ConservativeRoughStrategy`
-
-> 术语:本项目统一用**「现金流保守策略」**(英文标识符 `conservative` / `cpa_conservative`),历史代号「龟龟策略 / Turtle」已弃用。Python 符号 `MoatRatingConservative` / `map_moat_rating_conservative`。
-
-- **不等于 cpa 精算 KK**:cpa 11 步精算(V1-V5 非经常分类 / 6.X2 隐性必要支出 / 7 会计准则 / 8 AA 三选一)需 LLM 读年报附注做定性判断,**不可机械化**。
-- **本策略只做粗算 R + 4 项 Layer 2 否决**:`R = NP × 近3年支付率均值 / 市值`,门槛 5.2%(II 4.7% + 安全边际 0.5pct);否决项=金融股/商誉占比>30%/净现金转负/FCF 持续 2 年负。
-- **用途**:① 给 cpa Agent 提供候选股票池(5400+ → 几十);② 作为 cpa LLM 真实精算结果的回测基线对比。
-- **代码位置**:`strategies/utils/conservative.py` + `strategies/deployed/conservative_rough_strategy.py`,docstring 显式标注「粗算 / 不是 cpa 精算 KK」。
-
-### 三层模型 Roadmap(详见 `docs/design_conservative_strategy_layers.md`)
-
-把 cpa 11 步精算定性框架机械化拆成三层流水线 + 一个仓位矩阵:
-
-- **L1 估值因子**:R(粗算)/ KK(精算预留)+ **L1.3 信誉评级**(5年营收 CV / 利润调整幅度 / λ warning 三维 → high/mid/low)。
-- **L2 价值陷阱**:5 项 disqualifier(行业/商誉/净现金/FCF/ROE 三年下降)+ **L2.5 trap_rating** 软评分聚合(low/mid/high)。
-- **L3 仓位矩阵**(2026-05-28 改 CPA 原口径):`f(R, credibility, trap_rating) → tier ∈ {full, p70, observe, skip}` 4 档(KK 0.5~1.5pct 一律 observe,无 50% 档),`full_bonus=1.5pct`。
-- **L3.3 Buyer**(2026-05-28 重写):`CpaTierBatchBuyer` 抛弃市值加权,改 tier-based 单股配比(`max_per_stock_pct × TIER_PCT[tier]`,默认 full=20%/p70=14%),N 周 `order_target_percent` 等额爬坡。
-- **L4 卖出**:CPA 7 条基本面止损(`phase3_valuation.md` §10.2 表),critical 清仓 / warning 减仓 50%(per-reason 去重),入场时记录 D/E、毛利率、payout 三个 baseline。
-- **当前实现**:L1.R + L1.3 + L2 5 项 + L2.5 trap_rating + L3 矩阵 4 档 + `CpaTierBatchBuyer` + CPA 7 条止损全部落地 ✅。
-- **KK→R 退化决策**:2026-05-27 reset,KK 精算需 LLM 读年报附注不可机械化,粗算 R 即可作 cpa Agent 候选池筛选。
-- **金融股盲点**:cpa 框架 FCFF_BACK 不适用银行/保险/证券,`ConservativeRoughStrategy` 已整类排除。
-
-## TODO
-
-- **`ConservativeRoughStrategy` 真实回测验证**(2026-05-28 重写后):L3 矩阵改 CPA 4 档 + `CpaTierBatchBuyer` + CPA 7 条止损全部落地,需要在真实历史区间(全市场 / 至少 5 年)跑一次端到端回测,与旧"市值加权 + screen pool 白名单"版本对比超额收益。
 
 ## 关键文件
 
@@ -102,7 +82,12 @@ backend/services/backtest/
 ├── market_filter.py        # resolve_data_market / apply_market_filter(HK_CONNECT)
 ├── date_utils.py           # format_match_date / date_belongs_to / detect_frequency
 └── strategies/
-    ├── deployed/           # 已发布策略(UI 只扫这里),现存 5 个
-    ├── experiments/        # 在研策略(优先写这里,不暴露给 UI)
-    └── utils/              # 因子工具:conservative/growth/financial/quality/kline/composite
+    ├── deployed/           # 已发布策略(UI 只扫这里),现存 2 个:hk_garp_strategy / lynch_slow_growers_strategy
+    ├── experiments/        # 在研策略,每策略一自闭环子目录(不暴露 UI);lynch/ 下再分 fast_growers/slow_growers/stalwarts/turnarounds/cyclicals 五子策略
+    └── utils/              # 因子工具(15 个 .py + composite/):
+        ├── conservative.py / conservative_sell.py    # 现金流保守策略专用:选股因子 / 卖出规则工具
+        ├── growth.py / growth_long.py / growth_hk.py  # 成长(通用 / 年报 NOTICE_DATE PIT / 港股)
+        ├── balance_long.py                            # 负债率 PIT 历史 + 去杠杆信号(NOTICE_DATE 严格)
+        ├── financial / quality / dividend / valuation / yield_factor / index_timing / hk_industry / st_filter / kline .py
+        └── composite/                                 # 组合买入器:cpa_tier_batch_buyer(在用)/ market_cap_weighted_batch_buyer(旧,已弃)
 ```
