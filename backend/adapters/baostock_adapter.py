@@ -1,5 +1,6 @@
 import logging
 import socket
+import threading
 from contextlib import contextmanager
 from typing import List, Optional
 
@@ -29,6 +30,43 @@ def _socket_timeout(seconds: float):
         yield
     finally:
         socket.setdefaulttimeout(old)
+
+
+# BaoStock 数据端口(:10030)的 socket 不遵守 setdefaulttimeout —— 已实测(2026-07-01):
+# 对查询套 0.5s 默认超时,查询仍耗时 2.2s 正常返回,超时未触发。服务端在建连后把
+# socket 置回阻塞模式,故 socket 级超时对数据读取完全无效;服务端"僵而不断"(recv
+# 永久阻塞)时会拖死整个更新(2026-06-29 卡 1.5h、2026-07-01 卡 8.7h)。只能用墙钟
+# 看门狗从外部兜底 —— 见 _run_with_timeout。正常查询 1~3s,过载时实测最慢 ~22s,
+# 取 45s 作硬超时上限(留足余量,避免误杀合法的慢查询)。
+BAOSTOCK_QUERY_TIMEOUT = 45.0
+
+
+def _run_with_timeout(fn, timeout: float, label: str):
+    """在守护线程中执行阻塞的 BaoStock 调用,超过 timeout 秒仍未返回即判定连接
+    僵死,抛 TimeoutError 交由上层 _retry_call 重试(而非永久挂起整个更新)。
+
+    市场内取数为串行(market_updater 单线程 for 循环),不会有并发 BaoStock 调用
+    竞争全局连接。僵死的 worker 为 daemon 线程,会在旧 socket 最终报错时自行退出,
+    不阻止进程结束。fn 内的异常按原样透传回主线程重新抛出。
+    """
+    box: dict = {}
+
+    def _worker():
+        try:
+            box["value"] = fn()
+        except BaseException as e:  # 透传给主线程按原样重新抛出
+            box["error"] = e
+
+    t = threading.Thread(target=_worker, name=f"bs-{label}", daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        raise TimeoutError(
+            f"BaoStock call hung >{timeout}s (unresponsive connection): {label}"
+        )
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
 
 
 KLINE_FIELDS = (
@@ -112,11 +150,16 @@ class BaoStockAdapter(MarketDataAdapter, BasicDataAdapter, EventDataAdapter):
     def __init__(self):
         self._logged_in = False
 
+    @staticmethod
+    def _raw_login():
+        with _socket_timeout(BAOSTOCK_SOCKET_TIMEOUT):
+            return bs.login()
+
     def login(self):
         """手动登录，用于批量操作时保持长连接"""
         if not self._logged_in:
-            with _socket_timeout(BAOSTOCK_SOCKET_TIMEOUT):
-                lg = bs.login()
+            # login 底层 socket 也可能僵死(2026-06-29 曾卡 19min),同样套墙钟看门狗
+            lg = _run_with_timeout(self._raw_login, BAOSTOCK_QUERY_TIMEOUT, "login")
             if lg.error_code != "0":
                 raise ConnectionError(f"BaoStock login failed: {lg.error_msg}")
             self._logged_in = True
@@ -134,6 +177,26 @@ class BaoStockAdapter(MarketDataAdapter, BasicDataAdapter, EventDataAdapter):
     def __exit__(self, *args):
         self.logout()
 
+    def _query_with_watchdog(self, query_fn, label: str, auto_session: bool):
+        """执行 query_fn() 并把结果读成 DataFrame,套墙钟看门狗防僵死。
+
+        超时(连接僵死)时:丢弃当前会话;若原为批量长连接(auto_session=False),
+        立即重建长连接,避免退化成每股重新登录;随后把 TimeoutError 抛出,交由
+        上层 _retry_call 按退避策略重试。
+        """
+        try:
+            return _run_with_timeout(
+                lambda: _result_to_df(query_fn()), BAOSTOCK_QUERY_TIMEOUT, label
+            )
+        except TimeoutError:
+            self._logged_in = False
+            if not auto_session:
+                try:
+                    self.login()  # 重建长连接,保持后续增量取数复用
+                except Exception:
+                    pass  # 重登录失败留待下次调用自然重试
+            raise
+
     def fetch_daily_kline(
         self, code: str, start_date: str, end_date: str
     ) -> List[DailyKlineRecord]:
@@ -142,15 +205,18 @@ class BaoStockAdapter(MarketDataAdapter, BasicDataAdapter, EventDataAdapter):
         if auto_session:
             self.login()
         try:
-            rs = bs.query_history_k_data_plus(
-                bs_code,
-                KLINE_FIELDS,
-                start_date=start_date,
-                end_date=end_date,
-                frequency="d",
-                adjustflag="3",
+            df = self._query_with_watchdog(
+                lambda: bs.query_history_k_data_plus(
+                    bs_code,
+                    KLINE_FIELDS,
+                    start_date=start_date,
+                    end_date=end_date,
+                    frequency="d",
+                    adjustflag="3",
+                ),
+                f"kline {code}",
+                auto_session,
             )
-            df = _result_to_df(rs)
         finally:
             if auto_session:
                 self.logout()
@@ -189,8 +255,11 @@ class BaoStockAdapter(MarketDataAdapter, BasicDataAdapter, EventDataAdapter):
         if auto_session:
             self.login()
         try:
-            rs = bs.query_adjust_factor(code=bs_code)
-            df = _result_to_df(rs)
+            df = self._query_with_watchdog(
+                lambda: bs.query_adjust_factor(code=bs_code),
+                f"adjust_factor {code}",
+                auto_session,
+            )
         finally:
             if auto_session:
                 self.logout()
@@ -228,12 +297,14 @@ class BaoStockAdapter(MarketDataAdapter, BasicDataAdapter, EventDataAdapter):
         if auto_session:
             self.login()
         try:
-            rs = bs.query_stock_basic()
-            df_basic = _result_to_df(rs)
+            df_basic = self._query_with_watchdog(
+                lambda: bs.query_stock_basic(), "stock_basic", auto_session
+            )
             # query_stock_basic 实际不返回 industry,需另调 query_stock_industry merge
             try:
-                rs_ind = bs.query_stock_industry()
-                df_ind = _result_to_df(rs_ind)
+                df_ind = self._query_with_watchdog(
+                    lambda: bs.query_stock_industry(), "stock_industry", auto_session
+                )
             except Exception:
                 df_ind = None
         finally:
@@ -280,8 +351,11 @@ class BaoStockAdapter(MarketDataAdapter, BasicDataAdapter, EventDataAdapter):
         if auto_session:
             self.login()
         try:
-            rs = bs.query_dividend_data(code=bs_code, year=year_key)
-            df = _result_to_df(rs)
+            df = self._query_with_watchdog(
+                lambda: bs.query_dividend_data(code=bs_code, year=year_key),
+                f"dividend {code}",
+                auto_session,
+            )
         finally:
             if auto_session:
                 self.logout()

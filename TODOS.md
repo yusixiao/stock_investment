@@ -188,6 +188,36 @@
         关键:B 类走 engine `risk_off_exposure` 择时层(R18 同框架)**不算改策略**,
         后续可作 R25 择时实验,区别仅在信号判据更钝。
 
+## 数据更新健壮性(A 股 baostock 逐只 + 服务端僵死)
+
+来源:2026-07-01 定时任务(06:00,休眠补跑 06:35)整体失败 —— A 股 baostock 报
+`error_code=10002007 网络接收错误` 死循环;HK/US yfinance `429 Too Many Requests`。
+结果全市场 **06-30 一天数据缺失**(A/HK/US 标的最新交易日普遍停在 06-29)。
+
+- [ ] **🚨 A 股 baostock 更新:逐只串行 + 服务端僵死会永久挂起(2026-07-01,暂停待修)**
+      问题分三层:
+      1. **无批量按日 API(数据源固有限制)** — baostock 23 个 query API 中,K 线
+         `query_history_k_data_plus` **强制按单 `code` 查**(数据按标的组织);唯一名字像
+         "全市场"的 `query_all_stock(day)` **只返回 code/tradeStatus/code_name,不含 OHLC**。
+         → 补 A 股 K 线只能 5000+ 只**逐只串行**(`market_updater.py:188`),正常也要数小时。
+      2. **服务端僵死无超时兜底(病根)** — baostock 不稳时"僵而不断":login 能成功,但数据
+         查询 recv 永不返回。实测 2026-07-01 连 `query_all_stock` 都当场僵死 15s 不返回;
+         `socket.setdefaulttimeout` 对数据 socket 无效、`SIGALRM` 也打不断僵死 recv。
+         历史:今晨卡 8.7h、2026-06-29 卡 1.5h。
+      3. **已做的部分修复(方向已验证,勿丢)** — `baostock_adapter.py` 加 threading 墙钟
+         看门狗(`_run_with_timeout` + `BAOSTOCK_QUERY_TIMEOUT=45s`)包住 login + 4 个 fetch,
+         `test_adapters.py` +5 测(共 15 passed);**实测 threading join 确能让主线程从僵死调用
+         脱身(有效)**。⚠️ 遗留:后台补数据进程曾跑 160s 看门狗未触发、无重试日志,卡点未精确
+         定位(py-spy 需 root);下一步用 `faulthandler.dump_traceback_later(60)` 抓全线程栈。
+      **候选长期解(择一,需决策)**:
+      - **A(彻底)**:新增 eastmoney/新浪**日线适配器**,一次拉全市场当日 OHLC 快照,摆脱
+        baostock 逐只 + 僵死。⚠️ 当前铁律 eastmoney 只管财务、A 股 K 线归 baostock,需评估分工。
+      - **B(止血)**:保留 baostock,把看门狗修完整(定位卡点 + 确保重试链路不退化到每股
+        重登录),只解决"不挂死",不解决"逐只慢"。
+      - 影响面:A 股日常更新可靠性;HK/US 的 yfinance 429 亦是同类脆弱性(可一并纳入)。
+      - 优先级:中 —— 数据缺口对历史回测(截止 2026-06)无影响,明早定时任务会重试;但更新
+        可靠性是长期工程债。
+
 ## 工程/前端
 
 - [ ] **🚨 前端测试环境(jsdom)未配置 — 31 个测试文件全挂(2026-06-14 发现)** —

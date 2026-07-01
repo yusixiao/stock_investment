@@ -1,11 +1,13 @@
 """Adapter 层测试 — 全部使用 mock（环境中 API 超时）"""
 
+import time
 from unittest.mock import patch, MagicMock
 import pandas as pd
 import pytest
 
 from backend.adapters.baostock_adapter import (
     BaoStockAdapter,
+    _run_with_timeout,
     _to_baostock_code,
     _to_standard_code,
 )
@@ -356,3 +358,67 @@ class TestBaoStockLoginFailure:
         adapter = BaoStockAdapter()
         with pytest.raises(ConnectionError, match="BaoStock login failed"):
             adapter.fetch_daily_kline("600000.SH", "2026-05-01", "2026-05-12")
+
+
+class TestRunWithTimeout:
+    """墙钟看门狗 _run_with_timeout 单元测试"""
+
+    def test_returns_value_when_fast(self):
+        assert _run_with_timeout(lambda: 42, 1.0, "fast") == 42
+
+    def test_raises_timeout_when_hung(self):
+        # fn 睡 1s 超过 0.2s 上限 → 判定连接僵死抛 TimeoutError
+        with pytest.raises(TimeoutError, match="hung"):
+            _run_with_timeout(lambda: time.sleep(1.0), 0.2, "hang")
+
+    def test_propagates_worker_exception(self):
+        # fn 自身异常应按原样透传回主线程(而非被吞成 TimeoutError)
+        def boom():
+            raise ValueError("boom")
+
+        with pytest.raises(ValueError, match="boom"):
+            _run_with_timeout(boom, 1.0, "err")
+
+
+class TestBaoStockQueryTimeout:
+    """查询级墙钟超时:连接僵死时抛 TimeoutError(交上层 _retry_call 重试)"""
+
+    @patch("backend.adapters.baostock_adapter.BAOSTOCK_QUERY_TIMEOUT", 0.3)
+    @patch("backend.adapters.baostock_adapter.bs")
+    def test_hung_query_raises_timeout_and_resets_session(self, mock_bs):
+        # auto_session 模式(每股独立登录):查询僵死 → TimeoutError + 会话复位
+        mock_bs.login.return_value = MagicMock(error_code="0")
+        mock_bs.logout.return_value = None
+
+        def slow_query(*args, **kwargs):
+            time.sleep(1.0)  # > 0.3s 超时上限
+            return _make_bs_result([], [])
+
+        mock_bs.query_history_k_data_plus.side_effect = slow_query
+
+        adapter = BaoStockAdapter()
+        with pytest.raises(TimeoutError):
+            adapter.fetch_daily_kline("600000.SH", "2026-05-01", "2026-05-12")
+        assert adapter._logged_in is False  # 会话已被丢弃
+
+    @patch("backend.adapters.baostock_adapter.BAOSTOCK_QUERY_TIMEOUT", 0.3)
+    @patch("backend.adapters.baostock_adapter.bs")
+    def test_persistent_session_rebuilt_after_timeout(self, mock_bs):
+        # 批量长连接模式:查询僵死后应立即重建长连接,避免退化成每股重登录
+        mock_bs.login.return_value = MagicMock(error_code="0")
+        mock_bs.logout.return_value = None
+
+        def slow_query(*args, **kwargs):
+            time.sleep(1.0)
+            return _make_bs_result([], [])
+
+        mock_bs.query_history_k_data_plus.side_effect = slow_query
+
+        adapter = BaoStockAdapter()
+        adapter._logged_in = True  # 模拟已建立的批量长连接
+
+        with pytest.raises(TimeoutError):
+            adapter.fetch_daily_kline("600000.SH", "2026-05-01", "2026-05-12")
+
+        mock_bs.login.assert_called()  # 触发了重建登录
+        assert adapter._logged_in is True  # 长连接已恢复
