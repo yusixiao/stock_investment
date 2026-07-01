@@ -1,0 +1,31 @@
+[
+  {
+    "tag": "CHAMP",
+    "note": "冠军 cap250 sec2 子区间验证",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 2,
+      "mktcap_min_yi": 250.0
+    },
+    "elapsed_sec": 27.0,
+    "n_trades": 18,
+    "total_return": 0.622555,
+    "annualized_return": 0.08419,
+    "max_drawdown": 0.471575,
+    "sharpe_ratio": 0.3763,
+    "win_rate": 0.75,
+    "profit_factor": 49.5923,
+    "avg_win": 1.2048,
+    "avg_loss": -0.041739,
+    "total_trades": 18,
+    "round_trip_count": 8,
+    "daily_turnover_rate": 0.003988
+  }
+]

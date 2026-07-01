@@ -1,0 +1,20 @@
+[
+  {
+    "tag": "TR_smoke",
+    "note": "默认配置 smoke 验证",
+    "overrides": {},
+    "elapsed_sec": 29.1,
+    "n_trades": 626,
+    "total_return": -0.273821,
+    "annualized_return": -0.087518,
+    "max_drawdown": 0.427109,
+    "sharpe_ratio": -0.2552,
+    "win_rate": 0.371,
+    "profit_factor": 0.8317,
+    "avg_win": 0.168591,
+    "avg_loss": -0.150371,
+    "total_trades": 626,
+    "round_trip_count": 469,
+    "daily_turnover_rate": 0.023114
+  }
+]

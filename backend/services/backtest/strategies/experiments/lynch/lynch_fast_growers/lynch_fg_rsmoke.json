@@ -1,0 +1,20 @@
+[
+  {
+    "tag": "FG_smoke",
+    "note": "默认配置 smoke 验证",
+    "overrides": {},
+    "elapsed_sec": 14.4,
+    "n_trades": 39,
+    "total_return": -0.00991,
+    "annualized_return": -0.004984,
+    "max_drawdown": 0.350409,
+    "sharpe_ratio": -0.06,
+    "win_rate": 0.3333,
+    "profit_factor": 0.4709,
+    "avg_win": 0.272055,
+    "avg_loss": -0.287726,
+    "total_trades": 39,
+    "round_trip_count": 12,
+    "daily_turnover_rate": 0.005456
+  }
+]

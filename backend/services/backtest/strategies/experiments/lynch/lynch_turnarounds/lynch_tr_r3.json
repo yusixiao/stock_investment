@@ -1,0 +1,221 @@
+[
+  {
+    "tag": "R3_anchor",
+    "note": "R2冠军锚点: 季度+Top10(≥50亿默认)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10
+    },
+    "elapsed_sec": 103.4,
+    "n_trades": 700,
+    "total_return": 6.661768,
+    "annualized_return": 0.132154,
+    "max_drawdown": 0.386057,
+    "sharpe_ratio": 0.5265,
+    "win_rate": 0.5,
+    "profit_factor": 2.601,
+    "avg_win": 0.358099,
+    "avg_loss": -0.132273,
+    "total_trades": 700,
+    "round_trip_count": 486,
+    "daily_turnover_rate": 0.012418
+  },
+  {
+    "tag": "R3_band_30_80",
+    "note": "+市值30~80亿(小盘困境)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "mktcap_min_yi": 30.0,
+      "mktcap_max_yi": 80.0
+    },
+    "elapsed_sec": 91.8,
+    "n_trades": 597,
+    "total_return": 10.841723,
+    "annualized_return": 0.162603,
+    "max_drawdown": 0.419304,
+    "sharpe_ratio": 0.6193,
+    "win_rate": 0.5592,
+    "profit_factor": 2.4086,
+    "avg_win": 0.33723,
+    "avg_loss": -0.14459,
+    "total_trades": 597,
+    "round_trip_count": 397,
+    "daily_turnover_rate": 0.013098
+  },
+  {
+    "tag": "R3_band_50_100",
+    "note": "+市值50~100亿(周期型泡沫甜点, 重点审计)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 100.0
+    },
+    "elapsed_sec": 85.8,
+    "n_trades": 596,
+    "total_return": 5.806326,
+    "annualized_return": 0.124013,
+    "max_drawdown": 0.479244,
+    "sharpe_ratio": 0.4927,
+    "win_rate": 0.5168,
+    "profit_factor": 2.1417,
+    "avg_win": 0.333783,
+    "avg_loss": -0.146652,
+    "total_trades": 596,
+    "round_trip_count": 387,
+    "daily_turnover_rate": 0.014079
+  },
+  {
+    "tag": "R3_band_50_150",
+    "note": "+市值50~150亿(更宽抗过拟合)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 150.0
+    },
+    "elapsed_sec": 88.9,
+    "n_trades": 638,
+    "total_return": 8.404132,
+    "annualized_return": 0.146383,
+    "max_drawdown": 0.456073,
+    "sharpe_ratio": 0.578,
+    "win_rate": 0.5,
+    "profit_factor": 2.5249,
+    "avg_win": 0.353961,
+    "avg_loss": -0.132875,
+    "total_trades": 638,
+    "round_trip_count": 424,
+    "daily_turnover_rate": 0.013602
+  },
+  {
+    "tag": "R3_band_100_300",
+    "note": "+市值100~300亿(中盘抗幸存者)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "mktcap_min_yi": 100.0,
+      "mktcap_max_yi": 300.0
+    },
+    "elapsed_sec": 80.5,
+    "n_trades": 536,
+    "total_return": 2.352722,
+    "annualized_return": 0.07653,
+    "max_drawdown": 0.523186,
+    "sharpe_ratio": 0.3111,
+    "win_rate": 0.4846,
+    "profit_factor": 1.49,
+    "avg_win": 0.380785,
+    "avg_loss": -0.154901,
+    "total_trades": 536,
+    "round_trip_count": 357,
+    "daily_turnover_rate": 0.012905
+  },
+  {
+    "tag": "R3_min30",
+    "note": "+仅下限≥30亿(放宽小盘, 上限不限)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "mktcap_min_yi": 30.0
+    },
+    "elapsed_sec": 100.8,
+    "n_trades": 713,
+    "total_return": 6.206203,
+    "annualized_return": 0.127931,
+    "max_drawdown": 0.491508,
+    "sharpe_ratio": 0.5035,
+    "win_rate": 0.503,
+    "profit_factor": 2.4142,
+    "avg_win": 0.351302,
+    "avg_loss": -0.132422,
+    "total_trades": 713,
+    "round_trip_count": 495,
+    "daily_turnover_rate": 0.012314
+  },
+  {
+    "tag": "R3_min100",
+    "note": "+仅下限≥100亿(中大盘抗幸存者)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "mktcap_min_yi": 100.0
+    },
+    "elapsed_sec": 85.8,
+    "n_trades": 587,
+    "total_return": 1.915344,
+    "annualized_return": 0.067396,
+    "max_drawdown": 0.470121,
+    "sharpe_ratio": 0.276,
+    "win_rate": 0.4673,
+    "profit_factor": 1.5328,
+    "avg_win": 0.363414,
+    "avg_loss": -0.144896,
+    "total_trades": 587,
+    "round_trip_count": 398,
+    "daily_turnover_rate": 0.012669
+  },
+  {
+    "tag": "R3_min200",
+    "note": "+仅下限≥200亿(大盘抗幸存者)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "mktcap_min_yi": 200.0
+    },
+    "elapsed_sec": 77.2,
+    "n_trades": 329,
+    "total_return": 4.251911,
+    "annualized_return": 0.106389,
+    "max_drawdown": 0.525824,
+    "sharpe_ratio": 0.4253,
+    "win_rate": 0.5,
+    "profit_factor": 2.2772,
+    "avg_win": 0.453557,
+    "avg_loss": -0.148088,
+    "total_trades": 329,
+    "round_trip_count": 224,
+    "daily_turnover_rate": 0.010458
+  }
+]

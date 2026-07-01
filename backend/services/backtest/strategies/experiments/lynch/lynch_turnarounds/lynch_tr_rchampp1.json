@@ -1,0 +1,128 @@
+[
+  {
+    "tag": "CH_base",
+    "note": "朴素基线: base(月度全域, 无Top10/市值/杠杆)",
+    "overrides": {},
+    "elapsed_sec": 43.0,
+    "n_trades": 683,
+    "total_return": 1.173334,
+    "annualized_return": 0.138422,
+    "max_drawdown": 0.476108,
+    "sharpe_ratio": 0.5036,
+    "win_rate": 0.5727,
+    "profit_factor": 1.6158,
+    "avg_win": 0.480185,
+    "avg_loss": -0.158082,
+    "total_trades": 683,
+    "round_trip_count": 550,
+    "daily_turnover_rate": 0.024212
+  },
+  {
+    "tag": "CH_anchor",
+    "note": "稳健锚点: 季度+Top10(≥50亿) 全样本13.22%",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10
+    },
+    "elapsed_sec": 30.2,
+    "n_trades": 195,
+    "total_return": 2.173022,
+    "annualized_return": 0.212693,
+    "max_drawdown": 0.369977,
+    "sharpe_ratio": 0.8413,
+    "win_rate": 0.5038,
+    "profit_factor": 4.6338,
+    "avg_win": 0.609334,
+    "avg_loss": -0.155379,
+    "total_trades": 195,
+    "round_trip_count": 133,
+    "daily_turnover_rate": 0.010363
+  },
+  {
+    "tag": "CH_debt60",
+    "note": "R5冠军: 锚点+负债率≤60%(低杠杆存活) 全样本15.88%",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "max_debt_ratio": 0.6
+    },
+    "elapsed_sec": 28.4,
+    "n_trades": 98,
+    "total_return": 1.793657,
+    "annualized_return": 0.187176,
+    "max_drawdown": 0.391193,
+    "sharpe_ratio": 0.7695,
+    "win_rate": 0.5469,
+    "profit_factor": 4.9554,
+    "avg_win": 0.519072,
+    "avg_loss": -0.112605,
+    "total_trades": 98,
+    "round_trip_count": 64,
+    "daily_turnover_rate": 0.011114
+  },
+  {
+    "tag": "CH_debt70",
+    "note": "对照: 锚点+负债率≤70%(检验debt阈值非单调) 全样本12.79%",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "max_debt_ratio": 0.7
+    },
+    "elapsed_sec": 29.0,
+    "n_trades": 149,
+    "total_return": 1.52788,
+    "annualized_return": 0.16752,
+    "max_drawdown": 0.457387,
+    "sharpe_ratio": 0.6771,
+    "win_rate": 0.54,
+    "profit_factor": 3.6206,
+    "avg_win": 0.725573,
+    "avg_loss": -0.159504,
+    "total_trades": 149,
+    "round_trip_count": 100,
+    "daily_turnover_rate": 0.010516
+  },
+  {
+    "tag": "CH_band30_80",
+    "note": "激进对照: 锚点+市值30~80亿(疑2015小盘泡沫) 全样本16.26%",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "mktcap_min_yi": 30.0,
+      "mktcap_max_yi": 80.0
+    },
+    "elapsed_sec": 26.9,
+    "n_trades": 105,
+    "total_return": 2.499562,
+    "annualized_return": 0.232695,
+    "max_drawdown": 0.411382,
+    "sharpe_ratio": 0.9157,
+    "win_rate": 0.6567,
+    "profit_factor": 5.9566,
+    "avg_win": 0.589709,
+    "avg_loss": -0.151391,
+    "total_trades": 105,
+    "round_trip_count": 67,
+    "daily_turnover_rate": 0.011813
+  }
+]

@@ -1,0 +1,248 @@
+[
+  {
+    "tag": "R5_anchor",
+    "note": "R4稳健锚点: 季度+Top10(≥50亿)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10
+    },
+    "elapsed_sec": 98.3,
+    "n_trades": 700,
+    "total_return": 6.661768,
+    "annualized_return": 0.132154,
+    "max_drawdown": 0.386057,
+    "sharpe_ratio": 0.5265,
+    "win_rate": 0.5,
+    "profit_factor": 2.601,
+    "avg_win": 0.358099,
+    "avg_loss": -0.132273,
+    "total_trades": 700,
+    "round_trip_count": 486,
+    "daily_turnover_rate": 0.012418
+  },
+  {
+    "tag": "R5_dele_down",
+    "note": "+去杠杆: 负债率较上年下降",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "dele_mode": "debt_down"
+    },
+    "elapsed_sec": 98.0,
+    "n_trades": 460,
+    "total_return": 4.41776,
+    "annualized_return": 0.108488,
+    "max_drawdown": 0.487028,
+    "sharpe_ratio": 0.4283,
+    "win_rate": 0.4917,
+    "profit_factor": 2.0628,
+    "avg_win": 0.359395,
+    "avg_loss": -0.146709,
+    "total_trades": 460,
+    "round_trip_count": 303,
+    "daily_turnover_rate": 0.013061
+  },
+  {
+    "tag": "R5_dele_pct3",
+    "note": "+去杠杆: 负债率降≥3pct(强)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "dele_mode": "debt_down_pct",
+      "dele_min_drop": 0.03
+    },
+    "elapsed_sec": 89.0,
+    "n_trades": 193,
+    "total_return": 4.145356,
+    "annualized_return": 0.105008,
+    "max_drawdown": 0.482173,
+    "sharpe_ratio": 0.414,
+    "win_rate": 0.488,
+    "profit_factor": 2.2966,
+    "avg_win": 0.325053,
+    "avg_loss": -0.128849,
+    "total_trades": 193,
+    "round_trip_count": 125,
+    "daily_turnover_rate": 0.010618
+  },
+  {
+    "tag": "R5_cfo_pos",
+    "note": "+经营现金流为正(CFO/NP≥0.01)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "min_cfo_np_ratio": 0.01
+    },
+    "elapsed_sec": 92.0,
+    "n_trades": 687,
+    "total_return": 5.172685,
+    "annualized_return": 0.117337,
+    "max_drawdown": 0.414848,
+    "sharpe_ratio": 0.4751,
+    "win_rate": 0.5053,
+    "profit_factor": 2.4207,
+    "avg_win": 0.347427,
+    "avg_loss": -0.132294,
+    "total_trades": 687,
+    "round_trip_count": 469,
+    "daily_turnover_rate": 0.012649
+  },
+  {
+    "tag": "R5_debt70",
+    "note": "+资产负债率≤70%(剔高杠杆易破产)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "max_debt_ratio": 0.7
+    },
+    "elapsed_sec": 89.9,
+    "n_trades": 629,
+    "total_return": 6.205259,
+    "annualized_return": 0.127922,
+    "max_drawdown": 0.457387,
+    "sharpe_ratio": 0.5094,
+    "win_rate": 0.5104,
+    "profit_factor": 2.8148,
+    "avg_win": 0.389452,
+    "avg_loss": -0.130633,
+    "total_trades": 629,
+    "round_trip_count": 431,
+    "daily_turnover_rate": 0.01237
+  },
+  {
+    "tag": "R5_debt60",
+    "note": "+资产负债率≤60%(稳健)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "max_debt_ratio": 0.6
+    },
+    "elapsed_sec": 95.8,
+    "n_trades": 561,
+    "total_return": 10.216637,
+    "annualized_return": 0.158766,
+    "max_drawdown": 0.393798,
+    "sharpe_ratio": 0.6281,
+    "win_rate": 0.4881,
+    "profit_factor": 2.7122,
+    "avg_win": 0.356635,
+    "avg_loss": -0.13366,
+    "total_trades": 561,
+    "round_trip_count": 377,
+    "daily_turnover_rate": 0.013205
+  },
+  {
+    "tag": "R5_survive",
+    "note": "存活组合: 去杠杆+CFO正+负债率≤70%",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "dele_mode": "debt_down",
+      "min_cfo_np_ratio": 0.01,
+      "max_debt_ratio": 0.7
+    },
+    "elapsed_sec": 96.3,
+    "n_trades": 355,
+    "total_return": 9.880913,
+    "annualized_return": 0.156621,
+    "max_drawdown": 0.557369,
+    "sharpe_ratio": 0.5849,
+    "win_rate": 0.4934,
+    "profit_factor": 2.1487,
+    "avg_win": 0.329461,
+    "avg_loss": -0.143356,
+    "total_trades": 355,
+    "round_trip_count": 227,
+    "daily_turnover_rate": 0.014494
+  },
+  {
+    "tag": "R5_distress_loss",
+    "note": "+困境准入: 近3年曾亏损",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "distress_mode": "prior_loss"
+    },
+    "elapsed_sec": 94.4,
+    "n_trades": 700,
+    "total_return": 6.661768,
+    "annualized_return": 0.132154,
+    "max_drawdown": 0.386057,
+    "sharpe_ratio": 0.5265,
+    "win_rate": 0.5,
+    "profit_factor": 2.601,
+    "avg_win": 0.358099,
+    "avg_loss": -0.132273,
+    "total_trades": 700,
+    "round_trip_count": 486,
+    "daily_turnover_rate": 0.012418
+  },
+  {
+    "tag": "R5_distress_dd50",
+    "note": "+困境准入: 净利曾回撤≥50%",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "distress_mode": "np_drawdown",
+      "distress_np_drop_pct": 50.0
+    },
+    "elapsed_sec": 89.9,
+    "n_trades": 664,
+    "total_return": 6.895028,
+    "annualized_return": 0.134225,
+    "max_drawdown": 0.406952,
+    "sharpe_ratio": 0.5341,
+    "win_rate": 0.5,
+    "profit_factor": 2.5265,
+    "avg_win": 0.357199,
+    "avg_loss": -0.134227,
+    "total_trades": 664,
+    "round_trip_count": 456,
+    "daily_turnover_rate": 0.012184
+  }
+]

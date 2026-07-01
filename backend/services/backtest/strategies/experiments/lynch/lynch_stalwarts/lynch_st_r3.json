@@ -1,0 +1,374 @@
+[
+  {
+    "tag": "R3_A_sec3",
+    "note": "A基 + 每行业≤3(分散降回撤)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 3
+    },
+    "elapsed_sec": 74.3,
+    "n_trades": 134,
+    "total_return": 3.353541,
+    "annualized_return": 0.093809,
+    "max_drawdown": 0.543177,
+    "sharpe_ratio": 0.4233,
+    "win_rate": 0.6301,
+    "profit_factor": 2.7244,
+    "avg_win": 0.427895,
+    "avg_loss": -0.177488,
+    "total_trades": 134,
+    "round_trip_count": 73,
+    "daily_turnover_rate": 0.005037
+  },
+  {
+    "tag": "R3_A_sec2",
+    "note": "A基 + 每行业≤2(强分散,仿缓慢增长)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 2
+    },
+    "elapsed_sec": 70.5,
+    "n_trades": 114,
+    "total_return": 4.128177,
+    "annualized_return": 0.104782,
+    "max_drawdown": 0.498219,
+    "sharpe_ratio": 0.4764,
+    "win_rate": 0.6066,
+    "profit_factor": 3.2974,
+    "avg_win": 0.4269,
+    "avg_loss": -0.155012,
+    "total_trades": 114,
+    "round_trip_count": 61,
+    "daily_turnover_rate": 0.00518
+  },
+  {
+    "tag": "R3_A_trail25",
+    "note": "A基 + 25%移动止损(锁利降回撤)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "trailing_stop_pct": 0.25
+    },
+    "elapsed_sec": 71.2,
+    "n_trades": 171,
+    "total_return": 2.030067,
+    "annualized_return": 0.069911,
+    "max_drawdown": 0.42148,
+    "sharpe_ratio": 0.3328,
+    "win_rate": 0.5312,
+    "profit_factor": 1.88,
+    "avg_win": 0.38077,
+    "avg_loss": -0.168475,
+    "total_trades": 171,
+    "round_trip_count": 96,
+    "daily_turnover_rate": 0.005045
+  },
+  {
+    "tag": "R3_A_stop25",
+    "note": "A基 + 25%硬止损",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "stop_loss_pct": 0.25
+    },
+    "elapsed_sec": 71.4,
+    "n_trades": 169,
+    "total_return": 1.968202,
+    "annualized_return": 0.068566,
+    "max_drawdown": 0.504871,
+    "sharpe_ratio": 0.3103,
+    "win_rate": 0.5729,
+    "profit_factor": 1.8711,
+    "avg_win": 0.453638,
+    "avg_loss": -0.208862,
+    "total_trades": 169,
+    "round_trip_count": 96,
+    "daily_turnover_rate": 0.004839
+  },
+  {
+    "tag": "R3_A_div4",
+    "note": "A基 + 股息≥4%(更强防御)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.04,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2
+    },
+    "elapsed_sec": 70.2,
+    "n_trades": 115,
+    "total_return": 1.022666,
+    "annualized_return": 0.043874,
+    "max_drawdown": 0.625583,
+    "sharpe_ratio": 0.173,
+    "win_rate": 0.5758,
+    "profit_factor": 1.92,
+    "avg_win": 0.455635,
+    "avg_loss": -0.201003,
+    "total_trades": 115,
+    "round_trip_count": 66,
+    "daily_turnover_rate": 0.004226
+  },
+  {
+    "tag": "R3_A_div5",
+    "note": "A基 + 股息≥5%(极致高息)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.05,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2
+    },
+    "elapsed_sec": 70.1,
+    "n_trades": 80,
+    "total_return": 1.293291,
+    "annualized_return": 0.051895,
+    "max_drawdown": 0.234806,
+    "sharpe_ratio": 0.2225,
+    "win_rate": 0.5682,
+    "profit_factor": 2.6119,
+    "avg_win": 0.347255,
+    "avg_loss": -0.13534,
+    "total_trades": 80,
+    "round_trip_count": 44,
+    "daily_turnover_rate": 0.004015
+  },
+  {
+    "tag": "R3_A_composite",
+    "note": "A基 + composite 排序(peg+成长复合)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "sort_by": "composite"
+    },
+    "elapsed_sec": 69.6,
+    "n_trades": 155,
+    "total_return": 2.614069,
+    "annualized_return": 0.081467,
+    "max_drawdown": 0.569713,
+    "sharpe_ratio": 0.3657,
+    "win_rate": 0.6111,
+    "profit_factor": 2.7194,
+    "avg_win": 0.468938,
+    "avg_loss": -0.18818,
+    "total_trades": 155,
+    "round_trip_count": 90,
+    "daily_turnover_rate": 0.004461
+  },
+  {
+    "tag": "R3_A_peg08",
+    "note": "A基 + PEG≤0.8(宽成长上收紧估值)",
+    "overrides": {
+      "peg_max": 0.8,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2
+    },
+    "elapsed_sec": 69.8,
+    "n_trades": 133,
+    "total_return": 1.088821,
+    "annualized_return": 0.045924,
+    "max_drawdown": 0.584394,
+    "sharpe_ratio": 0.1832,
+    "win_rate": 0.56,
+    "profit_factor": 1.9127,
+    "avg_win": 0.486013,
+    "avg_loss": -0.23317,
+    "total_trades": 133,
+    "round_trip_count": 75,
+    "daily_turnover_rate": 0.00426
+  },
+  {
+    "tag": "R3_A_sec2_div4",
+    "note": "A基 + 每行业≤2 + 股息≥4%(双防御组合)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.04,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 2
+    },
+    "elapsed_sec": 70.4,
+    "n_trades": 101,
+    "total_return": 2.159137,
+    "annualized_return": 0.072635,
+    "max_drawdown": 0.636875,
+    "sharpe_ratio": 0.3127,
+    "win_rate": 0.6481,
+    "profit_factor": 2.6114,
+    "avg_win": 0.426445,
+    "avg_loss": -0.179201,
+    "total_trades": 101,
+    "round_trip_count": 54,
+    "daily_turnover_rate": 0.005392
+  },
+  {
+    "tag": "R3_A_sec3_trail25",
+    "note": "A基 + 每行业≤3 + 25%移动止损",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 3,
+      "trailing_stop_pct": 0.25
+    },
+    "elapsed_sec": 71.3,
+    "n_trades": 143,
+    "total_return": 3.047085,
+    "annualized_return": 0.088953,
+    "max_drawdown": 0.421563,
+    "sharpe_ratio": 0.436,
+    "win_rate": 0.5921,
+    "profit_factor": 2.2196,
+    "avg_win": 0.388318,
+    "avg_loss": -0.166811,
+    "total_trades": 143,
+    "round_trip_count": 76,
+    "daily_turnover_rate": 0.005458
+  },
+  {
+    "tag": "R3_B_peg08",
+    "note": "B基 + PEG≤0.8",
+    "overrides": {
+      "peg_max": 0.8,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03
+    },
+    "elapsed_sec": 70.6,
+    "n_trades": 64,
+    "total_return": 0.44279,
+    "annualized_return": 0.022597,
+    "max_drawdown": 0.438185,
+    "sharpe_ratio": 0.0508,
+    "win_rate": 0.6923,
+    "profit_factor": 1.7194,
+    "avg_win": 0.298452,
+    "avg_loss": -0.187514,
+    "total_trades": 64,
+    "round_trip_count": 39,
+    "daily_turnover_rate": 0.003166
+  },
+  {
+    "tag": "R3_B_div4",
+    "note": "B基 + 股息≥4%",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.04
+    },
+    "elapsed_sec": 72.4,
+    "n_trades": 64,
+    "total_return": 0.465513,
+    "annualized_return": 0.023571,
+    "max_drawdown": 0.482652,
+    "sharpe_ratio": 0.0542,
+    "win_rate": 0.5526,
+    "profit_factor": 1.4914,
+    "avg_win": 0.218827,
+    "avg_loss": -0.174894,
+    "total_trades": 64,
+    "round_trip_count": 38,
+    "daily_turnover_rate": 0.00383
+  },
+  {
+    "tag": "R3_B_sec2",
+    "note": "B基 + 每行业≤2",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "require_industry": true,
+      "max_per_sector": 2
+    },
+    "elapsed_sec": 71.6,
+    "n_trades": 65,
+    "total_return": 1.051309,
+    "annualized_return": 0.044769,
+    "max_drawdown": 0.451235,
+    "sharpe_ratio": 0.177,
+    "win_rate": 0.6486,
+    "profit_factor": 2.6348,
+    "avg_win": 0.270134,
+    "avg_loss": -0.156656,
+    "total_trades": 65,
+    "round_trip_count": 37,
+    "daily_turnover_rate": 0.004085
+  },
+  {
+    "tag": "R3_B_g818",
+    "note": "B基 + 成长8-18%(适度放宽)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.18
+    },
+    "elapsed_sec": 71.5,
+    "n_trades": 137,
+    "total_return": 1.660227,
+    "annualized_return": 0.061455,
+    "max_drawdown": 0.553678,
+    "sharpe_ratio": 0.2637,
+    "win_rate": 0.525,
+    "profit_factor": 2.6138,
+    "avg_win": 0.44072,
+    "avg_loss": -0.19605,
+    "total_trades": 137,
+    "round_trip_count": 80,
+    "daily_turnover_rate": 0.004461
+  }
+]

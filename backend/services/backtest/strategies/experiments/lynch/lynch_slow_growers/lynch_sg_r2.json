@@ -1,0 +1,320 @@
+[
+  {
+    "tag": "R2_y4",
+    "note": "锚:股息率≥4%(R1冠军=本轮基线)",
+    "overrides": {
+      "min_div_yield": 0.04
+    },
+    "elapsed_sec": 115.7,
+    "n_trades": 2178,
+    "total_return": 2.829838,
+    "annualized_return": 0.085297,
+    "max_drawdown": 0.325885,
+    "sharpe_ratio": 0.3973,
+    "win_rate": 0.649,
+    "profit_factor": 2.3083,
+    "avg_win": 0.239283,
+    "avg_loss": -0.085961,
+    "total_trades": 2178,
+    "round_trip_count": 1872,
+    "daily_turnover_rate": 0.014528
+  },
+  {
+    "tag": "R2_y5",
+    "note": "股息率≥5%(推防御杠杆更高)",
+    "overrides": {
+      "min_div_yield": 0.05
+    },
+    "elapsed_sec": 107.9,
+    "n_trades": 1779,
+    "total_return": 1.327228,
+    "annualized_return": 0.052837,
+    "max_drawdown": 0.374365,
+    "sharpe_ratio": 0.2213,
+    "win_rate": 0.6371,
+    "profit_factor": 1.8453,
+    "avg_win": 0.202037,
+    "avg_loss": -0.086663,
+    "total_trades": 1779,
+    "round_trip_count": 1568,
+    "daily_turnover_rate": 0.013747
+  },
+  {
+    "tag": "R2_y6",
+    "note": "股息率≥6%(极高股息,验样本是否过薄)",
+    "overrides": {
+      "min_div_yield": 0.06
+    },
+    "elapsed_sec": 111.3,
+    "n_trades": 1384,
+    "total_return": 0.628758,
+    "annualized_return": 0.030182,
+    "max_drawdown": 0.544985,
+    "sharpe_ratio": 0.0926,
+    "win_rate": 0.6127,
+    "profit_factor": 1.5228,
+    "avg_win": 0.152169,
+    "avg_loss": -0.082447,
+    "total_trades": 1384,
+    "round_trip_count": 1211,
+    "daily_turnover_rate": 0.014254
+  },
+  {
+    "tag": "R2_y4_sortpe",
+    "note": "股息率≥4% + 低PE排序(解耦:高股息=过滤,低PE=选股)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "sort_by": "pe"
+    },
+    "elapsed_sec": 109.8,
+    "n_trades": 2139,
+    "total_return": 2.254194,
+    "annualized_return": 0.074575,
+    "max_drawdown": 0.325909,
+    "sharpe_ratio": 0.3377,
+    "win_rate": 0.6378,
+    "profit_factor": 2.0236,
+    "avg_win": 0.246784,
+    "avg_loss": -0.087228,
+    "total_trades": 2139,
+    "round_trip_count": 1822,
+    "daily_turnover_rate": 0.013739
+  },
+  {
+    "tag": "R2_y4_sortcomp",
+    "note": "股息率≥4% + 复合排序(股息+低PE)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "sort_by": "composite"
+    },
+    "elapsed_sec": 107.9,
+    "n_trades": 2146,
+    "total_return": 2.667359,
+    "annualized_return": 0.082433,
+    "max_drawdown": 0.325898,
+    "sharpe_ratio": 0.3831,
+    "win_rate": 0.6524,
+    "profit_factor": 2.2284,
+    "avg_win": 0.240716,
+    "avg_loss": -0.088327,
+    "total_trades": 2146,
+    "round_trip_count": 1827,
+    "daily_turnover_rate": 0.01383
+  },
+  {
+    "tag": "R2_y4_cap300",
+    "note": "股息率≥4% + 市值≥300亿(叠加两胜出杠杆)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "mktcap_min_yi": 300.0
+    },
+    "elapsed_sec": 101.2,
+    "n_trades": 1854,
+    "total_return": 3.380424,
+    "annualized_return": 0.094219,
+    "max_drawdown": 0.376031,
+    "sharpe_ratio": 0.4272,
+    "win_rate": 0.6751,
+    "profit_factor": 2.6773,
+    "avg_win": 0.250998,
+    "avg_loss": -0.081704,
+    "total_trades": 1854,
+    "round_trip_count": 1588,
+    "daily_turnover_rate": 0.012729
+  },
+  {
+    "tag": "R2_y4_top15",
+    "note": "股息率≥4% + Top15(集中)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "top_n": 15
+    },
+    "elapsed_sec": 114.6,
+    "n_trades": 1874,
+    "total_return": 3.029874,
+    "annualized_return": 0.08867,
+    "max_drawdown": 0.325885,
+    "sharpe_ratio": 0.4158,
+    "win_rate": 0.6613,
+    "profit_factor": 2.4538,
+    "avg_win": 0.264931,
+    "avg_loss": -0.079557,
+    "total_trades": 1874,
+    "round_trip_count": 1618,
+    "daily_turnover_rate": 0.014739
+  },
+  {
+    "tag": "R2_y4_top10",
+    "note": "股息率≥4% + Top10(更集中)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "top_n": 10
+    },
+    "elapsed_sec": 110.8,
+    "n_trades": 1367,
+    "total_return": 2.739868,
+    "annualized_return": 0.083725,
+    "max_drawdown": 0.325885,
+    "sharpe_ratio": 0.3909,
+    "win_rate": 0.6867,
+    "profit_factor": 2.3884,
+    "avg_win": 0.247286,
+    "avg_loss": -0.066518,
+    "total_trades": 1367,
+    "round_trip_count": 1162,
+    "daily_turnover_rate": 0.015662
+  },
+  {
+    "tag": "R2_y4_cap300_sortpe",
+    "note": "股息率≥4% + 市值≥300 + 低PE排序(三叠加)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "mktcap_min_yi": 300.0,
+      "sort_by": "pe"
+    },
+    "elapsed_sec": 102.5,
+    "n_trades": 1814,
+    "total_return": 1.778701,
+    "annualized_return": 0.064278,
+    "max_drawdown": 0.376043,
+    "sharpe_ratio": 0.2824,
+    "win_rate": 0.6675,
+    "profit_factor": 2.1602,
+    "avg_win": 0.264517,
+    "avg_loss": -0.083467,
+    "total_trades": 1814,
+    "round_trip_count": 1561,
+    "daily_turnover_rate": 0.011679
+  },
+  {
+    "tag": "R2_y4_cap300_sortpe_top15",
+    "note": "股息率≥4% + 市值≥300 + 低PE + Top15(全叠加)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "mktcap_min_yi": 300.0,
+      "sort_by": "pe",
+      "top_n": 15
+    },
+    "elapsed_sec": 100.4,
+    "n_trades": 1628,
+    "total_return": 1.590486,
+    "annualized_return": 0.059737,
+    "max_drawdown": 0.376043,
+    "sharpe_ratio": 0.2571,
+    "win_rate": 0.6576,
+    "profit_factor": 2.0094,
+    "avg_win": 0.269747,
+    "avg_loss": -0.082552,
+    "total_trades": 1628,
+    "round_trip_count": 1399,
+    "daily_turnover_rate": 0.011135
+  },
+  {
+    "tag": "R2_y4_cap10",
+    "note": "股息率≥4% + 成长上限10%(温和扩成长,仍在缓慢增长型内)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "np_cagr_max": 0.1
+    },
+    "elapsed_sec": 214.7,
+    "n_trades": 2429,
+    "total_return": 3.073288,
+    "annualized_return": 0.089381,
+    "max_drawdown": 0.378214,
+    "sharpe_ratio": 0.4108,
+    "win_rate": 0.643,
+    "profit_factor": 2.1293,
+    "avg_win": 0.241429,
+    "avg_loss": -0.08598,
+    "total_trades": 2429,
+    "round_trip_count": 2101,
+    "daily_turnover_rate": 0.015838
+  },
+  {
+    "tag": "R2_y4_cap10_c300_pe",
+    "note": "股息率≥4% + 成长≤10% + 市值≥300 + 低PE(温和成长全叠加)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "np_cagr_max": 0.1,
+      "mktcap_min_yi": 300.0,
+      "sort_by": "pe"
+    },
+    "elapsed_sec": 97.5,
+    "n_trades": 2077,
+    "total_return": 3.486969,
+    "annualized_return": 0.095824,
+    "max_drawdown": 0.373319,
+    "sharpe_ratio": 0.4504,
+    "win_rate": 0.6414,
+    "profit_factor": 2.4274,
+    "avg_win": 0.259846,
+    "avg_loss": -0.085257,
+    "total_trades": 2077,
+    "round_trip_count": 1782,
+    "daily_turnover_rate": 0.012858
+  },
+  {
+    "tag": "R2_y4_pe20",
+    "note": "股息率≥4% + PE≤20(高股息集内再收紧估值)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "pe_max": 20.0
+    },
+    "elapsed_sec": 90.6,
+    "n_trades": 2113,
+    "total_return": 2.213392,
+    "annualized_return": 0.073749,
+    "max_drawdown": 0.391504,
+    "sharpe_ratio": 0.327,
+    "win_rate": 0.6441,
+    "profit_factor": 2.0335,
+    "avg_win": 0.232293,
+    "avg_loss": -0.083258,
+    "total_trades": 2113,
+    "round_trip_count": 1801,
+    "daily_turnover_rate": 0.014948
+  },
+  {
+    "tag": "R2_y4_regime",
+    "note": "股息率≥4% + 沪深300 MA200 熊市半仓(择时降回撤)",
+    "overrides": {
+      "min_div_yield": 0.04,
+      "risk_off_exposure": 0.5
+    },
+    "elapsed_sec": 99.6,
+    "n_trades": 2206,
+    "total_return": 1.682687,
+    "annualized_return": 0.061999,
+    "max_drawdown": 0.294326,
+    "sharpe_ratio": 0.2957,
+    "win_rate": 0.6153,
+    "profit_factor": 1.9361,
+    "avg_win": 0.145308,
+    "avg_loss": -0.082131,
+    "total_trades": 2206,
+    "round_trip_count": 1895,
+    "daily_turnover_rate": 0.014549
+  },
+  {
+    "tag": "R2_y5_pe_cap300",
+    "note": "股息率≥5% + 低PE + 市值≥300(更高股息全叠加)",
+    "overrides": {
+      "min_div_yield": 0.05,
+      "sort_by": "pe",
+      "mktcap_min_yi": 300.0
+    },
+    "elapsed_sec": 94.0,
+    "n_trades": 1511,
+    "total_return": 0.838565,
+    "annualized_return": 0.037819,
+    "max_drawdown": 0.477133,
+    "sharpe_ratio": 0.1375,
+    "win_rate": 0.6406,
+    "profit_factor": 1.6295,
+    "avg_win": 0.223534,
+    "avg_loss": -0.086489,
+    "total_trades": 1511,
+    "round_trip_count": 1341,
+    "daily_turnover_rate": 0.011805
+  }
+]

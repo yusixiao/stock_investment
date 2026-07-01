@@ -1,0 +1,280 @@
+[
+  {
+    "tag": "R3_anchor",
+    "note": "锚点: base + trail25(确定性复校≈6.43%)",
+    "overrides": {
+      "trailing_stop_pct": 0.25
+    },
+    "elapsed_sec": 107.3,
+    "n_trades": 4454,
+    "total_return": 1.781007,
+    "annualized_return": 0.064331,
+    "max_drawdown": 0.464819,
+    "sharpe_ratio": 0.2654,
+    "win_rate": 0.5045,
+    "profit_factor": 1.4536,
+    "avg_win": 0.207536,
+    "avg_loss": -0.109421,
+    "total_trades": 4454,
+    "round_trip_count": 3560,
+    "daily_turnover_rate": 0.023971
+  },
+  {
+    "tag": "R3_cap_le80",
+    "note": "trail25 + 市值 50~80亿(纯小盘)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 80.0
+    },
+    "elapsed_sec": 82.6,
+    "n_trades": 3602,
+    "total_return": 0.910328,
+    "annualized_return": 0.040244,
+    "max_drawdown": 0.603478,
+    "sharpe_ratio": 0.1734,
+    "win_rate": 0.4946,
+    "profit_factor": 1.1747,
+    "avg_win": 0.164715,
+    "avg_loss": -0.109327,
+    "total_trades": 3602,
+    "round_trip_count": 2677,
+    "daily_turnover_rate": 0.032838
+  },
+  {
+    "tag": "R3_cap_le100",
+    "note": "trail25 + 市值 50~100亿(小盘)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 100.0
+    },
+    "elapsed_sec": 85.2,
+    "n_trades": 3969,
+    "total_return": 2.716591,
+    "annualized_return": 0.083313,
+    "max_drawdown": 0.508108,
+    "sharpe_ratio": 0.3378,
+    "win_rate": 0.5273,
+    "profit_factor": 1.3872,
+    "avg_win": 0.183719,
+    "avg_loss": -0.110958,
+    "total_trades": 3969,
+    "round_trip_count": 3040,
+    "daily_turnover_rate": 0.028974
+  },
+  {
+    "tag": "R3_cap_le150",
+    "note": "trail25 + 市值 50~150亿(中小盘)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 150.0
+    },
+    "elapsed_sec": 90.3,
+    "n_trades": 4171,
+    "total_return": 2.243367,
+    "annualized_return": 0.074357,
+    "max_drawdown": 0.498804,
+    "sharpe_ratio": 0.3041,
+    "win_rate": 0.525,
+    "profit_factor": 1.3775,
+    "avg_win": 0.205628,
+    "avg_loss": -0.110312,
+    "total_trades": 4171,
+    "round_trip_count": 3305,
+    "daily_turnover_rate": 0.025652
+  },
+  {
+    "tag": "R3_cap_le300",
+    "note": "trail25 + 市值 50~300亿(剔超大盘钢煤油龙头)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0
+    },
+    "elapsed_sec": 97.3,
+    "n_trades": 4357,
+    "total_return": 1.893691,
+    "annualized_return": 0.066912,
+    "max_drawdown": 0.482889,
+    "sharpe_ratio": 0.2754,
+    "win_rate": 0.517,
+    "profit_factor": 1.3909,
+    "avg_win": 0.210011,
+    "avg_loss": -0.107266,
+    "total_trades": 4357,
+    "round_trip_count": 3476,
+    "daily_turnover_rate": 0.02483
+  },
+  {
+    "tag": "R3_pbmin05",
+    "note": "trail25 + PB 0.5~2.0(剔极低PB陷阱)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "pb_min": 0.5
+    },
+    "elapsed_sec": 102.9,
+    "n_trades": 4474,
+    "total_return": 1.836619,
+    "annualized_return": 0.065617,
+    "max_drawdown": 0.464849,
+    "sharpe_ratio": 0.2708,
+    "win_rate": 0.5043,
+    "profit_factor": 1.4575,
+    "avg_win": 0.207071,
+    "avg_loss": -0.109392,
+    "total_trades": 4474,
+    "round_trip_count": 3526,
+    "daily_turnover_rate": 0.024675
+  },
+  {
+    "tag": "R3_pbmin08",
+    "note": "trail25 + PB 0.8~2.0(账面更健康)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "pb_min": 0.8
+    },
+    "elapsed_sec": 98.8,
+    "n_trades": 4714,
+    "total_return": 1.548997,
+    "annualized_return": 0.058695,
+    "max_drawdown": 0.462778,
+    "sharpe_ratio": 0.2427,
+    "win_rate": 0.4957,
+    "profit_factor": 1.2986,
+    "avg_win": 0.167705,
+    "avg_loss": -0.109956,
+    "total_trades": 4714,
+    "round_trip_count": 3506,
+    "daily_turnover_rate": 0.031542
+  },
+  {
+    "tag": "R3_amt3000",
+    "note": "trail25 + 日均成交≥3000万",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "min_amount_cny": 30000000.0
+    },
+    "elapsed_sec": 104.1,
+    "n_trades": 4506,
+    "total_return": 1.152245,
+    "annualized_return": 0.047832,
+    "max_drawdown": 0.485429,
+    "sharpe_ratio": 0.1987,
+    "win_rate": 0.489,
+    "profit_factor": 1.3292,
+    "avg_win": 0.19263,
+    "avg_loss": -0.10795,
+    "total_trades": 4506,
+    "round_trip_count": 3536,
+    "daily_turnover_rate": 0.02583
+  },
+  {
+    "tag": "R3_amt5000",
+    "note": "trail25 + 日均成交≥5000万",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "min_amount_cny": 50000000.0
+    },
+    "elapsed_sec": 102.6,
+    "n_trades": 4547,
+    "total_return": 0.701813,
+    "annualized_return": 0.032941,
+    "max_drawdown": 0.494555,
+    "sharpe_ratio": 0.1405,
+    "win_rate": 0.491,
+    "profit_factor": 1.2068,
+    "avg_win": 0.188022,
+    "avg_loss": -0.109162,
+    "total_trades": 4547,
+    "round_trip_count": 3483,
+    "daily_turnover_rate": 0.028121
+  },
+  {
+    "tag": "R3_top15",
+    "note": "trail25 + Top15(更集中)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "top_n": 15
+    },
+    "elapsed_sec": 99.4,
+    "n_trades": 3291,
+    "total_return": 0.851614,
+    "annualized_return": 0.038267,
+    "max_drawdown": 0.490879,
+    "sharpe_ratio": 0.1597,
+    "win_rate": 0.504,
+    "profit_factor": 1.2912,
+    "avg_win": 0.206538,
+    "avg_loss": -0.108862,
+    "total_trades": 3291,
+    "round_trip_count": 2639,
+    "daily_turnover_rate": 0.022842
+  },
+  {
+    "tag": "R3_top25",
+    "note": "trail25 + Top25(更分散)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "top_n": 25
+    },
+    "elapsed_sec": 105.0,
+    "n_trades": 5410,
+    "total_return": 1.380087,
+    "annualized_return": 0.054279,
+    "max_drawdown": 0.48018,
+    "sharpe_ratio": 0.2245,
+    "win_rate": 0.5029,
+    "profit_factor": 1.3599,
+    "avg_win": 0.214453,
+    "avg_loss": -0.115831,
+    "total_trades": 5410,
+    "round_trip_count": 4325,
+    "daily_turnover_rate": 0.023385
+  },
+  {
+    "tag": "R3_roemax15_noprop",
+    "note": "trail25 + ROE≤15不追顶 + 去地产(诚实组合)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "roe_max": 15.0,
+      "sector_tier": "core_no_prop"
+    },
+    "elapsed_sec": 94.0,
+    "n_trades": 4234,
+    "total_return": 1.52967,
+    "annualized_return": 0.058204,
+    "max_drawdown": 0.537349,
+    "sharpe_ratio": 0.2407,
+    "win_rate": 0.517,
+    "profit_factor": 1.4249,
+    "avg_win": 0.218843,
+    "avg_loss": -0.115219,
+    "total_trades": 4234,
+    "round_trip_count": 3385,
+    "daily_turnover_rate": 0.022986
+  },
+  {
+    "tag": "R3_pb15_roemax15",
+    "note": "trail25 + PB≤1.5更深谷底 + ROE≤15不追顶",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "pb_max": 1.5,
+      "roe_max": 15.0
+    },
+    "elapsed_sec": 92.0,
+    "n_trades": 4079,
+    "total_return": 1.411266,
+    "annualized_return": 0.055116,
+    "max_drawdown": 0.525684,
+    "sharpe_ratio": 0.2289,
+    "win_rate": 0.5145,
+    "profit_factor": 1.3851,
+    "avg_win": 0.22203,
+    "avg_loss": -0.107324,
+    "total_trades": 4079,
+    "round_trip_count": 3302,
+    "daily_turnover_rate": 0.02343
+  }
+]

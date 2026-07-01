@@ -1,0 +1,20 @@
+[
+  {
+    "tag": "SG_smoke",
+    "note": "默认配置 smoke 验证",
+    "overrides": {},
+    "elapsed_sec": 13.0,
+    "n_trades": 285,
+    "total_return": -0.08259,
+    "annualized_return": -0.059416,
+    "max_drawdown": 0.257666,
+    "sharpe_ratio": -0.388,
+    "win_rate": 0.3387,
+    "profit_factor": 0.535,
+    "avg_win": 0.113254,
+    "avg_loss": -0.069401,
+    "total_trades": 285,
+    "round_trip_count": 186,
+    "daily_turnover_rate": 0.018271
+  }
+]

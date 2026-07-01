@@ -30,7 +30,7 @@
 - **🚨 自闭环铁律(2026-07-01)**:一个策略的**配套资产全部放进它自己的 `experiments/<strategy>/` 子目录**,与策略代码同处、自成闭环 —— 包括:**跑批/诊断脚本(matrix / diag runner `.py`)、研究报告(`.md`)、回测结果(`.json` / `_overview.md`)、决策日志(`.jsonl`)**。目标是整目录可独立迁移 / 删除、对外零引用。**禁止**把这些散落到**项目根目录**、顶层 `scripts/`、`report/exported/` 等公共位置。
   - 范例:`experiments/lynch/lynch_turnarounds/` = `lynch_turnarounds_strategy.py` + `run_lynch_turnarounds_matrix.py` + `lynch_tr_r1.json` + `lynch_tr_r1_overview.md`,四件套同目录闭环。
   - 自闭环技术做法(见 lynch 各 matrix):脚本内 `ROOT = Path(__file__).resolve().parents[N]` 定位仓库根、`OUT_DIR = Path(__file__).resolve().parent` 让产物落回自身目录、跨策略引用走相对包 import,**不硬编码绝对路径、不依赖 CWD**。
-  - **git 与物理位置解耦**:自闭环是物理组织原则(便于整体迁移/删除),与是否入库无关。入库规则仍为 `.gitignore` 的 `experiments/**` + `!**/*.py` 例外 —— **仅 `.py` / `__init__.py` 进 git**,`.json` / `.md` / `.jsonl` 等过程产物被忽略(即使不入库也必须放策略子目录内,勿丢项目根)。
+  - **git 与物理位置解耦**:自闭环是物理组织原则(便于整体迁移/删除),与是否入库无关。**入库规则(2026-07-01 起,`.md`/`.json` 视为研究成果纳入版本管理)**:`.gitignore` 的 `experiments/**` + `!**/*.py` + `!**/*.md` + `!**/*.json` 例外 —— **`.py`(含 `__init__.py`)源码 + `.md` 研究报告/结论 + `.json` 回测结果均进 git**;`.jsonl` 决策日志 + 其他数据文件仍被忽略(可再生、噪声大、体积可膨胀)。⚠️ `.json` 入库的关键理由:`data/market/` 整体 gitignore 且随时间变动(新增 bar / 财务重述),脚本**日后重跑无法精确复现**同一数字 → `.json` 是唯一可复现的**研究时点证据**。(无论入库与否,过程产物都必须放策略子目录内,勿丢项目根)。
 - **🚨 文档职责边界(2026-07-01)**:本 AGENTS.md **只写架构 / 铁律 / 目录结构**,**不写任何具体策略的业务描述**(选股逻辑 / 因子口径 / 参数 / 回测结论 —— 易过时,须就近维护)。策略详情看两处:① 策略 `.py` 模块 docstring(设计意图 / 边界 / 选股管线);② 策略目录内 markdown —— 整类策略详情见如 `experiments/lynch/林奇六类型策略研究报告.md`,单轮回测结果见如 `experiments/lynch/lynch_turnarounds/lynch_tr_r1_overview.md`。
 - 两者都通过 `importlib` 按文件路径加载(信任本地用户)。
 - `strategies/`、`deployed/`、`experiments/` 及各策略子目录均有 `__init__.py` 成为正规包(避免命名空间包子线程隐患)。

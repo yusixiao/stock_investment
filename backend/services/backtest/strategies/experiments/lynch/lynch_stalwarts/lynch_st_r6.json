@@ -1,0 +1,238 @@
+[
+  {
+    "tag": "R6_D",
+    "note": "冠军 D基: cap250 sec2 (复跑校验, 应≈11.24%)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 2,
+      "mktcap_min_yi": 250.0
+    },
+    "elapsed_sec": 74.3,
+    "n_trades": 129,
+    "total_return": 4.742191,
+    "annualized_return": 0.112424,
+    "max_drawdown": 0.471575,
+    "sharpe_ratio": 0.5178,
+    "win_rate": 0.6377,
+    "profit_factor": 3.1802,
+    "avg_win": 0.441217,
+    "avg_loss": -0.158214,
+    "total_trades": 129,
+    "round_trip_count": 69,
+    "daily_turnover_rate": 0.005206
+  },
+  {
+    "tag": "R6_cap225",
+    "note": "D基 + 市值≥225亿(邻域稳健性)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 2,
+      "mktcap_min_yi": 225.0
+    },
+    "elapsed_sec": 71.4,
+    "n_trades": 145,
+    "total_return": 4.316892,
+    "annualized_return": 0.107219,
+    "max_drawdown": 0.457267,
+    "sharpe_ratio": 0.4963,
+    "win_rate": 0.6184,
+    "profit_factor": 2.911,
+    "avg_win": 0.428533,
+    "avg_loss": -0.150146,
+    "total_trades": 145,
+    "round_trip_count": 76,
+    "daily_turnover_rate": 0.0054
+  },
+  {
+    "tag": "R6_cap275",
+    "note": "D基 + 市值≥275亿(邻域稳健性)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 2,
+      "mktcap_min_yi": 275.0
+    },
+    "elapsed_sec": 70.6,
+    "n_trades": 121,
+    "total_return": 4.222104,
+    "annualized_return": 0.106005,
+    "max_drawdown": 0.471575,
+    "sharpe_ratio": 0.4857,
+    "win_rate": 0.6094,
+    "profit_factor": 3.3271,
+    "avg_win": 0.433824,
+    "avg_loss": -0.156959,
+    "total_trades": 121,
+    "round_trip_count": 64,
+    "daily_turnover_rate": 0.005298
+  },
+  {
+    "tag": "R6_D_trail25",
+    "note": "D基 + 25%移动止损(均衡变体)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 2,
+      "mktcap_min_yi": 250.0,
+      "trailing_stop_pct": 0.25
+    },
+    "elapsed_sec": 71.7,
+    "n_trades": 135,
+    "total_return": 3.868427,
+    "annualized_return": 0.101287,
+    "max_drawdown": 0.370339,
+    "sharpe_ratio": 0.5173,
+    "win_rate": 0.6197,
+    "profit_factor": 2.2664,
+    "avg_win": 0.40769,
+    "avg_loss": -0.159338,
+    "total_trades": 135,
+    "round_trip_count": 71,
+    "daily_turnover_rate": 0.005536
+  },
+  {
+    "tag": "R6_D_comp_trail25",
+    "note": "D基 + composite + 25%移动止损(均衡+)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 2,
+      "mktcap_min_yi": 250.0,
+      "sort_by": "composite",
+      "trailing_stop_pct": 0.25
+    },
+    "elapsed_sec": 72.7,
+    "n_trades": 130,
+    "total_return": 4.489775,
+    "annualized_return": 0.10938,
+    "max_drawdown": 0.372283,
+    "sharpe_ratio": 0.564,
+    "win_rate": 0.6087,
+    "profit_factor": 2.3343,
+    "avg_win": 0.458892,
+    "avg_loss": -0.167659,
+    "total_trades": 130,
+    "round_trip_count": 69,
+    "daily_turnover_rate": 0.005289
+  },
+  {
+    "tag": "R6_D_div5",
+    "note": "D基 + 股息≥5%(防御变体)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.05,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 2,
+      "mktcap_min_yi": 250.0
+    },
+    "elapsed_sec": 71.4,
+    "n_trades": 76,
+    "total_return": 3.079258,
+    "annualized_return": 0.089479,
+    "max_drawdown": 0.234806,
+    "sharpe_ratio": 0.4541,
+    "win_rate": 0.725,
+    "profit_factor": 6.3089,
+    "avg_win": 0.330913,
+    "avg_loss": -0.118534,
+    "total_trades": 76,
+    "round_trip_count": 40,
+    "daily_turnover_rate": 0.00447
+  },
+  {
+    "tag": "R6_D_g830",
+    "note": "D基 + 成长8-30%(放宽成长上限)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.3,
+      "require_industry": true,
+      "max_per_sector": 2,
+      "mktcap_min_yi": 250.0
+    },
+    "elapsed_sec": 71.7,
+    "n_trades": 225,
+    "total_return": 3.530884,
+    "annualized_return": 0.096474,
+    "max_drawdown": 0.432441,
+    "sharpe_ratio": 0.4337,
+    "win_rate": 0.5902,
+    "profit_factor": 2.636,
+    "avg_win": 0.468619,
+    "avg_loss": -0.172079,
+    "total_trades": 225,
+    "round_trip_count": 122,
+    "daily_turnover_rate": 0.005416
+  },
+  {
+    "tag": "R6_D_trend200",
+    "note": "D基 + 200日趋势过滤(避价值陷阱, 唯一未测杠杆)",
+    "overrides": {
+      "peg_max": 1.0,
+      "rebalance_months": [
+        6
+      ],
+      "min_div_yield": 0.03,
+      "np_cagr_min": 0.08,
+      "np_cagr_max": 0.2,
+      "require_industry": true,
+      "max_per_sector": 2,
+      "mktcap_min_yi": 250.0,
+      "trend_ma_days": 200
+    },
+    "elapsed_sec": 72.8,
+    "n_trades": 64,
+    "total_return": 3.363871,
+    "annualized_return": 0.093967,
+    "max_drawdown": 0.461875,
+    "sharpe_ratio": 0.4143,
+    "win_rate": 0.5152,
+    "profit_factor": 2.1751,
+    "avg_win": 0.297964,
+    "avg_loss": -0.164749,
+    "total_trades": 64,
+    "round_trip_count": 33,
+    "daily_turnover_rate": 0.004304
+  }
+]

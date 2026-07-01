@@ -1,0 +1,279 @@
+[
+  {
+    "tag": "R1_base",
+    "note": "默认基线(年度5月调仓 cagr25-50 mktcap20-300 peg1 roe15 top15)",
+    "overrides": {},
+    "elapsed_sec": 88.4,
+    "n_trades": 427,
+    "total_return": -0.104369,
+    "annualized_return": -0.006696,
+    "max_drawdown": 0.721973,
+    "sharpe_ratio": -0.0221,
+    "win_rate": 0.3981,
+    "profit_factor": 0.9865,
+    "avg_win": 0.468715,
+    "avg_loss": -0.241236,
+    "total_trades": 427,
+    "round_trip_count": 216,
+    "daily_turnover_rate": 0.00717
+  },
+  {
+    "tag": "R1_monthly",
+    "note": "月度调仓(用户口径)",
+    "overrides": {
+      "rebalance_months": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ]
+    },
+    "elapsed_sec": 228.2,
+    "n_trades": 3024,
+    "total_return": 0.112513,
+    "annualized_return": 0.00652,
+    "max_drawdown": 0.567696,
+    "sharpe_ratio": 0.0319,
+    "win_rate": 0.459,
+    "profit_factor": 1.0675,
+    "avg_win": 0.221076,
+    "avg_loss": -0.15328,
+    "total_trades": 3024,
+    "round_trip_count": 2499,
+    "daily_turnover_rate": 0.020205
+  },
+  {
+    "tag": "R1_quarter",
+    "note": "季度调仓",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ]
+    },
+    "elapsed_sec": 122.0,
+    "n_trades": 1183,
+    "total_return": -0.025672,
+    "annualized_return": -0.001584,
+    "max_drawdown": 0.560241,
+    "sharpe_ratio": -0.0057,
+    "win_rate": 0.4368,
+    "profit_factor": 0.9938,
+    "avg_win": 0.292658,
+    "avg_loss": -0.181585,
+    "total_trades": 1183,
+    "round_trip_count": 831,
+    "daily_turnover_rate": 0.012314
+  },
+  {
+    "tag": "R1_g20",
+    "note": "成长下限放宽至20%(更多样本)",
+    "overrides": {
+      "np_cagr_min": 0.2
+    },
+    "elapsed_sec": 81.5,
+    "n_trades": 430,
+    "total_return": 0.018386,
+    "annualized_return": 0.001111,
+    "max_drawdown": 0.702029,
+    "sharpe_ratio": 0.0126,
+    "win_rate": 0.4054,
+    "profit_factor": 1.0662,
+    "avg_win": 0.465726,
+    "avg_loss": -0.233659,
+    "total_trades": 430,
+    "round_trip_count": 222,
+    "daily_turnover_rate": 0.007105
+  },
+  {
+    "tag": "R1_nocapmax",
+    "note": "取消成长上限(纳入>50%高增)",
+    "overrides": {
+      "np_cagr_max": 0.0
+    },
+    "elapsed_sec": 81.5,
+    "n_trades": 440,
+    "total_return": -0.621676,
+    "annualized_return": -0.057529,
+    "max_drawdown": 0.846256,
+    "sharpe_ratio": -0.2221,
+    "win_rate": 0.32,
+    "profit_factor": 0.6045,
+    "avg_win": 0.608835,
+    "avg_loss": -0.291136,
+    "total_trades": 440,
+    "round_trip_count": 225,
+    "daily_turnover_rate": 0.007044
+  },
+  {
+    "tag": "R1_peg15",
+    "note": "PEG≤1.5(放宽估值纪律)",
+    "overrides": {
+      "peg_max": 1.5
+    },
+    "elapsed_sec": 80.9,
+    "n_trades": 444,
+    "total_return": -0.081699,
+    "annualized_return": -0.005182,
+    "max_drawdown": 0.709741,
+    "sharpe_ratio": -0.0108,
+    "win_rate": 0.3761,
+    "profit_factor": 1.0011,
+    "avg_win": 0.474065,
+    "avg_loss": -0.242951,
+    "total_trades": 444,
+    "round_trip_count": 226,
+    "daily_turnover_rate": 0.00723
+  },
+  {
+    "tag": "R1_smallcap",
+    "note": "纯小盘 20~150亿",
+    "overrides": {
+      "mktcap_max_yi": 150.0
+    },
+    "elapsed_sec": 76.7,
+    "n_trades": 397,
+    "total_return": 0.223932,
+    "annualized_return": 0.012394,
+    "max_drawdown": 0.662856,
+    "sharpe_ratio": 0.0557,
+    "win_rate": 0.435,
+    "profit_factor": 1.2029,
+    "avg_win": 0.439449,
+    "avg_loss": -0.219461,
+    "total_trades": 397,
+    "round_trip_count": 200,
+    "daily_turnover_rate": 0.007136
+  },
+  {
+    "tag": "R1_midcap",
+    "note": "中盘 100~500亿",
+    "overrides": {
+      "mktcap_min_yi": 100.0,
+      "mktcap_max_yi": 500.0
+    },
+    "elapsed_sec": 78.3,
+    "n_trades": 379,
+    "total_return": -0.459963,
+    "annualized_return": -0.03686,
+    "max_drawdown": 0.737972,
+    "sharpe_ratio": -0.1832,
+    "win_rate": 0.3646,
+    "profit_factor": 0.7596,
+    "avg_win": 0.48891,
+    "avg_loss": -0.270098,
+    "total_trades": 379,
+    "round_trip_count": 192,
+    "daily_turnover_rate": 0.006648
+  },
+  {
+    "tag": "R1_top10",
+    "note": "Top10 集中",
+    "overrides": {
+      "top_n": 10
+    },
+    "elapsed_sec": 81.7,
+    "n_trades": 293,
+    "total_return": -0.172706,
+    "annualized_return": -0.01149,
+    "max_drawdown": 0.696167,
+    "sharpe_ratio": -0.0404,
+    "win_rate": 0.3946,
+    "profit_factor": 0.9478,
+    "avg_win": 0.441743,
+    "avg_loss": -0.234518,
+    "total_trades": 293,
+    "round_trip_count": 147,
+    "daily_turnover_rate": 0.007238
+  },
+  {
+    "tag": "R1_top25",
+    "note": "Top25 分散",
+    "overrides": {
+      "top_n": 25
+    },
+    "elapsed_sec": 81.3,
+    "n_trades": 670,
+    "total_return": 0.055103,
+    "annualized_return": 0.003275,
+    "max_drawdown": 0.674125,
+    "sharpe_ratio": 0.0078,
+    "win_rate": 0.407,
+    "profit_factor": 1.0725,
+    "avg_win": 0.486421,
+    "avg_loss": -0.235108,
+    "total_trades": 670,
+    "round_trip_count": 344,
+    "daily_turnover_rate": 0.006918
+  },
+  {
+    "tag": "R1_trend200",
+    "note": "+趋势 close>200日线",
+    "overrides": {
+      "trend_ma_days": 200
+    },
+    "elapsed_sec": 86.7,
+    "n_trades": 361,
+    "total_return": -0.046521,
+    "annualized_return": -0.0029,
+    "max_drawdown": 0.65265,
+    "sharpe_ratio": 0.005,
+    "win_rate": 0.3933,
+    "profit_factor": 0.9526,
+    "avg_win": 0.451913,
+    "avg_loss": -0.230373,
+    "total_trades": 361,
+    "round_trip_count": 178,
+    "daily_turnover_rate": 0.007382
+  },
+  {
+    "tag": "R1_sortG",
+    "note": "按成长降序排序",
+    "overrides": {
+      "sort_by": "growth"
+    },
+    "elapsed_sec": 83.3,
+    "n_trades": 449,
+    "total_return": -0.082406,
+    "annualized_return": -0.005229,
+    "max_drawdown": 0.674798,
+    "sharpe_ratio": 0.0002,
+    "win_rate": 0.4009,
+    "profit_factor": 0.9895,
+    "avg_win": 0.48912,
+    "avg_loss": -0.251274,
+    "total_trades": 449,
+    "round_trip_count": 222,
+    "daily_turnover_rate": 0.007559
+  },
+  {
+    "tag": "R1_roe20",
+    "note": "ROE≥20 强质量",
+    "overrides": {
+      "roe_min": 20.0
+    },
+    "elapsed_sec": 82.1,
+    "n_trades": 387,
+    "total_return": -0.195101,
+    "annualized_return": -0.013143,
+    "max_drawdown": 0.667778,
+    "sharpe_ratio": -0.0478,
+    "win_rate": 0.4171,
+    "profit_factor": 0.9084,
+    "avg_win": 0.404755,
+    "avg_loss": -0.26663,
+    "total_trades": 387,
+    "round_trip_count": 199,
+    "daily_turnover_rate": 0.006846
+  }
+]

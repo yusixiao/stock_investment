@@ -1,0 +1,274 @@
+[
+  {
+    "tag": "R4_anchor",
+    "note": "R3稳健锚点: 季度+Top10(≥50亿)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10
+    },
+    "elapsed_sec": 102.8,
+    "n_trades": 700,
+    "total_return": 6.661768,
+    "annualized_return": 0.132154,
+    "max_drawdown": 0.386057,
+    "sharpe_ratio": 0.5265,
+    "win_rate": 0.5,
+    "profit_factor": 2.601,
+    "avg_win": 0.358099,
+    "avg_loss": -0.132273,
+    "total_trades": 700,
+    "round_trip_count": 486,
+    "daily_turnover_rate": 0.012418
+  },
+  {
+    "tag": "R4_trail30",
+    "note": "+30%移动止损",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "trailing_stop_pct": 0.3
+    },
+    "elapsed_sec": 99.9,
+    "n_trades": 750,
+    "total_return": 4.290823,
+    "annualized_return": 0.106887,
+    "max_drawdown": 0.398441,
+    "sharpe_ratio": 0.4425,
+    "win_rate": 0.4787,
+    "profit_factor": 1.8706,
+    "avg_win": 0.372438,
+    "avg_loss": -0.134252,
+    "total_trades": 750,
+    "round_trip_count": 493,
+    "daily_turnover_rate": 0.014684
+  },
+  {
+    "tag": "R4_trail25",
+    "note": "+25%移动止损",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "trailing_stop_pct": 0.25
+    },
+    "elapsed_sec": 95.8,
+    "n_trades": 775,
+    "total_return": 4.299137,
+    "annualized_return": 0.106993,
+    "max_drawdown": 0.404311,
+    "sharpe_ratio": 0.453,
+    "win_rate": 0.48,
+    "profit_factor": 1.748,
+    "avg_win": 0.335308,
+    "avg_loss": -0.126901,
+    "total_trades": 775,
+    "round_trip_count": 500,
+    "daily_turnover_rate": 0.01598
+  },
+  {
+    "tag": "R4_trail20",
+    "note": "+20%移动止损",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "trailing_stop_pct": 0.2
+    },
+    "elapsed_sec": 95.6,
+    "n_trades": 827,
+    "total_return": 2.401936,
+    "annualized_return": 0.077487,
+    "max_drawdown": 0.49763,
+    "sharpe_ratio": 0.3319,
+    "win_rate": 0.4627,
+    "profit_factor": 1.4961,
+    "avg_win": 0.289373,
+    "avg_loss": -0.111274,
+    "total_trades": 827,
+    "round_trip_count": 510,
+    "daily_turnover_rate": 0.017991
+  },
+  {
+    "tag": "R4_trail15",
+    "note": "+15%移动止损(紧边界)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "trailing_stop_pct": 0.15
+    },
+    "elapsed_sec": 94.2,
+    "n_trades": 903,
+    "total_return": 1.092427,
+    "annualized_return": 0.046034,
+    "max_drawdown": 0.485307,
+    "sharpe_ratio": 0.1835,
+    "win_rate": 0.4125,
+    "profit_factor": 1.25,
+    "avg_win": 0.276059,
+    "avg_loss": -0.102168,
+    "total_trades": 903,
+    "round_trip_count": 514,
+    "daily_turnover_rate": 0.021294
+  },
+  {
+    "tag": "R4_hard20",
+    "note": "+20%硬止损",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "stop_loss_pct": 0.2
+    },
+    "elapsed_sec": 98.3,
+    "n_trades": 752,
+    "total_return": 4.411681,
+    "annualized_return": 0.108412,
+    "max_drawdown": 0.399694,
+    "sharpe_ratio": 0.4474,
+    "win_rate": 0.4828,
+    "profit_factor": 1.7743,
+    "avg_win": 0.360142,
+    "avg_loss": -0.138344,
+    "total_trades": 752,
+    "round_trip_count": 495,
+    "daily_turnover_rate": 0.014413
+  },
+  {
+    "tag": "R4_hard25",
+    "note": "+25%硬止损",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "stop_loss_pct": 0.25
+    },
+    "elapsed_sec": 94.0,
+    "n_trades": 733,
+    "total_return": 4.466851,
+    "annualized_return": 0.109097,
+    "max_drawdown": 0.405702,
+    "sharpe_ratio": 0.4467,
+    "win_rate": 0.4908,
+    "profit_factor": 1.8644,
+    "avg_win": 0.361556,
+    "avg_loss": -0.148296,
+    "total_trades": 733,
+    "round_trip_count": 489,
+    "daily_turnover_rate": 0.013625
+  },
+  {
+    "tag": "R4_trail25_hard20",
+    "note": "+移动25%+硬20%(双保险)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "trailing_stop_pct": 0.25,
+      "stop_loss_pct": 0.2
+    },
+    "elapsed_sec": 97.3,
+    "n_trades": 788,
+    "total_return": 3.855177,
+    "annualized_return": 0.101104,
+    "max_drawdown": 0.411789,
+    "sharpe_ratio": 0.4294,
+    "win_rate": 0.4781,
+    "profit_factor": 1.6895,
+    "avg_win": 0.332926,
+    "avg_loss": -0.126178,
+    "total_trades": 788,
+    "round_trip_count": 502,
+    "daily_turnover_rate": 0.016371
+  },
+  {
+    "tag": "R4_regime30",
+    "note": "+熊市降3成仓(沪深300 MA200)",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "risk_off_exposure": 0.3,
+      "regime_ma_days": 200
+    },
+    "elapsed_sec": 93.8,
+    "n_trades": 858,
+    "total_return": 2.571692,
+    "annualized_return": 0.08069,
+    "max_drawdown": 0.418222,
+    "sharpe_ratio": 0.3704,
+    "win_rate": 0.4532,
+    "profit_factor": 1.8296,
+    "avg_win": 0.364565,
+    "avg_loss": -0.122009,
+    "total_trades": 858,
+    "round_trip_count": 631,
+    "daily_turnover_rate": 0.011831
+  },
+  {
+    "tag": "R4_regime50",
+    "note": "+熊市降5成仓",
+    "overrides": {
+      "rebalance_months": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "top_n": 10,
+      "risk_off_exposure": 0.5,
+      "regime_ma_days": 200
+    },
+    "elapsed_sec": 97.0,
+    "n_trades": 863,
+    "total_return": 3.469891,
+    "annualized_return": 0.095569,
+    "max_drawdown": 0.38567,
+    "sharpe_ratio": 0.43,
+    "win_rate": 0.4591,
+    "profit_factor": 1.9988,
+    "avg_win": 0.360099,
+    "avg_loss": -0.125227,
+    "total_trades": 863,
+    "round_trip_count": 636,
+    "daily_turnover_rate": 0.012194
+  }
+]

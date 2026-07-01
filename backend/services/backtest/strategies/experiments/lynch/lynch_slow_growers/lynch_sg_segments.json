@@ -1,0 +1,973 @@
+{
+  "1": [
+    {
+      "tag": "seg01_01",
+      "note": "1分段·第1段 2010-06-01→2026-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 70.9,
+      "n_trades": 139,
+      "total_return": 7.457166,
+      "annualized_return": 0.142751,
+      "max_drawdown": 0.238514,
+      "sharpe_ratio": 0.6909,
+      "win_rate": 0.6761,
+      "profit_factor": 4.4272,
+      "avg_win": 0.385703,
+      "avg_loss": -0.158796,
+      "total_trades": 139,
+      "round_trip_count": 71,
+      "daily_turnover_rate": 0.005066,
+      "seg_idx": 1,
+      "seg_start": "2010-06-01",
+      "seg_end": "2026-06-01",
+      "bench_annual": 0.036158231503857774,
+      "bench_total": 0.7652950518227426
+    }
+  ],
+  "2": [
+    {
+      "tag": "seg02_01",
+      "note": "2分段·第1段 2010-06-01→2018-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 31.8,
+      "n_trades": 27,
+      "total_return": 2.15016,
+      "annualized_return": 0.154228,
+      "max_drawdown": 0.238514,
+      "sharpe_ratio": 0.7281,
+      "win_rate": 0.7273,
+      "profit_factor": 20.5843,
+      "avg_win": 0.592294,
+      "avg_loss": -0.097556,
+      "total_trades": 27,
+      "round_trip_count": 11,
+      "daily_turnover_rate": 0.003776,
+      "seg_idx": 1,
+      "seg_start": "2010-06-01",
+      "seg_end": "2018-06-01",
+      "bench_annual": 0.04051879964344929,
+      "bench_total": 0.3740402352339258
+    },
+    {
+      "tag": "seg02_02",
+      "note": "2分段·第2段 2018-06-01→2026-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 38.4,
+      "n_trades": 115,
+      "total_return": 1.743326,
+      "annualized_return": 0.134448,
+      "max_drawdown": 0.232179,
+      "sharpe_ratio": 0.6563,
+      "win_rate": 0.6491,
+      "profit_factor": 3.3576,
+      "avg_win": 0.329293,
+      "avg_loss": -0.167982,
+      "total_trades": 115,
+      "round_trip_count": 57,
+      "daily_turnover_rate": 0.005641,
+      "seg_idx": 2,
+      "seg_start": "2018-06-01",
+      "seg_end": "2026-06-01",
+      "bench_annual": 0.031815937473784306,
+      "bench_total": 0.28474771448174296
+    }
+  ],
+  "4": [
+    {
+      "tag": "seg04_01",
+      "note": "4分段·第1段 2010-06-01→2014-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 15.7,
+      "n_trades": 7,
+      "total_return": 0.138751,
+      "annualized_return": 0.033062,
+      "max_drawdown": 0.238514,
+      "sharpe_ratio": 0.117,
+      "win_rate": 0.5,
+      "profit_factor": 2.8159,
+      "avg_win": 0.14207,
+      "avg_loss": -0.050987,
+      "total_trades": 7,
+      "round_trip_count": 2,
+      "daily_turnover_rate": 0.002804,
+      "seg_idx": 1,
+      "seg_start": "2010-06-01",
+      "seg_end": "2014-06-01",
+      "bench_annual": -0.05855002776508722,
+      "bench_total": -0.21416301224198864
+    },
+    {
+      "tag": "seg04_02",
+      "note": "4分段·第2段 2014-06-01→2018-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 17.5,
+      "n_trades": 17,
+      "total_return": 1.777489,
+      "annualized_return": 0.291413,
+      "max_drawdown": 0.187884,
+      "sharpe_ratio": 1.3933,
+      "win_rate": 1.0,
+      "profit_factor": 999.0,
+      "avg_win": 0.669123,
+      "avg_loss": 0.0,
+      "total_trades": 17,
+      "round_trip_count": 6,
+      "daily_turnover_rate": 0.003817,
+      "seg_idx": 2,
+      "seg_start": "2014-06-01",
+      "seg_end": "2018-06-01",
+      "bench_annual": 0.15101355898792357,
+      "bench_total": 0.7538292158119517
+    },
+    {
+      "tag": "seg04_03",
+      "note": "4分段·第3段 2018-06-01→2022-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 18.4,
+      "n_trades": 40,
+      "total_return": 0.738435,
+      "annualized_return": 0.148258,
+      "max_drawdown": 0.12878,
+      "sharpe_ratio": 0.6827,
+      "win_rate": 0.5,
+      "profit_factor": 2.3089,
+      "avg_win": 0.408128,
+      "avg_loss": -0.162583,
+      "total_trades": 40,
+      "round_trip_count": 18,
+      "daily_turnover_rate": 0.00486,
+      "seg_idx": 3,
+      "seg_start": "2018-06-01",
+      "seg_end": "2022-06-01",
+      "bench_annual": 0.02011059413857219,
+      "bench_total": 0.08290168989513313
+    },
+    {
+      "tag": "seg04_04",
+      "note": "4分段·第4段 2022-06-01→2026-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 19.3,
+      "n_trades": 71,
+      "total_return": 0.600942,
+      "annualized_return": 0.124848,
+      "max_drawdown": 0.227238,
+      "sharpe_ratio": 0.6459,
+      "win_rate": 0.7097,
+      "profit_factor": 3.0704,
+      "avg_win": 0.245505,
+      "avg_loss": -0.165982,
+      "total_trades": 71,
+      "round_trip_count": 31,
+      "daily_turnover_rate": 0.005524,
+      "seg_idx": 4,
+      "seg_start": "2022-06-01",
+      "seg_end": "2026-06-01",
+      "bench_annual": 0.04365559473866498,
+      "bench_total": 0.1863936740242378
+    }
+  ],
+  "8": [
+    {
+      "tag": "seg08_01",
+      "note": "8分段·第1段 2010-06-01→2012-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 8.3,
+      "n_trades": 0,
+      "total_return": 0.0,
+      "annualized_return": 0.0,
+      "max_drawdown": 0.0,
+      "sharpe_ratio": 0.0,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 0,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.0,
+      "seg_idx": 1,
+      "seg_start": "2010-06-01",
+      "seg_end": "2012-06-01",
+      "bench_annual": -0.020450170065686835,
+      "bench_total": -0.04050927022530004
+    },
+    {
+      "tag": "seg08_02",
+      "note": "8分段·第2段 2012-06-01→2014-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 8.0,
+      "n_trades": 7,
+      "total_return": 0.138751,
+      "annualized_return": 0.067361,
+      "max_drawdown": 0.238514,
+      "sharpe_ratio": 0.2747,
+      "win_rate": 0.5,
+      "profit_factor": 2.8159,
+      "avg_win": 0.14207,
+      "avg_loss": -0.050987,
+      "total_trades": 7,
+      "round_trip_count": 2,
+      "daily_turnover_rate": 0.005472,
+      "seg_idx": 2,
+      "seg_start": "2012-06-01",
+      "seg_end": "2014-06-01",
+      "bench_annual": -0.09531589376248883,
+      "bench_total": -0.18098532547309187
+    },
+    {
+      "tag": "seg08_03",
+      "note": "8分段·第3段 2014-06-01→2016-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 8.5,
+      "n_trades": 6,
+      "total_return": 0.927596,
+      "annualized_return": 0.389317,
+      "max_drawdown": 0.187884,
+      "sharpe_ratio": 1.4592,
+      "win_rate": 1.0,
+      "profit_factor": 999.0,
+      "avg_win": 0.930717,
+      "avg_loss": 0.0,
+      "total_trades": 6,
+      "round_trip_count": 3,
+      "daily_turnover_rate": 0.003613,
+      "seg_idx": 3,
+      "seg_start": "2014-06-01",
+      "seg_end": "2016-06-01",
+      "bench_annual": 0.2129484377693176,
+      "bench_total": 0.4700779285535541
+    },
+    {
+      "tag": "seg08_04",
+      "note": "8分段·第4段 2016-06-01→2018-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 8.6,
+      "n_trades": 13,
+      "total_return": 0.470436,
+      "annualized_return": 0.212776,
+      "max_drawdown": 0.1275,
+      "sharpe_ratio": 1.4833,
+      "win_rate": 1.0,
+      "profit_factor": 999.0,
+      "avg_win": 0.339172,
+      "avg_loss": 0.0,
+      "total_trades": 13,
+      "round_trip_count": 4,
+      "daily_turnover_rate": 0.00459,
+      "seg_idx": 4,
+      "seg_start": "2016-06-01",
+      "seg_end": "2018-06-01",
+      "bench_annual": 0.09231958509047544,
+      "bench_total": 0.1930178541878984
+    },
+    {
+      "tag": "seg08_05",
+      "note": "8分段·第5段 2018-06-01→2020-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 9.3,
+      "n_trades": 16,
+      "total_return": 0.186734,
+      "annualized_return": 0.089309,
+      "max_drawdown": 0.108504,
+      "sharpe_ratio": 0.4229,
+      "win_rate": 0.6667,
+      "profit_factor": 11.6854,
+      "avg_win": 0.956963,
+      "avg_loss": -0.164246,
+      "total_trades": 16,
+      "round_trip_count": 3,
+      "daily_turnover_rate": 0.00444,
+      "seg_idx": 5,
+      "seg_start": "2018-06-01",
+      "seg_end": "2020-06-01",
+      "bench_annual": 0.02625726223866165,
+      "bench_total": 0.05324133709614065
+    },
+    {
+      "tag": "seg08_06",
+      "note": "8分段·第6段 2020-06-01→2022-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 9.7,
+      "n_trades": 21,
+      "total_return": 0.450552,
+      "annualized_return": 0.204542,
+      "max_drawdown": 0.135886,
+      "sharpe_ratio": 0.8622,
+      "win_rate": 0.5714,
+      "profit_factor": 2.5923,
+      "avg_win": 0.166145,
+      "avg_loss": -0.085174,
+      "total_trades": 21,
+      "round_trip_count": 7,
+      "daily_turnover_rate": 0.004596,
+      "seg_idx": 6,
+      "seg_start": "2020-06-01",
+      "seg_end": "2022-06-01",
+      "bench_annual": 0.013992396396699469,
+      "bench_total": 0.028161022316849138
+    },
+    {
+      "tag": "seg08_07",
+      "note": "8分段·第7段 2022-06-01→2024-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 9.7,
+      "n_trades": 33,
+      "total_return": 0.07373,
+      "annualized_return": 0.036235,
+      "max_drawdown": 0.227238,
+      "sharpe_ratio": 0.1227,
+      "win_rate": 0.3636,
+      "profit_factor": 0.3346,
+      "avg_win": 0.213917,
+      "avg_loss": -0.206078,
+      "total_trades": 33,
+      "round_trip_count": 11,
+      "daily_turnover_rate": 0.005072,
+      "seg_idx": 7,
+      "seg_start": "2022-06-01",
+      "seg_end": "2024-06-01",
+      "bench_annual": -0.06369300283896318,
+      "bench_total": -0.1232502228901553
+    },
+    {
+      "tag": "seg08_08",
+      "note": "8分段·第8段 2024-06-01→2026-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 11.8,
+      "n_trades": 31,
+      "total_return": 0.493647,
+      "annualized_return": 0.222991,
+      "max_drawdown": 0.133477,
+      "sharpe_ratio": 1.1413,
+      "win_rate": 0.9,
+      "profit_factor": 85.3681,
+      "avg_win": 0.205305,
+      "avg_loss": -0.02101,
+      "total_trades": 31,
+      "round_trip_count": 10,
+      "daily_turnover_rate": 0.00531,
+      "seg_idx": 8,
+      "seg_start": "2024-06-01",
+      "seg_end": "2026-06-01",
+      "bench_annual": 0.16242710233040492,
+      "bench_total": 0.34984546004521966
+    }
+  ],
+  "16": [
+    {
+      "tag": "seg16_01",
+      "note": "16分段·第1段 2010-06-01→2011-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.7,
+      "n_trades": 0,
+      "total_return": 0.0,
+      "annualized_return": 0.0,
+      "max_drawdown": 0.0,
+      "sharpe_ratio": 0.0,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 0,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.0,
+      "seg_idx": 1,
+      "seg_start": "2010-06-01",
+      "seg_end": "2011-06-01",
+      "bench_annual": 0.09481848303136386,
+      "bench_total": 0.09475060145866032
+    },
+    {
+      "tag": "seg16_02",
+      "note": "16分段·第2段 2011-06-01→2012-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.3,
+      "n_trades": 0,
+      "total_return": 0.0,
+      "annualized_return": 0.0,
+      "max_drawdown": 0.0,
+      "sharpe_ratio": 0.0,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 0,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.0,
+      "seg_idx": 2,
+      "seg_start": "2011-06-01",
+      "seg_end": "2012-06-01",
+      "bench_annual": -0.12331625084048914,
+      "bench_total": -0.12355313758561837
+    },
+    {
+      "tag": "seg16_03",
+      "note": "16分段·第3段 2012-06-01→2013-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.6,
+      "n_trades": 2,
+      "total_return": 0.071557,
+      "annualized_return": 0.071811,
+      "max_drawdown": 0.204457,
+      "sharpe_ratio": 0.2894,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 2,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.004197,
+      "seg_idx": 3,
+      "seg_start": "2012-06-01",
+      "seg_end": "2013-06-01",
+      "bench_annual": -0.010126398279943216,
+      "bench_total": -0.010091918034119352
+    },
+    {
+      "tag": "seg16_04",
+      "note": "16分段·第4段 2013-06-01→2014-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.3,
+      "n_trades": 4,
+      "total_return": 0.061531,
+      "annualized_return": 0.062277,
+      "max_drawdown": 0.229558,
+      "sharpe_ratio": 0.2563,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 4,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.003836,
+      "seg_idx": 4,
+      "seg_start": "2013-06-01",
+      "seg_end": "2014-06-01",
+      "bench_annual": -0.1732590087116569,
+      "bench_total": -0.17142667224565378
+    },
+    {
+      "tag": "seg16_05",
+      "note": "16分段·第5段 2014-06-01→2015-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.3,
+      "n_trades": 3,
+      "total_return": 0.920164,
+      "annualized_return": 0.927944,
+      "max_drawdown": 0.187884,
+      "sharpe_ratio": 2.1575,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 3,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.002975,
+      "seg_idx": 5,
+      "seg_start": "2014-06-01",
+      "seg_end": "2015-06-01",
+      "bench_annual": 1.373710379210709,
+      "bench_total": 1.3611035397629117
+    },
+    {
+      "tag": "seg16_06",
+      "note": "16分段·第6段 2015-06-01→2016-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.3,
+      "n_trades": 0,
+      "total_return": 0.0,
+      "annualized_return": 0.0,
+      "max_drawdown": 0.0,
+      "sharpe_ratio": 0.0,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 0,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.0,
+      "seg_idx": 6,
+      "seg_start": "2015-06-01",
+      "seg_end": "2016-06-01",
+      "bench_annual": -0.37677194614278087,
+      "bench_total": -0.3773767631125695
+    },
+    {
+      "tag": "seg16_07",
+      "note": "16分段·第7段 2016-06-01→2017-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.6,
+      "n_trades": 5,
+      "total_return": 0.314879,
+      "annualized_return": 0.315125,
+      "max_drawdown": 0.061494,
+      "sharpe_ratio": 2.1617,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 5,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.00362,
+      "seg_idx": 7,
+      "seg_start": "2016-06-01",
+      "seg_end": "2017-06-01",
+      "bench_annual": 0.10676438759152718,
+      "bench_total": 0.10668754490915644
+    },
+    {
+      "tag": "seg16_08",
+      "note": "16分段·第8段 2017-06-01→2018-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 5.0,
+      "n_trades": 4,
+      "total_return": 0.122312,
+      "annualized_return": 0.122401,
+      "max_drawdown": 0.127093,
+      "sharpe_ratio": 0.8206,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 4,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.002967,
+      "seg_idx": 8,
+      "seg_start": "2017-06-01",
+      "seg_end": "2018-06-01",
+      "bench_annual": 0.07806330719469079,
+      "bench_total": 0.07800784392656057
+    },
+    {
+      "tag": "seg16_09",
+      "note": "16分段·第9段 2018-06-01→2019-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.6,
+      "n_trades": 6,
+      "total_return": 0.206331,
+      "annualized_return": 0.207109,
+      "max_drawdown": 0.104573,
+      "sharpe_ratio": 0.9345,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 6,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.003596,
+      "seg_idx": 9,
+      "seg_start": "2018-06-01",
+      "seg_end": "2019-06-01",
+      "bench_annual": -0.037467446948212024,
+      "bench_total": -0.03734164609295787
+    },
+    {
+      "tag": "seg16_10",
+      "note": "16分段·第10段 2019-06-01→2020-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.9,
+      "n_trades": 7,
+      "total_return": -0.011728,
+      "annualized_return": -0.011768,
+      "max_drawdown": 0.108332,
+      "sharpe_ratio": -0.2029,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 7,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.004107,
+      "seg_idx": 10,
+      "seg_start": "2019-06-01",
+      "seg_end": "2020-06-01",
+      "bench_annual": 0.09376248651360708,
+      "bench_total": 0.0934270591616988
+    },
+    {
+      "tag": "seg16_11",
+      "note": "16分段·第11段 2020-06-01→2021-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.9,
+      "n_trades": 9,
+      "total_return": 0.063827,
+      "annualized_return": 0.063872,
+      "max_drawdown": 0.1223,
+      "sharpe_ratio": 0.2881,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 9,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.003767,
+      "seg_idx": 11,
+      "seg_start": "2020-06-01",
+      "seg_end": "2021-06-01",
+      "bench_annual": 0.34533034415480923,
+      "bench_total": 0.3450572177120459
+    },
+    {
+      "tag": "seg16_12",
+      "note": "16分段·第12段 2021-06-01→2022-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 5.5,
+      "n_trades": 5,
+      "total_return": 0.333271,
+      "annualized_return": 0.333533,
+      "max_drawdown": 0.125323,
+      "sharpe_ratio": 1.1993,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 5,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.002982,
+      "seg_idx": 12,
+      "seg_start": "2021-06-01",
+      "seg_end": "2022-06-01",
+      "bench_annual": -0.2357411810284663,
+      "bench_total": -0.23560053150321736
+    },
+    {
+      "tag": "seg16_13",
+      "note": "16分段·第13段 2022-06-01→2023-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.7,
+      "n_trades": 12,
+      "total_return": -0.062788,
+      "annualized_return": -0.06283,
+      "max_drawdown": 0.227238,
+      "sharpe_ratio": -0.4273,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 12,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.004218,
+      "seg_idx": 13,
+      "seg_start": "2022-06-01",
+      "seg_end": "2023-06-01",
+      "bench_annual": -0.06771491465938362,
+      "bench_total": -0.06767017115985063
+    },
+    {
+      "tag": "seg16_14",
+      "note": "16分段·第14段 2023-06-01→2024-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.6,
+      "n_trades": 11,
+      "total_return": 0.135077,
+      "annualized_return": 0.135176,
+      "max_drawdown": 0.093986,
+      "sharpe_ratio": 0.9623,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 11,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.003597,
+      "seg_idx": 14,
+      "seg_start": "2023-06-01",
+      "seg_end": "2024-06-01",
+      "bench_annual": -0.059653740344434936,
+      "bench_total": -0.059614151570638985
+    },
+    {
+      "tag": "seg16_15",
+      "note": "16分段·第15段 2024-06-01→2025-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 5.0,
+      "n_trades": 10,
+      "total_return": 0.180261,
+      "annualized_return": 0.182566,
+      "max_drawdown": 0.133477,
+      "sharpe_ratio": 0.8234,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 10,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.003801,
+      "seg_idx": 15,
+      "seg_start": "2024-06-01",
+      "seg_end": "2025-06-01",
+      "bench_annual": 0.07092927071326138,
+      "bench_total": 0.07007568627758043
+    },
+    {
+      "tag": "seg16_16",
+      "note": "16分段·第16段 2025-06-01→2026-06-01",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "elapsed_sec": 4.7,
+      "n_trades": 12,
+      "total_return": 0.262114,
+      "annualized_return": 0.263936,
+      "max_drawdown": 0.072234,
+      "sharpe_ratio": 1.6349,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "total_trades": 12,
+      "round_trip_count": 0,
+      "daily_turnover_rate": 0.003531,
+      "seg_idx": 16,
+      "seg_start": "2025-06-01",
+      "seg_end": "2026-06-01",
+      "bench_annual": 0.2593786283330959,
+      "bench_total": 0.2575907654717753
+    }
+  ]
+}

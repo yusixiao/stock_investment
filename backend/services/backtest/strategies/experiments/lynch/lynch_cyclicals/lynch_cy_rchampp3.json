@@ -1,0 +1,92 @@
+[
+  {
+    "tag": "CH_sec2",
+    "note": "全样本冠军: 50~100亿+去地产+trail25+行业≤2(全期11.11%)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 100.0,
+      "sector_tier": "core_no_prop",
+      "require_industry": true,
+      "max_per_sector": 2
+    },
+    "elapsed_sec": 34.6,
+    "n_trades": 1606,
+    "total_return": 0.624102,
+    "annualized_return": 0.09388,
+    "max_drawdown": 0.440394,
+    "sharpe_ratio": 0.3871,
+    "win_rate": 0.5385,
+    "profit_factor": 1.4961,
+    "avg_win": 0.167063,
+    "avg_loss": -0.103658,
+    "total_trades": 1606,
+    "round_trip_count": 1207,
+    "daily_turnover_rate": 0.031094
+  },
+  {
+    "tag": "CH_anchor",
+    "note": "次冠军: 50~100亿+去地产+trail25(全期10.38%)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 100.0,
+      "sector_tier": "core_no_prop"
+    },
+    "elapsed_sec": 32.1,
+    "n_trades": 1563,
+    "total_return": 0.680137,
+    "annualized_return": 0.100768,
+    "max_drawdown": 0.434707,
+    "sharpe_ratio": 0.4151,
+    "win_rate": 0.5695,
+    "profit_factor": 1.5701,
+    "avg_win": 0.181222,
+    "avg_loss": -0.099907,
+    "total_trades": 1563,
+    "round_trip_count": 1194,
+    "daily_turnover_rate": 0.028149
+  },
+  {
+    "tag": "CH_band150",
+    "note": "稳健宽带: 50~150亿+trail25(含地产, 全期7.44%)",
+    "overrides": {
+      "trailing_stop_pct": 0.25,
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 150.0
+    },
+    "elapsed_sec": 34.8,
+    "n_trades": 1510,
+    "total_return": 0.66674,
+    "annualized_return": 0.099138,
+    "max_drawdown": 0.340594,
+    "sharpe_ratio": 0.419,
+    "win_rate": 0.5403,
+    "profit_factor": 1.7048,
+    "avg_win": 0.168267,
+    "avg_loss": -0.089219,
+    "total_trades": 1510,
+    "round_trip_count": 1190,
+    "daily_turnover_rate": 0.025192
+  },
+  {
+    "tag": "CH_base",
+    "note": "朴素基线: base+trail25(全域, 全期6.43%)",
+    "overrides": {
+      "trailing_stop_pct": 0.25
+    },
+    "elapsed_sec": 39.1,
+    "n_trades": 1503,
+    "total_return": 0.806647,
+    "annualized_return": 0.115654,
+    "max_drawdown": 0.223045,
+    "sharpe_ratio": 0.4975,
+    "win_rate": 0.5447,
+    "profit_factor": 2.0466,
+    "avg_win": 0.160806,
+    "avg_loss": -0.088754,
+    "total_trades": 1503,
+    "round_trip_count": 1186,
+    "daily_turnover_rate": 0.024553
+  }
+]

@@ -7,11 +7,14 @@ data/
 report/
 logs/
 
-# === 在研策略过程产物(不入库,仅 .py 策略源码入库)===
-# experiments/ 下回测结果 / 笔记 / 数据等过程文件忽略,.py(含 __init__.py)仍入库
+# === 在研策略过程产物(部分入库:算研究成果)===
+# experiments/ 下:.py 源码 + .md 研究报告/结论 + .json 回测结果(点位证据,data/market/ 会随时间变动
+# 故 json 是唯一可复现的研究时点记录)均入库;.jsonl 决策日志 + 其他数据文件仍忽略(可再生、噪声大、体积可膨胀)
 backend/services/backtest/strategies/experiments/**
 !backend/services/backtest/strategies/experiments/**/
 !backend/services/backtest/strategies/experiments/**/*.py
+!backend/services/backtest/strategies/experiments/**/*.md
+!backend/services/backtest/strategies/experiments/**/*.json
 
 # === 构建产物 / 依赖 ===
 node_modules/

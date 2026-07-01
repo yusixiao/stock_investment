@@ -1,0 +1,20 @@
+[
+  {
+    "tag": "CY_smoke",
+    "note": "默认配置 smoke 验证",
+    "overrides": {},
+    "elapsed_sec": 19.4,
+    "n_trades": 772,
+    "total_return": 0.240529,
+    "annualized_return": 0.074969,
+    "max_drawdown": 0.492101,
+    "sharpe_ratio": 0.3021,
+    "win_rate": 0.608,
+    "profit_factor": 1.4751,
+    "avg_win": 0.198197,
+    "avg_loss": -0.253492,
+    "total_trades": 772,
+    "round_trip_count": 523,
+    "daily_turnover_rate": 0.022099
+  }
+]
