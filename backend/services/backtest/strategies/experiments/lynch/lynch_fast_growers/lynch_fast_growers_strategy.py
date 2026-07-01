@@ -1,45 +1,23 @@
-"""彼得·林奇「缓慢增长型(Slow Growers)」A 股量化策略 —— LynchSlowGrowersStrategy【已发布 / 最终交付】。
+"""彼得·林奇「快速增长型(Fast Growers)」A 股量化策略 —— LynchFastGrowersStrategy。
 
-林奇六分类法之一。缓慢增长型 = 成熟、体量大、利润低速增长但**持续高分红**的公司
-(典型如公用事业、银行、高速公路、煤炭蓝筹)。林奇买这类股的逻辑不是博取股价翻倍,
-而是**低估值买入 + 稳定股息回报**;一旦增长停滞或股息中断就应卖出。
+林奇六分类法之一。快速增长型 = 小/中型、利润高速扩张的公司,是林奇组合里
+涨幅最大(tenbagger 多出于此)也最需警惕的一类。本策略把林奇定性口径机械化:
 
-林奇对 Slow Growers 的核心描述(《One Up on Wall Street》第 8 章):
-- **规模**:大型成熟公司(已过高速成长期)→ 大市值带过滤(与快速增长型相反)。
-- **成长**:年利润增速低(个位数),关键是**正增长但不快** → 净利 CAGR ∈ [0, 8%] 双边带。
-- **分红**:核心持有理由 = 慷慨且**持续多年**的现金分红 → 连续分红年数 + TTM 股息率下限。
-- **估值**:低 PE 买入(成熟股不该给成长溢价)→ pe_max。
-- **排序**:按 TTM 股息率降序选最有价值的派息股(不设 PEG:增长太低 → PEG 数学上无意义)。
+林奇对 Fast Growers 的核心描述(《One Up on Wall Street》第 8/9 章):
+- **规模**:中小公司(大公司很难再快速翻倍)→ 市值带过滤(mktcap band)。
+- **成长**:年利润增速 20%~25%+,但**警惕 >50% 的"不可持续高增"**(低基数/周期反弹
+  导致 CAGR 爆表)→ 净利 CAGR ∈ [min, max] 双边带。
+- **营收同步**:利润增长须有营收支撑(剔除靠利润率/一次性收益的伪成长)→ rev_cagr_min。
+- **质量**:能持续盈利、ROE 健康(不是烧钱换增长)→ roe_min。
+- **估值纪律**:林奇最爱 PEG ≤ 1(P/E 不超过盈利增速)→ peg_max=1.0。
 
-== 本交付版固化的最优画像(自包含,不依赖 experiments;以下为相对在研默认的覆盖项)==
-  min_div_yield     0.03  -> 0.035   TTM 股息率下限抬到 3.5%(更强的股息纪律)
-  mktcap_min_yi    200.0  -> 300.0   市值下限抬到 300 亿(更纯粹的大盘成熟蓝筹)
-  top_n             20    -> 12       持仓收敛到 12 只等权
-  max_per_sector    0     -> 2        每一级行业 ≤2 只(高股息高度集中银行/公用事业,强制分散)
-  rebalance_months [1..12] -> [6]     年度调仓、固定 6 月(年报 4/30 披露后,低换手)
-  其余沿用在研默认:np_cagr∈[0,8%] / cagr_years=3 / min_div_years=5 / pe_max=25 /
-  require_pb_positive / min_amount_cny=1e7 / sort_by=yield / trend 关 / regime 关。
-
-== 回测结论(2010-06 ~ 2026-06,A 股全市场,16 年整口径)==
-  年化 14.28% / 累计 745.72% / 最大回撤 23.85% / Sharpe 0.69 / 139 笔
-  基准 CSI300 同期年化 3.62% → 超额 +10.66pct。
-  (2010-01 原口径年化 13.90%;16 年整口径更高,因去掉开头 5 个月空仓。)
-
-== 时间稳健性(嵌套分段 1/2/4/8/16 段,每段独立从空仓重建仓)==
-  · 8 年尺度:两段 15.42% / 13.44%,标准差仅 0.99% → 中枢不依赖入场时点。
-  · 2/4/8 年尺度:0 段负收益、100% 跑赢 CSI300。
-  · 1 年尺度:12/16 段跑赢;均值随窗口缩短不降反略升(14.28% → 16.32%)。
-  · 个别 1 年段 0 收益 = 价值纪律空仓(非缺陷):该年 6 月筛选漏斗在「分红关」筛空 →
-    全年持现。典型 2015-06:牛市顶股价高、股息率被压到 3.5% 以下,优质慢增长股无一达标
-    → 空仓恰好躲过基准随后 -37.68% 股灾。
-  结果存档:experiments/lynch/lynch_slow_growers/lynch_sg_segments_overview.md(31 段逐行明细)。
-
-== 在研记录 ==
-  研究版同名策略在 experiments/lynch/lynch_slow_growers/(R1-R6 共 75 配置的调参过程);
-  本文件为其最优画像的发布固化版,选股/调仓逻辑完全一致,仅默认参数不同。
+实现复用已验证的 AGarpStrategy 选股/调仓骨架(月度调仓、Top N 等权全替换、
+真实 NOTICE_DATE 严格 PIT、ST 过滤、可选趋势/行业分散/沪深300 regime 择时),
+仅:① 新增市值带过滤(get_total_mv);② 默认值切到快速增长口径。
 
 成交价口径:T+1 + (open+close)/2(项目铁律)。A 股 volume 单位=股。
-⚠️ 数据仅含当前在市标的 → 退市股缺失,survivorship bias,结果偏乐观。
+⚠️ 数据仅含当前在市标的 → 退市股缺失,survivorship bias,结果偏乐观;
+   小盘高成长尤其受幸存者偏差影响,实盘前需谨慎打折。
 """
 
 from __future__ import annotations
@@ -49,79 +27,51 @@ from datetime import date
 import pandas as pd
 
 from services.backtest.strategy_base import Strategy
-from services.backtest.strategies.utils import growth_long, quality, valuation, yield_factor
+from services.backtest.strategies.utils import growth_long, quality, valuation
 from services.backtest.strategies.utils.index_timing import csi300_is_bull
 from services.backtest.strategies.utils.st_filter import _is_st_on
 
 YI = 1e8  # 1 亿元(市值带参数单位换算)
 
 
-class LynchSlowGrowersStrategy(Strategy):
-    name = "彼得林奇缓慢增长策略"
+class LynchFastGrowersStrategy(Strategy):
+    name = "A股 林奇·快速增长型(Fast Growers)"
     description = (
-        "林奇六分类·缓慢增长型【发布最优画像】:市值≥300亿大盘蓝筹 + 净利低速正增长"
-        "(CAGR 0~8%)+ 连续≥5年分红 + TTM 股息率≥3.5% + 低 PE(≤25)→ 按股息率降序、"
-        "每行业≤2只、Top12 等权、年度 6 月调仓。真实 NOTICE_DATE 防 look-ahead + ST 过滤。"
-        "全期(2010-2026)年化 14.28% / 回撤 23.85% / 超额 CSI300 +10.66pct。"
+        "林奇六分类·快速增长型:中小市值 + 净利/营收高速增长(CAGR≥25%,带上限剔除"
+        "不可持续伪高增)+ ROE 质量 + PEG≤1 估值纪律 → Top N 等权月度调仓。"
+        "真实 NOTICE_DATE 防 look-ahead + ST 过滤 + 可选趋势/行业分散/沪深300 择时。"
     )
     frequency = "monthly"
     frequency_overridable = False
     strategy_type = "strategy"
 
     params = {
-        # ---- 成长(缓慢增长核心:低速正增长双边带)----
+        # ---- 成长(快速增长核心:双边带)----
         "np_cagr_min": {
-            "default": 0.0,
+            "default": 0.25,
             "type": "float",
-            "label": "N 年归母净利 CAGR 下限(小数,缓慢增长要求正增长不衰退;0=只要不亏损萎缩)",
+            "label": "N 年归母净利 CAGR 下限(小数,林奇快速增长≥20~25%)",
         },
         "np_cagr_max": {
-            "default": 0.08,
+            "default": 0.50,
             "type": "float",
-            "label": "N 年归母净利 CAGR 上限(小数,林奇缓慢增长≤8%;0=不设上限)",
+            "label": "N 年归母净利 CAGR 上限(小数,剔除低基数/周期反弹的不可持续伪高增;0=不过滤)",
+        },
+        "rev_cagr_min": {
+            "default": 0.15,
+            "type": "float",
+            "label": "N 年营收 CAGR 下限(小数,确保利润增长有营收支撑)",
         },
         "cagr_years": {
             "default": 3,
             "type": "int",
             "label": "CAGR 回看年数",
         },
-        "require_positive_np_cagr": {
-            "default": True,
-            "type": "bool",
-            "label": "要求净利 CAGR 可计算且为正(剔除亏损/萎缩,缓慢增长≠衰退)",
-        },
-        # ---- 分红(缓慢增长核心持有理由)----
-        "min_div_years": {
-            "default": 5,
-            "type": "int",
-            "label": "连续分红年数下限(截至当前日期、除权日 PIT 过滤,林奇:稳定派息≥5年)",
-        },
-        "min_div_yield": {
-            "default": 0.035,
-            "type": "float",
-            "label": "TTM 股息率下限(小数,如 0.035=3.5%;高股息是缓慢增长型的收益来源)",
-        },
-        # ---- 估值纪律(成熟股不给成长溢价)----
-        "pe_max": {
-            "default": 25.0,
-            "type": "float",
-            "label": "peTTM 上限(低 PE 买入成熟蓝筹)",
-        },
-        "pe_min": {
-            "default": 0.0,
-            "type": "float",
-            "label": "peTTM 下限(剔除超低 PE 的潜在价值陷阱;0=不过滤)",
-        },
-        "require_pb_positive": {
-            "default": True,
-            "type": "bool",
-            "label": "要求 pbMRQ>0",
-        },
-        # ---- 质量(成熟蓝筹应有稳健 ROE;默认关,缓慢增长 ROE 普遍中等)----
+        # ---- 质量 ----
         "roe_min": {
-            "default": 0.0,
+            "default": 15.0,
             "type": "float",
-            "label": "最新年报 ROE 下限(%,0=不过滤;缓慢增长型 ROE 普遍中等,慎设过高)",
+            "label": "最新年报 ROE 下限(%,高成长须伴随高资本回报)",
         },
         "roe_consistency_years": {
             "default": 0,
@@ -129,27 +79,50 @@ class LynchSlowGrowersStrategy(Strategy):
             "label": "连续 N 年 ROE≥下限(0=只看最新一年)",
         },
         # ---- 财务质量增强(资产负债率 / 经营现金流;0=不过滤)----
-        # 注:快速增长型实证此二者有害;缓慢增长型预期可能正向(稳健蓝筹特征),留作专轮验证。
         "max_debt_ratio": {
             "default": 0.0,
             "type": "float",
-            "label": "资产负债率上限(总负债/总资产,如 0.6=≤60%;0=不过滤)",
+            "label": "资产负债率上限(总负债/总资产,如 0.6=≤60%;0=不过滤。剔除高杠杆脆弱成长股)",
         },
         "min_cfo_np_ratio": {
             "default": 0.0,
             "type": "float",
-            "label": "经营现金流/归母净利下限(如 0.01≈要求 CFO 为正;1.0=现金含量≥100%;0=不过滤)",
+            "label": "经营现金流/归母净利下限(如 0.01≈要求 CFO 为正;0.5=现金含量≥50%;0=不过滤。剔除纸面利润)",
         },
-        # ---- 市值带(缓慢增长 = 偏好大盘成熟蓝筹,与快速增长型相反)----
-        "mktcap_min_yi": {
-            "default": 300.0,
+        # ---- 估值纪律(林奇:PEG≤1)----
+        "pe_max": {
+            "default": 40.0,
             "type": "float",
-            "label": "总市值下限(亿元,缓慢增长偏好大盘蓝筹;0=不过滤)",
+            "label": "peTTM 上限(高成长容忍更高 PE,但仍设泡沫上限)",
         },
-        "mktcap_max_yi": {
+        "peg_max": {
+            "default": 1.0,
+            "type": "float",
+            "label": "PEG 上限(peTTM / 净利CAGR%,林奇核心:≤1)",
+        },
+        "peg_min": {
             "default": 0.0,
             "type": "float",
-            "label": "总市值上限(亿元,0=不限,大盘不设上限)",
+            "label": "PEG 下限(剔除超低 PEG 价值陷阱,0=不过滤)",
+        },
+        "require_pb_positive": {
+            "default": True,
+            "type": "bool",
+            "label": "要求 pbMRQ>0",
+        },
+        # ---- 市值带(快速增长 = 偏好中小公司)----
+        # 默认值 = 2010-01~2026-06 全 A 股 5 轮 61 配置网格搜索的风险调整最优(15~100 亿带):
+        # 年化 +4.48% / 总收益 105% / 回撤 47.5% / Sharpe 0.19,约 2.3× 沪深300(年化 1.94%)。
+        # (最高收益变体 = 15~120 亿 + 成长下限 22%:年化 +4.75%,但回撤升至 54.7%。)
+        "mktcap_min_yi": {
+            "default": 15.0,
+            "type": "float",
+            "label": "总市值下限(亿元,剔除流动性差的微盘;0=不过滤)",
+        },
+        "mktcap_max_yi": {
+            "default": 100.0,
+            "type": "float",
+            "label": "总市值上限(亿元,林奇:大公司难再快速翻倍;0=不限)",
         },
         # ---- 流动性 ----
         "min_amount_cny": {
@@ -164,14 +137,14 @@ class LynchSlowGrowersStrategy(Strategy):
         },
         # ---- 组合构建 ----
         "top_n": {
-            "default": 12,
+            "default": 25,
             "type": "int",
-            "label": "持仓数量(等权)",
+            "label": "持仓数量(网格搜索分散甜区≈25~30,过少波动大、过多稀释 alpha)",
         },
         "sort_by": {
-            "default": "yield",
+            "default": "peg",
             "type": "str",
-            "label": "排序键:yield(股息率降序) | pe(低 PE 升序) | composite(yield+pe 复合)",
+            "label": "排序键:peg(升序) | growth(成长降序) | composite(peg+growth 复合)",
         },
         "trend_ma_days": {
             "default": 0,
@@ -181,12 +154,12 @@ class LynchSlowGrowersStrategy(Strategy):
         "require_industry": {
             "default": False,
             "type": "bool",
-            "label": "仅保留有 F10 行业分类的标的",
+            "label": "仅保留有 F10 行业分类的标的(小盘成长慎开,可能误剔)",
         },
         "max_per_sector": {
-            "default": 2,
+            "default": 0,
             "type": "int",
-            "label": "每个一级行业最多持仓数(0=不限;高股息易集中银行/公用事业,可用此分散)",
+            "label": "每个一级行业最多持仓数(0=不限)",
         },
         "max_valuation_staleness_days": {
             "default": 10,
@@ -194,9 +167,9 @@ class LynchSlowGrowersStrategy(Strategy):
             "label": "估值数据时效上限(交易日,防退市股 stale)",
         },
         "rebalance_months": {
-            "default": [6],
+            "default": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
             "type": "list[int]",
-            "label": "调仓月份(发布版年度 6 月调仓;年报 4/30 披露后,低换手)",
+            "label": "调仓月份(网格搜索:月度全调仓显著优于仅 5 月年度调仓;PIT 取数已防 look-ahead)",
         },
         # ---- 沪深300 市场 regime 择时(降回撤)----
         "risk_off_exposure": {
@@ -209,6 +182,17 @@ class LynchSlowGrowersStrategy(Strategy):
             "type": "int",
             "label": "沪深300 regime:close>MA(此窗口)=risk-on,否则 risk-off",
         },
+        # ---- 持有期个股止损(每根 bar 检查,独立于月度调仓;0=不启用)----
+        "stop_loss_pct": {
+            "default": 0.0,
+            "type": "float",
+            "label": "硬止损:当前价跌破成本×(1-此值)即清仓(如 0.2=亏20%止损;0=不启用)",
+        },
+        "trailing_stop_pct": {
+            "default": 0.0,
+            "type": "float",
+            "label": "移动止损:当前价跌破持有期最高价×(1-此值)即清仓(如 0.25=回撤25%止损;0=不启用)",
+        },
     }
 
     def __init__(self, param_overrides: dict | None = None):
@@ -217,55 +201,17 @@ class LynchSlowGrowersStrategy(Strategy):
         self._rebalance_pending: bool = False
         self._target_exposure: float = 1.0  # 本次 rebalance 应用的仓位比例
         self._cur_exposure: float = 1.0  # 当前实际生效的仓位比例
-
-    # ---- 分红连续性(PIT:仅统计除权日 <= 当前日期的派息年)----
-    @staticmethod
-    def _consecutive_dividend_years(ctx, symbol: str, cur_d: date) -> int:
-        """截至 cur_d,连续分红年数(以除权日落在当前日期前为准,防 look-ahead)。
-
-        口径:取 cash_dividend>0 且除权日 <= cur_d 的派息记录,按年汇总得"有派息的年份集合";
-        从最近的派息年向前数连续年数。要求最近派息年足够新(>= cur_year-1),否则视为已停派(返 0)。
-        """
-        df = ctx.get_dividend(symbol) if hasattr(ctx, "get_dividend") else None
-        if df is None or len(df) == 0:
-            return 0
-        if "date" not in df.columns or "cash_dividend" not in df.columns:
-            return 0
-        cash = pd.to_numeric(df["cash_dividend"], errors="coerce")
-        mask = cash.notna() & (cash > 0)
-        if not mask.any():
-            return 0
-        cur_year = cur_d.year
-        years: set[int] = set()
-        for ds in df.loc[mask, "date"].astype(str):
-            d = None
-            try:
-                d = date.fromisoformat(ds[:10])
-            except (ValueError, TypeError):
-                continue
-            if d > cur_d:  # PIT:除权日在未来 → 剔除,防 look-ahead
-                continue
-            years.add(d.year)
-        if not years:
-            return 0
-        sorted_years = sorted(years)
-        last = sorted_years[-1]
-        # 最近派息年须足够新(当年或去年),否则认定已停派
-        if last < cur_year - 1:
-            return 0
-        # 从最近派息年向前数连续年数
-        run = 1
-        i = len(sorted_years) - 1
-        while i > 0 and sorted_years[i] - sorted_years[i - 1] == 1:
-            run += 1
-            i -= 1
-        return run
+        self._peak: dict[str, float] = {}  # 持有期个股最高价(移动止损用)
 
     def _regime_exposure(self, cur_str: str) -> float:
-        """根据沪深300 regime 计算目标仓位比例(risk_off_exposure>=1.0 视为关闭择时)。"""
+        """根据沪深300 regime 计算目标仓位比例。
+
+        risk-on(close>MA)→ 1.0;risk-off → risk_off_exposure。
+        risk_off_exposure>=1.0 视为关闭择时。数据不足 → csi300_is_bull 保守返 True(1.0)。
+        """
         risk_off = float(self.p.risk_off_exposure)
         if risk_off >= 1.0:
-            return 1.0
+            return 1.0  # 择时关闭
         ma_days = int(self.p.regime_ma_days)
         return 1.0 if csi300_is_bull(cur_str, ma_period=ma_days) else risk_off
 
@@ -286,6 +232,7 @@ class LynchSlowGrowersStrategy(Strategy):
         desired_exposure = self._regime_exposure(cur_str)
 
         if cur_d.month not in set(rebal_months):
+            # 非调仓月:不重新选股,但若 regime 翻转则把现有持仓重标到新仓位
             if (
                 self._target_holdings
                 and abs(desired_exposure - self._cur_exposure) > 1e-9
@@ -305,17 +252,16 @@ class LynchSlowGrowersStrategy(Strategy):
 
         np_cagr_min = float(self.p.np_cagr_min)
         np_cagr_max = float(self.p.np_cagr_max)
+        rev_cagr_min = float(self.p.rev_cagr_min)
         cagr_years = int(self.p.cagr_years)
-        require_pos_cagr = bool(self.p.require_positive_np_cagr)
-        min_div_years = int(self.p.min_div_years)
-        min_div_yield = float(self.p.min_div_yield)
-        pe_max = float(self.p.pe_max)
-        pe_min = float(self.p.pe_min)
-        require_pb = bool(self.p.require_pb_positive)
         roe_min = float(self.p.roe_min)
         roe_years = int(self.p.roe_consistency_years)
         max_debt_ratio = float(self.p.max_debt_ratio)
         min_cfo_np = float(self.p.min_cfo_np_ratio)
+        pe_max = float(self.p.pe_max)
+        peg_max = float(self.p.peg_max)
+        peg_min = float(self.p.peg_min)
+        require_pb = bool(self.p.require_pb_positive)
         mktcap_min = float(self.p.mktcap_min_yi) * YI
         mktcap_max = float(self.p.mktcap_max_yi) * YI
         min_amount = float(self.p.min_amount_cny)
@@ -327,13 +273,16 @@ class LynchSlowGrowersStrategy(Strategy):
         require_industry = bool(self.p.require_industry)
         max_per_sector = int(self.p.max_per_sector)
 
+        # 单次取够长的历史窗口同时算流动性 / 趋势, 避免重复 get_history
         need_hist = max(amt_lookback if min_amount > 0 else 0, trend_ma_days)
 
-        # ---- Stage 1: ST 剔除 + 大市值带 + 低 PE 健康(PIT)+ 时效 + 流动性 + 趋势 ----
+        # ---- Stage 1: ST 剔除 + 市值带 + 估值健康(PIT)+ 时效 + 流动性 + 趋势 ----
         stage1: list[tuple[str, float]] = []  # (sym, pe)
         for sym in symbols:
+            # A 股特有:当日 ST 直接剔除
             if _is_st_on(sym, cur_str):
                 continue
+            # 行业分类过滤(可选;小盘成长默认关闭)
             if require_industry and quality.get_industry(ctx, sym) is None:
                 continue
             val = ctx.get_valuation(sym) if hasattr(ctx, "get_valuation") else None
@@ -350,14 +299,12 @@ class LynchSlowGrowersStrategy(Strategy):
             pe = val.get("peTTM")
             if pe is None or pd.isna(pe) or pe <= 0 or pe > pe_max:
                 continue
-            if pe_min > 0 and pe < pe_min:
-                continue
             if require_pb:
                 pb = val.get("pbMRQ")
                 if pb is None or pd.isna(pb) or pb <= 0:
                     continue
 
-            # 大市值带:缓慢增长偏好成熟蓝筹(get_total_mv 单位=元)
+            # 市值带:林奇快速增长偏好中小公司(get_total_mv 单位=元)
             if mktcap_min > 0 or mktcap_max > 0:
                 mv = valuation.get_total_mv(ctx, sym)
                 if mv is None or mv <= 0:
@@ -378,6 +325,7 @@ class LynchSlowGrowersStrategy(Strategy):
                 ]
                 if not closes:
                     continue
+                # 流动性:近 amt_lookback 日 volume×close 均值(人民币;A 股 volume 单位=股)
                 if min_amount > 0:
                     amts = [
                         b["volume"] * b["close"]
@@ -389,28 +337,30 @@ class LynchSlowGrowersStrategy(Strategy):
                     ]
                     if not amts or (sum(amts) / len(amts)) < min_amount:
                         continue
+                # 趋势过滤:current close > N 日均线
                 if trend_ma_days > 0:
                     ma_win = closes[-trend_ma_days:]
                     if len(ma_win) < trend_ma_days:
-                        continue
+                        continue  # 历史不足, 谨慎剔除
                     if closes[-1] <= sum(ma_win) / len(ma_win):
                         continue
             stage1.append((sym, float(pe)))
         ctx.log_flow("strategy.valuation_mktcap_liquidity", passed=len(stage1))
 
-        # ---- Stage 2: 低速正增长(双边带)+ 质量(真实 NOTICE_DATE,防 look-ahead)----
-        stage2: list[tuple[str, float]] = []  # (sym, pe)
+        # ---- Stage 2: 成长(双边带)+ 质量(真实 NOTICE_DATE,防 look-ahead)----
+        stage2: list[tuple[str, float, float]] = []  # (sym, pe, np_cagr)
         for sym, pe in stage1:
             np_cagr = growth_long.get_net_profit_cagr(ctx, sym, years=cagr_years)
-            if require_pos_cagr and np_cagr is None:
+            if np_cagr is None or np_cagr < np_cagr_min:
                 continue
-            if np_cagr is not None:
-                if np_cagr < np_cagr_min:
-                    continue
-                if np_cagr_max > 0 and np_cagr > np_cagr_max:
-                    continue
-            # ROE(可选;缓慢增长默认关闭)
-            if roe_min > 0 and not growth_long.all_roe_above(
+            # 上限:剔除低基数/周期反弹的不可持续伪高增(林奇警告 >50%)
+            if np_cagr_max > 0 and np_cagr > np_cagr_max:
+                continue
+            rev_cagr = growth_long.get_revenue_cagr(ctx, sym, years=cagr_years)
+            if rev_cagr is None or rev_cagr < rev_cagr_min:
+                continue
+            # ROE:roe_years>0 要求连续 N 年达标,否则只看最新一年年报
+            if not growth_long.all_roe_above(
                 ctx, sym, roe_min, years=max(roe_years, 1)
             ):
                 continue
@@ -423,43 +373,40 @@ class LynchSlowGrowersStrategy(Strategy):
                 cfo_np = quality.get_cfo_to_np_ratio(ctx, sym)
                 if cfo_np is not None and cfo_np < min_cfo_np:
                     continue
-            stage2.append((sym, pe))
-            if np_cagr is not None:
-                ctx.record_factor(sym, "NP_CAGR", np_cagr)
+            stage2.append((sym, pe, np_cagr))
+            ctx.record_factor(sym, "NP_CAGR", np_cagr)
+            ctx.record_factor(sym, "REV_CAGR", rev_cagr)
         ctx.log_flow("strategy.growth_quality", passed=len(stage2))
 
-        # ---- Stage 3: 分红(连续派息年数 + TTM 股息率,缓慢增长核心)----
-        stage3: list[tuple[str, float, float]] = []  # (sym, pe, div_yield)
-        for sym, pe in stage2:
-            if min_div_years > 0:
-                dy = self._consecutive_dividend_years(ctx, sym, cur_d)
-                if dy < min_div_years:
-                    continue
-            div_yield = yield_factor.get_dividend_yield_ttm(ctx, sym)
-            if div_yield is None:
+        # ---- Stage 3: PEG 上限(林奇核心)----
+        stage3: list[tuple[str, float, float]] = []  # (sym, peg, np_cagr)
+        for sym, pe, np_cagr in stage2:
+            cagr_pct = np_cagr * 100.0
+            if cagr_pct <= 0:
                 continue
-            if min_div_yield > 0 and div_yield < min_div_yield:
+            peg = pe / cagr_pct
+            if peg <= 0 or peg > peg_max or peg < peg_min:
                 continue
-            stage3.append((sym, pe, div_yield))
-            ctx.record_factor(sym, "DIV_YIELD", div_yield)
+            stage3.append((sym, peg, np_cagr))
             ctx.record_factor(sym, "PE", pe)
-        ctx.log_flow("strategy.dividend", passed=len(stage3))
+            ctx.record_factor(sym, "PEG", peg)
+        ctx.log_flow("strategy.peg", passed=len(stage3))
 
         # ---- Stage 4: 排序 + Top N ----
-        if sort_key == "pe":
-            stage3.sort(key=lambda x: x[1])  # 低 PE 升序
+        if sort_key == "growth":
+            stage3.sort(key=lambda x: -x[2])
         elif sort_key == "composite":
-            # rank 之和:高股息 + 低 PE
-            by_yield = sorted(stage3, key=lambda x: -x[2])
-            by_pe = sorted(stage3, key=lambda x: x[1])
+            # rank 之和:低 PEG + 高成长
+            by_peg = sorted(stage3, key=lambda x: x[1])
+            by_g = sorted(stage3, key=lambda x: -x[2])
             rank: dict[str, int] = {}
-            for i, t in enumerate(by_yield):
+            for i, t in enumerate(by_peg):
                 rank[t[0]] = rank.get(t[0], 0) + i
-            for i, t in enumerate(by_pe):
+            for i, t in enumerate(by_g):
                 rank[t[0]] = rank.get(t[0], 0) + i
             stage3.sort(key=lambda x: rank[x[0]])
         else:
-            stage3.sort(key=lambda x: -x[2])  # 股息率降序(默认)
+            stage3.sort(key=lambda x: x[1])  # peg 升序
 
         # ---- 行业分散:每个一级行业最多 max_per_sector 只(贪心,保排序优先级)----
         if max_per_sector > 0:
@@ -484,16 +431,65 @@ class LynchSlowGrowersStrategy(Strategy):
         ctx.log_flow("strategy.screen.done", input=len(symbols), passed=len(selected))
 
         self._target_holdings = selected
-        self._target_exposure = desired_exposure
+        self._target_exposure = desired_exposure  # 调仓月也应用 regime 仓位
         self._rebalance_pending = True
         return selected
 
     def on_sell(self, ctx) -> None:
+        positions = ctx.get_positions()
+
+        # 清理已清仓 symbol 的峰值缓存(防 re-buy 时复用旧高点导致误触发移动止损)
+        if self._peak:
+            held = {
+                s
+                for s, p in positions.items()
+                if (p.shares if hasattr(p, "shares") else p.get("shares", 0)) > 0
+            }
+            for s in list(self._peak.keys()):
+                if s not in held:
+                    self._peak.pop(s, None)
+
+        # ---- 持有期个股止损(每根 bar 检查,独立于月度调仓)----
+        # 引擎在每根 bar 顶部先 fill_orders 再调 on_sell,故此处不存在未决止损单,
+        # 无需去重缓存;跌停被拒的卖单会被 broker 丢弃,下一根 bar 自然重试。
+        stop_pct = float(self.p.stop_loss_pct)
+        trail_pct = float(self.p.trailing_stop_pct)
+        stopped: set[str] = set()
+        if stop_pct > 0 or trail_pct > 0:
+            for sym, pos in list(positions.items()):
+                shares = pos.shares if hasattr(pos, "shares") else pos.get("shares", 0)
+                if shares <= 0:
+                    continue
+                cost = pos.cost if hasattr(pos, "cost") else pos.get("cost", 0.0)
+                bar = ctx.get_price(sym)
+                if not bar:
+                    continue
+                px = bar.get("close")
+                if px is None or pd.isna(px) or px <= 0:
+                    continue
+                # 持有期最高价(收盘价口径),触发时不 pop(留给顶部 prune,正确处理跌停未成交重试)
+                peak = self._peak.get(sym)
+                if peak is None or px > peak:
+                    peak = px
+                    self._peak[sym] = peak
+                trigger = (stop_pct > 0 and cost > 0 and px <= cost * (1.0 - stop_pct)) or (
+                    trail_pct > 0 and peak > 0 and px <= peak * (1.0 - trail_pct)
+                )
+                if trigger:
+                    ctx.order_shares(sym, -int(shares))
+                    stopped.add(sym)
+                    try:
+                        ctx.target_symbols.discard(sym)
+                    except AttributeError:
+                        pass
+
+        # ---- 月度调仓卖出:清掉不在目标池的旧持仓(跳过本 bar 已止损的)----
         if not self._rebalance_pending:
             return
-        positions = ctx.get_positions()
         target_set = set(self._target_holdings)
         for sym, pos in list(positions.items()):
+            if sym in stopped:
+                continue
             shares = pos.shares if hasattr(pos, "shares") else pos.get("shares", 0)
             if shares <= 0 or sym in target_set:
                 continue
@@ -510,6 +506,7 @@ class LynchSlowGrowersStrategy(Strategy):
         if not target:
             self._rebalance_pending = False
             return
+        # regime 仓位比例(exposure=1.0 即满仓),Top N 等权
         exposure = self._target_exposure
         w = exposure / len(target)
         for sym in target:
