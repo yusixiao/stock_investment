@@ -99,63 +99,80 @@ ROUNDS: dict[str, list] = {
         ("R1_sec2", "每行业≤2(分散)", {"require_industry": True, "max_per_sector": 2}),
         ("R1_trail25", "25%移动止损", {"trailing_stop_pct": 0.25}),
     ],
-    # Round 2: 回撤压制 —— 困境股个股波动/破产风险大, 止损尤为相关。锚点 = R1 最佳(待 R1 结果确定后更新此注释)。
-    # 暂以 base 为锚探索止损家族(trail 甜点 + 硬止损 + 组合), R1 出结果后据实际锚点微调。
+    # Round 2: 收益内核 —— 基于 R1 三大收益赢家做正交叠加, 确立最优"频率×集中度×PB×分散"组合。
+    # R1 实测(全期年化, base=8.25%): 季度调仓[3,6,9,12] 12.00%(最强单杠杆) / 集中 Top10 10.53% /
+    #   放宽 PB≤3 10.00% / 每行业≤2 分散 9.29%; 半年调仓 9.48% 次于季度。锚点 = R1 冠军季度调仓。
+    # ⚠️ Top10 集中在困境股上回撤更高(R1_top10 mdd 49.77% vs base 49.48%); 组合叠加是否稳健、
+    #    是否只是全样本曲线拟合, 一律留待 champ 三子区间审计(见 §champ)当场检验, 绝不据全样本峰值下结论。
     "2": [
-        ("R2_base", "R1 锚点占位(base, 待 R1 更新)", {}),
-        ("R2_trail30", "30%移动止损", {"trailing_stop_pct": 0.30}),
-        ("R2_trail25", "25%移动止损", {"trailing_stop_pct": 0.25}),
-        ("R2_trail20", "20%移动止损", {"trailing_stop_pct": 0.20}),
-        ("R2_trail15", "15%移动止损(测紧边界)", {"trailing_stop_pct": 0.15}),
-        ("R2_hard20", "20%硬止损", {"stop_loss_pct": 0.20}),
-        ("R2_hard25", "25%硬止损", {"stop_loss_pct": 0.25}),
-        ("R2_trail25_hard20", "移动25%+硬20%(双保险)", {"trailing_stop_pct": 0.25, "stop_loss_pct": 0.20}),
-        ("R2_regime30_200", "熊市降至3成仓(沪深300 MA200)", {"risk_off_exposure": 0.3, "regime_ma_days": 200}),
+        ("R2_anchor_q", "R1冠军锚点复现: 季度调仓", {"rebalance_months": [3, 6, 9, 12]}),
+        ("R2_q_top10", "季度+Top10集中", {"rebalance_months": [3, 6, 9, 12], "top_n": 10}),
+        ("R2_q_top15", "季度+Top15(集中度中间档)", {"rebalance_months": [3, 6, 9, 12], "top_n": 15}),
+        ("R2_q_pb3", "季度+PB≤3放宽", {"rebalance_months": [3, 6, 9, 12], "pb_max": 3.0}),
+        ("R2_q_pb3_top10", "季度+PB≤3+Top10", {"rebalance_months": [3, 6, 9, 12], "pb_max": 3.0, "top_n": 10}),
+        ("R2_q_sec2", "季度+每行业≤2分散", {"rebalance_months": [3, 6, 9, 12], "require_industry": True, "max_per_sector": 2}),
+        ("R2_q_top10_sec2", "季度+Top10+行业≤2分散", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "require_industry": True, "max_per_sector": 2}),
+        ("R2_q_pb3_top10_sec2", "季度+PB≤3+Top10+分散(全叠加)", {"rebalance_months": [3, 6, 9, 12], "pb_max": 3.0, "top_n": 10, "require_industry": True, "max_per_sector": 2}),
+        ("R2_semi_pb3_top10", "半年+PB≤3+Top10(降换手对照)", {"rebalance_months": [6, 12], "pb_max": 3.0, "top_n": 10}),
     ],
-    # Round 3: 市值带 —— 周期型经验: 市值带是击穿天花板的关键杠杆(小盘超额, 但幸存者偏差/滑点高须警惕)。
-    # 锚点 = R1+R2 最佳(待更新)。以 base+trail25 为暂定锚探市值带。
+    # Round 3: 市值带 —— 周期型经验(§5.4): 市值带是击穿天花板的关键杠杆, 但也是**过拟合重灾区**
+    #   (周期型全样本 6.4%→11.1% 的增益 100% 来自 2015 小盘泡沫, 近5年反而有害)。锚点 = R2 冠军季度+Top10(13.22%)。
+    # 🚨 困境股常已被杀成中小盘, 市值带有合理逻辑; 但任何市值带增益都**必须**在 champ 用
+    #    p1(含2015泡沫)/p2/p3 三段审计: 若增益集中在 p1 且劣化 p3, 即判定为泡沫幻象、不采纳(与周期型同)。
     "3": [
-        ("R3_anchor", "R1+R2 锚点占位(base+trail25, 待更新)", {"trailing_stop_pct": 0.25}),
-        ("R3_band_30_80", "市值 30~80亿(小盘困境)", {"trailing_stop_pct": 0.25, "mktcap_min_yi": 30.0, "mktcap_max_yi": 80.0}),
-        ("R3_band_50_100", "市值 50~100亿", {"trailing_stop_pct": 0.25, "mktcap_min_yi": 50.0, "mktcap_max_yi": 100.0}),
-        ("R3_band_50_150", "市值 50~150亿(更宽, 抗过拟合)", {"trailing_stop_pct": 0.25, "mktcap_min_yi": 50.0, "mktcap_max_yi": 150.0}),
-        ("R3_band_70_130", "市值 70~130亿(中枢右移, 抗幸存者)", {"trailing_stop_pct": 0.25, "mktcap_min_yi": 70.0, "mktcap_max_yi": 130.0}),
-        ("R3_min30", "仅下限≥30亿(放开上限)", {"trailing_stop_pct": 0.25, "mktcap_min_yi": 30.0}),
-        ("R3_min100", "仅下限≥100亿(中大盘, 抗幸存者)", {"trailing_stop_pct": 0.25, "mktcap_min_yi": 100.0}),
+        ("R3_anchor", "R2冠军锚点: 季度+Top10(≥50亿默认)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10}),
+        ("R3_band_30_80", "+市值30~80亿(小盘困境)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "mktcap_min_yi": 30.0, "mktcap_max_yi": 80.0}),
+        ("R3_band_50_100", "+市值50~100亿(周期型泡沫甜点, 重点审计)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "mktcap_min_yi": 50.0, "mktcap_max_yi": 100.0}),
+        ("R3_band_50_150", "+市值50~150亿(更宽抗过拟合)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "mktcap_min_yi": 50.0, "mktcap_max_yi": 150.0}),
+        ("R3_band_100_300", "+市值100~300亿(中盘抗幸存者)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "mktcap_min_yi": 100.0, "mktcap_max_yi": 300.0}),
+        ("R3_min30", "+仅下限≥30亿(放宽小盘, 上限不限)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "mktcap_min_yi": 30.0}),
+        ("R3_min100", "+仅下限≥100亿(中大盘抗幸存者)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "mktcap_min_yi": 100.0}),
+        ("R3_min200", "+仅下限≥200亿(大盘抗幸存者)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "mktcap_min_yi": 200.0}),
     ],
-    # Round 4: 资产负债表存活性(林奇困境反转核心)—— 去杠杆 + 现金流转正 + 负债率上限。
-    # 锚点 = R1~R3 最佳(待更新)。以 base 为暂定锚, 单加/组合资产负债表因子。
+    # Round 4: 回撤压制 —— 困境股个股波动/破产风险大, 止损家族尤为相关。锚点 = R3 稳健冠军季度+Top10(≥50亿, 13.22%)。
+    # ⚠️ 主线**不采纳**R3 小盘带(30~80亿 16.26%): 与周期型 §5.4 同构的小盘泡沫高危候选, 仅留 champ 审计。
+    # R1 教训: 月度基线上 trail25 降收益(7.34% vs 8.25%); 季度低换手下止损作用可能不同, 主要目标是压回撤(anchor mdd 38.61%)。
     "4": [
-        ("R4_anchor", "R1~R3 锚点占位(base, 待更新)", {}),
-        ("R4_dele_down", "去杠杆: 负债率较上年下降", {"dele_mode": "debt_down"}),
-        ("R4_dele_pct2", "去杠杆: 负债率降≥2个百分点", {"dele_mode": "debt_down_pct", "dele_min_drop": 0.02}),
-        ("R4_dele_pct5", "去杠杆: 负债率降≥5个百分点(强去杠杆)", {"dele_mode": "debt_down_pct", "dele_min_drop": 0.05}),
-        ("R4_dele_lb3", "去杠杆: 较前2年下降(dele_lookback=3)", {"dele_mode": "debt_down", "dele_lookback": 3}),
-        ("R4_cfo_pos", "经营现金流为正(CFO/NP≥0.01)", {"min_cfo_np_ratio": 0.01}),
-        ("R4_debt70", "资产负债率≤70%(剔高杠杆易破产)", {"max_debt_ratio": 0.70}),
-        ("R4_debt60", "资产负债率≤60%", {"max_debt_ratio": 0.60}),
-        ("R4_survive", "存活组合: 去杠杆 + CFO正 + 负债率≤70%", {"dele_mode": "debt_down", "min_cfo_np_ratio": 0.01, "max_debt_ratio": 0.70}),
+        ("R4_anchor", "R3稳健锚点: 季度+Top10(≥50亿)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10}),
+        ("R4_trail30", "+30%移动止损", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "trailing_stop_pct": 0.30}),
+        ("R4_trail25", "+25%移动止损", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "trailing_stop_pct": 0.25}),
+        ("R4_trail20", "+20%移动止损", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "trailing_stop_pct": 0.20}),
+        ("R4_trail15", "+15%移动止损(紧边界)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "trailing_stop_pct": 0.15}),
+        ("R4_hard20", "+20%硬止损", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "stop_loss_pct": 0.20}),
+        ("R4_hard25", "+25%硬止损", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "stop_loss_pct": 0.25}),
+        ("R4_trail25_hard20", "+移动25%+硬20%(双保险)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "trailing_stop_pct": 0.25, "stop_loss_pct": 0.20}),
+        ("R4_regime30", "+熊市降3成仓(沪深300 MA200)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "risk_off_exposure": 0.3, "regime_ma_days": 200}),
+        ("R4_regime50", "+熊市降5成仓", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "risk_off_exposure": 0.5, "regime_ma_days": 200}),
     ],
-    # Round 5: 困境准入变体 + 行业分散 —— 定义性门槛调优 + 分散/排除收敛定稿。
-    # 锚点 = R1~R4 最佳(待更新)。全期跑完后另起 champ 三子区间复跑防过拟合。
+    # Round 5: 资产负债表存活性(林奇"How is it going to survive?"核心)+ 困境准入定稿。
+    # 锚点 = R4 稳健冠军季度+Top10(≥50亿, 13.22%)。R4 铁证: 任何止损/regime 风控叠加均降收益且不改善回撤
+    # → 风控不产生 alpha, 存活性/困境准入是最后一个可能真正提升质量与收益的杠杆。
+    # 附带诚实价值: 筛"财务健康的困境股"比裸买破净股更能缓解本类最严重的幸存者偏差质疑。
     "5": [
-        ("R5_anchor", "R1~R4 锚点占位(base, 待更新)", {}),
-        ("R5_distress_loss", "困境准入: 近3年曾亏损", {"distress_mode": "prior_loss"}),
-        ("R5_distress_loss_lb5", "困境准入: 近5年曾亏损", {"distress_mode": "prior_loss", "distress_lookback": 5}),
-        ("R5_distress_lowroe", "困境准入: 曾ROE≤2%(深度低迷)", {"distress_mode": "prior_low_roe", "distress_roe_max": 2.0}),
-        ("R5_distress_dd50", "困境准入: 净利曾回撤≥50%", {"distress_mode": "np_drawdown", "distress_np_drop_pct": 50.0}),
-        ("R5_distress_dd70", "困境准入: 净利曾回撤≥70%(更重挫)", {"distress_mode": "np_drawdown", "distress_np_drop_pct": 70.0}),
-        ("R5_sec2", "每行业≤2(分散压回撤)", {"require_industry": True, "max_per_sector": 2}),
-        ("R5_sec3", "每行业≤3(温和分散)", {"require_industry": True, "max_per_sector": 3}),
-        ("R5_excl_fin_re", "排除金融+地产(诚实变体, 幸存者偏差最轻)", {"exclude_sectors": "financial_realestate"}),
+        ("R5_anchor", "R4稳健锚点: 季度+Top10(≥50亿)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10}),
+        # —— 资产负债表存活性(去杠杆 + 现金流 + 负债率上限)——
+        ("R5_dele_down", "+去杠杆: 负债率较上年下降", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "dele_mode": "debt_down"}),
+        ("R5_dele_pct3", "+去杠杆: 负债率降≥3pct(强)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "dele_mode": "debt_down_pct", "dele_min_drop": 0.03}),
+        ("R5_cfo_pos", "+经营现金流为正(CFO/NP≥0.01)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "min_cfo_np_ratio": 0.01}),
+        ("R5_debt70", "+资产负债率≤70%(剔高杠杆易破产)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "max_debt_ratio": 0.70}),
+        ("R5_debt60", "+资产负债率≤60%(稳健)", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "max_debt_ratio": 0.60}),
+        ("R5_survive", "存活组合: 去杠杆+CFO正+负债率≤70%", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "dele_mode": "debt_down", "min_cfo_np_ratio": 0.01, "max_debt_ratio": 0.70}),
+        # —— 困境准入定稿(定义"真反转", 加深困境要求)——
+        ("R5_distress_loss", "+困境准入: 近3年曾亏损", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "distress_mode": "prior_loss"}),
+        ("R5_distress_dd50", "+困境准入: 净利曾回撤≥50%", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "distress_mode": "np_drawdown", "distress_np_drop_pct": 50.0}),
     ],
     # champ: 子区间稳健性检验(过拟合审计)。用 --label p1/p2/p3 + --start/--end 三段跑:
     #   p1 2010-01~2016-01(熊/震荡)、p2 2016-01~2021-01(供给侧+商品牛, 扭亏黄金期)、p3 2021-01~2026-06。
     #   全样本冠军与稳健基线并排放三段, 若冠军仅在某段大胜其余崩 → 坐实过拟合。
-    #   ⚠️ 具体冠军配置待 R1~R5 定稿后填入(现为占位, 与周期型一致的审计流程)。
+    # 🚨 两个越过 15% 的候选须当场对决(全样本): R5_debt60 低杠杆 15.88%(经济逻辑扎实但阈值非单调)
+    #    vs R3_band_30_80 小盘带 16.26%(疑 2015 小盘泡沫)。加 CH_debt70 检验负债率阈值是否 cherry-pick。
+    #    判据: 稳健因子应在三段都稳定跑赢基线; 泡沫因子只在含 2015 的 p1 大胜、p2/p3 崩。
     "champ": [
-        ("CH_base", "朴素基线: base(全域)", {}),
-        ("CH_base_trail25", "base + trail25", {"trailing_stop_pct": 0.25}),
+        ("CH_base", "朴素基线: base(月度全域, 无Top10/市值/杠杆)", {}),
+        ("CH_anchor", "稳健锚点: 季度+Top10(≥50亿) 全样本13.22%", {"rebalance_months": [3, 6, 9, 12], "top_n": 10}),
+        ("CH_debt60", "R5冠军: 锚点+负债率≤60%(低杠杆存活) 全样本15.88%", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "max_debt_ratio": 0.60}),
+        ("CH_debt70", "对照: 锚点+负债率≤70%(检验debt阈值非单调) 全样本12.79%", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "max_debt_ratio": 0.70}),
+        ("CH_band30_80", "激进对照: 锚点+市值30~80亿(疑2015小盘泡沫) 全样本16.26%", {"rebalance_months": [3, 6, 9, 12], "top_n": 10, "mktcap_min_yi": 30.0, "mktcap_max_yi": 80.0}),
     ],
 }
 
