@@ -1,0 +1,87 @@
+[
+  {
+    "tag": "CHAMP_trend150",
+    "note": "冠军K4(50~300亿+价>150日线)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "trend_ma_days": 150
+    },
+    "elapsed_sec": 27.0,
+    "n_trades": 12,
+    "total_return": 3.163646,
+    "annualized_return": 0.26899,
+    "max_drawdown": 0.167384,
+    "sharpe_ratio": 1.2587,
+    "win_rate": 1.0,
+    "profit_factor": 999.0,
+    "avg_win": 0.756134,
+    "avg_loss": 0.0,
+    "total_trades": 12,
+    "round_trip_count": 6,
+    "daily_turnover_rate": 0.004896
+  },
+  {
+    "tag": "CHAMP_trend120",
+    "note": "K3对照(价>120日线)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "trend_ma_days": 120
+    },
+    "elapsed_sec": 22.1,
+    "n_trades": 16,
+    "total_return": 2.762981,
+    "annualized_return": 0.247726,
+    "max_drawdown": 0.2118,
+    "sharpe_ratio": 1.1423,
+    "win_rate": 0.75,
+    "profit_factor": 20.0105,
+    "avg_win": 0.756134,
+    "avg_loss": -0.145551,
+    "total_trades": 16,
+    "round_trip_count": 8,
+    "daily_turnover_rate": 0.005638
+  },
+  {
+    "tag": "CHAMP_trend150_top25",
+    "note": "K4+top25(风险精修变体)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "trend_ma_days": 150,
+      "top_n": 25
+    },
+    "elapsed_sec": 21.7,
+    "n_trades": 12,
+    "total_return": 3.163646,
+    "annualized_return": 0.26899,
+    "max_drawdown": 0.167384,
+    "sharpe_ratio": 1.2587,
+    "win_rate": 1.0,
+    "profit_factor": 999.0,
+    "avg_win": 0.756134,
+    "avg_loss": 0.0,
+    "total_trades": 12,
+    "round_trip_count": 6,
+    "daily_turnover_rate": 0.004896
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "tag": "AP_smoke",
+    "note": "默认诚实基线 smoke 验证 + 样本量核验",
+    "overrides": {},
+    "elapsed_sec": 142.3,
+    "n_trades": 2942,
+    "total_return": 1.227429,
+    "annualized_return": 0.050028,
+    "max_drawdown": 0.476047,
+    "sharpe_ratio": 0.2043,
+    "win_rate": 0.5766,
+    "profit_factor": 1.7198,
+    "avg_win": 0.210895,
+    "avg_loss": -0.124765,
+    "total_trades": 2942,
+    "round_trip_count": 2279,
+    "daily_turnover_rate": 0.01447
+  }
+]

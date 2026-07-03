@@ -1,0 +1,87 @@
+[
+  {
+    "tag": "CHAMP_trend150",
+    "note": "冠军K4(50~300亿+价>150日线)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "trend_ma_days": 150
+    },
+    "elapsed_sec": 34.7,
+    "n_trades": 322,
+    "total_return": 0.351148,
+    "annualized_return": 0.057265,
+    "max_drawdown": 0.329448,
+    "sharpe_ratio": 0.238,
+    "win_rate": 0.4444,
+    "profit_factor": 1.6399,
+    "avg_win": 0.252223,
+    "avg_loss": -0.102405,
+    "total_trades": 322,
+    "round_trip_count": 171,
+    "daily_turnover_rate": 0.011048
+  },
+  {
+    "tag": "CHAMP_trend120",
+    "note": "K3对照(价>120日线)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "trend_ma_days": 120
+    },
+    "elapsed_sec": 26.6,
+    "n_trades": 327,
+    "total_return": 0.387955,
+    "annualized_return": 0.062536,
+    "max_drawdown": 0.351215,
+    "sharpe_ratio": 0.2623,
+    "win_rate": 0.4483,
+    "profit_factor": 1.6903,
+    "avg_win": 0.245507,
+    "avg_loss": -0.106439,
+    "total_trades": 327,
+    "round_trip_count": 174,
+    "daily_turnover_rate": 0.011127
+  },
+  {
+    "tag": "CHAMP_trend150_top25",
+    "note": "K4+top25(风险精修变体)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "trend_ma_days": 150,
+      "top_n": 25
+    },
+    "elapsed_sec": 26.5,
+    "n_trades": 401,
+    "total_return": 0.330231,
+    "annualized_return": 0.054218,
+    "max_drawdown": 0.320164,
+    "sharpe_ratio": 0.2245,
+    "win_rate": 0.4714,
+    "profit_factor": 1.6059,
+    "avg_win": 0.230961,
+    "avg_loss": -0.107327,
+    "total_trades": 401,
+    "round_trip_count": 210,
+    "daily_turnover_rate": 0.01149
+  }
+]

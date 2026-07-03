@@ -1,0 +1,340 @@
+[
+  {
+    "tag": "R2_semi_nc20",
+    "note": "半年+净现金≥20%",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "min_net_cash_ratio": 0.2
+    },
+    "elapsed_sec": 83.0,
+    "n_trades": 27,
+    "total_return": 0.397605,
+    "annualized_return": 0.020615,
+    "max_drawdown": 0.227516,
+    "sharpe_ratio": -0.0212,
+    "win_rate": 0.6471,
+    "profit_factor": 2.9454,
+    "avg_win": 0.245603,
+    "avg_loss": -0.119987,
+    "total_trades": 27,
+    "round_trip_count": 17,
+    "daily_turnover_rate": 0.002275
+  },
+  {
+    "tag": "R2_semi_nc15",
+    "note": "半年+净现金≥15%",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "min_net_cash_ratio": 0.15
+    },
+    "elapsed_sec": 79.1,
+    "n_trades": 41,
+    "total_return": 0.377418,
+    "annualized_return": 0.019711,
+    "max_drawdown": 0.265146,
+    "sharpe_ratio": -0.0115,
+    "win_rate": 0.72,
+    "profit_factor": 2.7402,
+    "avg_win": 0.295848,
+    "avg_loss": -0.164526,
+    "total_trades": 41,
+    "round_trip_count": 25,
+    "daily_turnover_rate": 0.002973
+  },
+  {
+    "tag": "R2_semi_nc10",
+    "note": "半年+净现金≥10%(求充实)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "min_net_cash_ratio": 0.1
+    },
+    "elapsed_sec": 75.7,
+    "n_trades": 42,
+    "total_return": 0.377586,
+    "annualized_return": 0.019718,
+    "max_drawdown": 0.22667,
+    "sharpe_ratio": -0.0128,
+    "win_rate": 0.75,
+    "profit_factor": 3.2227,
+    "avg_win": 0.335626,
+    "avg_loss": -0.161349,
+    "total_trades": 42,
+    "round_trip_count": 24,
+    "daily_turnover_rate": 0.002789
+  },
+  {
+    "tag": "R2_ann_nc20",
+    "note": "年度+净现金≥20%",
+    "overrides": {
+      "rebalance_months": [
+        6
+      ],
+      "min_net_cash_ratio": 0.2
+    },
+    "elapsed_sec": 70.8,
+    "n_trades": 13,
+    "total_return": 0.768517,
+    "annualized_return": 0.035365,
+    "max_drawdown": 0.272795,
+    "sharpe_ratio": 0.1139,
+    "win_rate": 0.8571,
+    "profit_factor": 4.6195,
+    "avg_win": 0.280974,
+    "avg_loss": -0.133518,
+    "total_trades": 13,
+    "round_trip_count": 7,
+    "daily_turnover_rate": 0.001651
+  },
+  {
+    "tag": "R2_ann_nc15",
+    "note": "年度+净现金≥15%",
+    "overrides": {
+      "rebalance_months": [
+        6
+      ],
+      "min_net_cash_ratio": 0.15
+    },
+    "elapsed_sec": 71.5,
+    "n_trades": 25,
+    "total_return": 0.57657,
+    "annualized_return": 0.028139,
+    "max_drawdown": 0.31276,
+    "sharpe_ratio": 0.0703,
+    "win_rate": 0.7273,
+    "profit_factor": 2.7011,
+    "avg_win": 0.297655,
+    "avg_loss": -0.143223,
+    "total_trades": 25,
+    "round_trip_count": 11,
+    "daily_turnover_rate": 0.002187
+  },
+  {
+    "tag": "R2_semi_pb10",
+    "note": "半年+PB≤1.0",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0
+    },
+    "elapsed_sec": 69.4,
+    "n_trades": 514,
+    "total_return": 2.739527,
+    "annualized_return": 0.083719,
+    "max_drawdown": 0.331044,
+    "sharpe_ratio": 0.3893,
+    "win_rate": 0.6906,
+    "profit_factor": 3.3603,
+    "avg_win": 0.30993,
+    "avg_loss": -0.128997,
+    "total_trades": 514,
+    "round_trip_count": 320,
+    "daily_turnover_rate": 0.005008
+  },
+  {
+    "tag": "R2_semi_sortnc",
+    "note": "半年+按净现金降序",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "sort_by": "net_cash"
+    },
+    "elapsed_sec": 77.2,
+    "n_trades": 640,
+    "total_return": 3.153238,
+    "annualized_return": 0.090673,
+    "max_drawdown": 0.370062,
+    "sharpe_ratio": 0.389,
+    "win_rate": 0.5921,
+    "profit_factor": 2.3686,
+    "avg_win": 0.320385,
+    "avg_loss": -0.132542,
+    "total_trades": 640,
+    "round_trip_count": 380,
+    "daily_turnover_rate": 0.008161
+  },
+  {
+    "tag": "R2_ann_sortnc",
+    "note": "年度+按净现金降序",
+    "overrides": {
+      "rebalance_months": [
+        6
+      ],
+      "sort_by": "net_cash"
+    },
+    "elapsed_sec": 68.0,
+    "n_trades": 330,
+    "total_return": 3.032223,
+    "annualized_return": 0.088709,
+    "max_drawdown": 0.374175,
+    "sharpe_ratio": 0.3958,
+    "win_rate": 0.6047,
+    "profit_factor": 3.3468,
+    "avg_win": 0.527139,
+    "avg_loss": -0.139049,
+    "total_trades": 330,
+    "round_trip_count": 172,
+    "daily_turnover_rate": 0.00428
+  },
+  {
+    "tag": "R2_semi_nc15_pb10",
+    "note": "半年+净现金≥15%+PB≤1.0",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "min_net_cash_ratio": 0.15,
+      "pb_max": 1.0
+    },
+    "elapsed_sec": 70.5,
+    "n_trades": 33,
+    "total_return": 0.680143,
+    "annualized_return": 0.032134,
+    "max_drawdown": 0.225129,
+    "sharpe_ratio": 0.0835,
+    "win_rate": 0.8,
+    "profit_factor": 7.4061,
+    "avg_win": 0.318481,
+    "avg_loss": -0.122506,
+    "total_trades": 33,
+    "round_trip_count": 20,
+    "daily_turnover_rate": 0.002651
+  },
+  {
+    "tag": "R2_semi_nc15_sortnc",
+    "note": "半年+净现金≥15%+按净现金降序",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "min_net_cash_ratio": 0.15,
+      "sort_by": "net_cash"
+    },
+    "elapsed_sec": 77.2,
+    "n_trades": 38,
+    "total_return": 0.147568,
+    "annualized_return": 0.008426,
+    "max_drawdown": 0.265146,
+    "sharpe_ratio": -0.1219,
+    "win_rate": 0.6087,
+    "profit_factor": 1.7826,
+    "avg_win": 0.304998,
+    "avg_loss": -0.161111,
+    "total_trades": 38,
+    "round_trip_count": 23,
+    "daily_turnover_rate": 0.002667
+  },
+  {
+    "tag": "R2_ann_nc15_pb10",
+    "note": "年度+净现金≥15%+PB≤1.0",
+    "overrides": {
+      "rebalance_months": [
+        6
+      ],
+      "min_net_cash_ratio": 0.15,
+      "pb_max": 1.0
+    },
+    "elapsed_sec": 69.2,
+    "n_trades": 19,
+    "total_return": 1.12227,
+    "annualized_return": 0.046937,
+    "max_drawdown": 0.27269,
+    "sharpe_ratio": 0.1937,
+    "win_rate": 0.875,
+    "profit_factor": 83.4517,
+    "avg_win": 0.318957,
+    "avg_loss": -0.028711,
+    "total_trades": 19,
+    "round_trip_count": 8,
+    "daily_turnover_rate": 0.00182
+  },
+  {
+    "tag": "R2_semi_nc15_roe5",
+    "note": "半年+净现金≥15%+ROE≥5%",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "min_net_cash_ratio": 0.15,
+      "roe_min": 5.0
+    },
+    "elapsed_sec": 76.6,
+    "n_trades": 26,
+    "total_return": 0.658446,
+    "annualized_return": 0.031317,
+    "max_drawdown": 0.313627,
+    "sharpe_ratio": 0.0828,
+    "win_rate": 0.7059,
+    "profit_factor": 4.5661,
+    "avg_win": 0.408167,
+    "avg_loss": -0.12714,
+    "total_trades": 26,
+    "round_trip_count": 17,
+    "daily_turnover_rate": 0.002644
+  },
+  {
+    "tag": "R2_semi_nc15_tpb12",
+    "note": "半年+净现金≥15%+有形PB≤1.2(填仓)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "min_net_cash_ratio": 0.15,
+      "tangible_pb_max": 1.2
+    },
+    "elapsed_sec": 75.0,
+    "n_trades": 95,
+    "total_return": 0.082894,
+    "annualized_return": 0.004866,
+    "max_drawdown": 0.389948,
+    "sharpe_ratio": -0.1283,
+    "win_rate": 0.5273,
+    "profit_factor": 1.2071,
+    "avg_win": 0.285601,
+    "avg_loss": -0.140514,
+    "total_trades": 95,
+    "round_trip_count": 55,
+    "daily_turnover_rate": 0.002664
+  },
+  {
+    "tag": "R2_semi_pb10_sortnc",
+    "note": "半年+PB≤1.0+按净现金降序",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash"
+    },
+    "elapsed_sec": 70.4,
+    "n_trades": 604,
+    "total_return": 4.676921,
+    "annualized_return": 0.11165,
+    "max_drawdown": 0.366541,
+    "sharpe_ratio": 0.492,
+    "win_rate": 0.6111,
+    "profit_factor": 3.069,
+    "avg_win": 0.320077,
+    "avg_loss": -0.114412,
+    "total_trades": 604,
+    "round_trip_count": 360,
+    "daily_turnover_rate": 0.007753
+  }
+]

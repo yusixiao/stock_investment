@@ -1,0 +1,280 @@
+[
+  {
+    "tag": "R4_ref",
+    "note": "冠军内核K2参照(50~300亿)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0
+    },
+    "elapsed_sec": 74.7,
+    "n_trades": 497,
+    "total_return": 5.521671,
+    "annualized_return": 0.12109,
+    "max_drawdown": 0.453704,
+    "sharpe_ratio": 0.5244,
+    "win_rate": 0.6184,
+    "profit_factor": 2.9209,
+    "avg_win": 0.318853,
+    "avg_loss": -0.118096,
+    "total_trades": 497,
+    "round_trip_count": 283,
+    "daily_turnover_rate": 0.008286
+  },
+  {
+    "tag": "R4_top15",
+    "note": "top15(更集中)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "top_n": 15
+    },
+    "elapsed_sec": 68.7,
+    "n_trades": 387,
+    "total_return": 4.909325,
+    "annualized_return": 0.114372,
+    "max_drawdown": 0.44102,
+    "sharpe_ratio": 0.4934,
+    "win_rate": 0.6036,
+    "profit_factor": 2.7527,
+    "avg_win": 0.321659,
+    "avg_loss": -0.114346,
+    "total_trades": 387,
+    "round_trip_count": 222,
+    "daily_turnover_rate": 0.008195
+  },
+  {
+    "tag": "R4_top25",
+    "note": "top25(更分散)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "top_n": 25
+    },
+    "elapsed_sec": 67.9,
+    "n_trades": 604,
+    "total_return": 5.267681,
+    "annualized_return": 0.118378,
+    "max_drawdown": 0.449796,
+    "sharpe_ratio": 0.512,
+    "win_rate": 0.6145,
+    "profit_factor": 2.8826,
+    "avg_win": 0.318847,
+    "avg_loss": -0.118207,
+    "total_trades": 604,
+    "round_trip_count": 345,
+    "daily_turnover_rate": 0.008144
+  },
+  {
+    "tag": "R4_top30",
+    "note": "top30(更分散, 抑回撤)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "top_n": 30
+    },
+    "elapsed_sec": 69.1,
+    "n_trades": 711,
+    "total_return": 4.776733,
+    "annualized_return": 0.112831,
+    "max_drawdown": 0.450636,
+    "sharpe_ratio": 0.4885,
+    "win_rate": 0.5817,
+    "profit_factor": 2.6649,
+    "avg_win": 0.315093,
+    "avg_loss": -0.123574,
+    "total_trades": 711,
+    "round_trip_count": 404,
+    "daily_turnover_rate": 0.008236
+  },
+  {
+    "tag": "R4_trend200",
+    "note": "+个股价>200日线",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "trend_ma_days": 200
+    },
+    "elapsed_sec": 69.0,
+    "n_trades": 425,
+    "total_return": 6.9544,
+    "annualized_return": 0.134743,
+    "max_drawdown": 0.350373,
+    "sharpe_ratio": 0.613,
+    "win_rate": 0.5174,
+    "profit_factor": 2.5948,
+    "avg_win": 0.252827,
+    "avg_loss": -0.101748,
+    "total_trades": 425,
+    "round_trip_count": 230,
+    "daily_turnover_rate": 0.009005
+  },
+  {
+    "tag": "R4_trend120",
+    "note": "+个股价>120日线",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "trend_ma_days": 120
+    },
+    "elapsed_sec": 66.6,
+    "n_trades": 457,
+    "total_return": 7.566124,
+    "annualized_return": 0.13988,
+    "max_drawdown": 0.335982,
+    "sharpe_ratio": 0.6268,
+    "win_rate": 0.4897,
+    "profit_factor": 2.6842,
+    "avg_win": 0.278777,
+    "avg_loss": -0.10591,
+    "total_trades": 457,
+    "round_trip_count": 243,
+    "daily_turnover_rate": 0.009959
+  },
+  {
+    "tag": "R4_trend200_top30",
+    "note": "个股价>200日线 + top30(趋势+分散)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0,
+      "trend_ma_days": 200,
+      "top_n": 30
+    },
+    "elapsed_sec": 67.9,
+    "n_trades": 567,
+    "total_return": 7.03456,
+    "annualized_return": 0.135437,
+    "max_drawdown": 0.338469,
+    "sharpe_ratio": 0.6176,
+    "win_rate": 0.495,
+    "profit_factor": 2.6299,
+    "avg_win": 0.268645,
+    "avg_loss": -0.100193,
+    "total_trades": 567,
+    "round_trip_count": 301,
+    "daily_turnover_rate": 0.009281
+  },
+  {
+    "tag": "R4_pb08",
+    "note": "pb_max 0.8(更深破净)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 0.8,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 300.0
+    },
+    "elapsed_sec": 67.8,
+    "n_trades": 425,
+    "total_return": 1.849745,
+    "annualized_return": 0.065917,
+    "max_drawdown": 0.371914,
+    "sharpe_ratio": 0.2985,
+    "win_rate": 0.5359,
+    "profit_factor": 2.3525,
+    "avg_win": 0.285368,
+    "avg_loss": -0.141538,
+    "total_trades": 425,
+    "round_trip_count": 237,
+    "daily_turnover_rate": 0.00593
+  },
+  {
+    "tag": "R4_cap_80_300",
+    "note": "80~300亿(剔最小盘)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 80.0,
+      "mktcap_max_yi": 300.0
+    },
+    "elapsed_sec": 67.4,
+    "n_trades": 472,
+    "total_return": 4.759465,
+    "annualized_return": 0.112628,
+    "max_drawdown": 0.449536,
+    "sharpe_ratio": 0.4928,
+    "win_rate": 0.6268,
+    "profit_factor": 2.8352,
+    "avg_win": 0.319419,
+    "avg_loss": -0.125647,
+    "total_trades": 472,
+    "round_trip_count": 276,
+    "daily_turnover_rate": 0.00751
+  },
+  {
+    "tag": "R4_cap_50_500_top30",
+    "note": "50~500亿 + top30(软封顶+分散, 平衡回撤)",
+    "overrides": {
+      "rebalance_months": [
+        6,
+        12
+      ],
+      "pb_max": 1.0,
+      "sort_by": "net_cash",
+      "mktcap_min_yi": 50.0,
+      "mktcap_max_yi": 500.0,
+      "top_n": 30
+    },
+    "elapsed_sec": 68.6,
+    "n_trades": 727,
+    "total_return": 4.031535,
+    "annualized_return": 0.103502,
+    "max_drawdown": 0.360029,
+    "sharpe_ratio": 0.4457,
+    "win_rate": 0.5843,
+    "profit_factor": 2.6666,
+    "avg_win": 0.313423,
+    "avg_loss": -0.123054,
+    "total_trades": 727,
+    "round_trip_count": 421,
+    "daily_turnover_rate": 0.008127
+  }
+]

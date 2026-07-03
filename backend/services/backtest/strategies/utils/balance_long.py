@@ -31,11 +31,17 @@ from typing import Optional
 
 import pandas as pd
 
-# {market: {code: DataFrame[NOTICE_DATE, REPORT_DATE, TOTAL_LIABILITIES, TOTAL_ASSETS, DEBT_ASSET_RATIO]}}
+# {market: {code: DataFrame[NOTICE_DATE, REPORT_DATE, TOTAL_LIABILITIES, TOTAL_ASSETS,
+#           DEBT_ASSET_RATIO, TOTAL_PARENT_EQUITY, GOODWILL, INTANGIBLE_ASSET, MONETARYFUNDS]}}
 _BAL_HIST: dict[str, dict[str, pd.DataFrame]] = {}
 _BAL_LOCK = threading.Lock()
 
-_BAL_FIELDS = ["TOTAL_LIABILITIES", "TOTAL_ASSETS", "DEBT_ASSET_RATIO"]
+_BAL_FIELDS = [
+    "TOTAL_LIABILITIES", "TOTAL_ASSETS", "DEBT_ASSET_RATIO",
+    # 隐蔽资产型(Asset Plays)有形账面折价 / 净现金所需科目(2026-07-02 增补):
+    #   有形账面价值 = 归母权益 − 商誉 − 无形资产;净现金 = 货币资金 − 总负债。
+    "TOTAL_PARENT_EQUITY", "GOODWILL", "INTANGIBLE_ASSET", "MONETARYFUNDS",
+]
 
 
 def _build(market: str = "A") -> dict[str, pd.DataFrame]:
@@ -169,3 +175,66 @@ def get_latest_debt_ratio(ctx, symbol: str) -> Optional[float]:
     if not ratios:
         return None
     return ratios[-1]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 隐蔽资产型(Asset Plays)取数:有形账面价值折价 + 净现金(NOTICE_DATE 严格 PIT)
+# ══════════════════════════════════════════════════════════════════════════
+
+def _latest_visible_annual_row(ctx, symbol: str):
+    """最新一期(PIT)年报行(pandas Series)。数据缺失返 None。
+
+    与 get_debt_ratios 同口径的严格 PIT:仅纳入 NOTICE_DATE ≤ ctx.current_date 的年报,
+    按 REPORT_DATE 去重(保留最新披露的重述版本),取最新财年那一行。
+    """
+    cur_date = getattr(ctx, "current_date", None)
+    if cur_date is None:
+        return None
+    market = getattr(ctx, "market", None) or "A"
+    lookup = _get(market)
+    g = lookup.get(symbol)
+    if g is None or g.empty:
+        return None
+    vis = g[g["NOTICE_DATE"].values <= cur_date]
+    if vis.empty:
+        return None
+    vis = vis.sort_values("NOTICE_DATE").drop_duplicates("REPORT_DATE", keep="last")
+    vis = vis.sort_values("REPORT_DATE")
+    return vis.iloc[-1]
+
+
+def get_tangible_equity(ctx, symbol: str) -> Optional[float]:
+    """最新 PIT 年报**有形账面价值**(元)= 归母权益 − 商誉 − 无形资产。
+
+    隐蔽资产型「剔虚」的核心:剔掉商誉/无形这类无变现价值、易减值的软资产,
+    只认扎实的有形净资产。归母权益(TOTAL_PARENT_EQUITY)缺失 → 返 None;
+    商誉/无形缺失按 0 处理(多数无商誉的公司该字段为空,视作无可剔)。
+    """
+    row = _latest_visible_annual_row(ctx, symbol)
+    if row is None:
+        return None
+    eq = row.get("TOTAL_PARENT_EQUITY")
+    if eq is None or pd.isna(eq):
+        return None
+    goodwill = row.get("GOODWILL")
+    goodwill = 0.0 if goodwill is None or pd.isna(goodwill) else float(goodwill)
+    intangible = row.get("INTANGIBLE_ASSET")
+    intangible = 0.0 if intangible is None or pd.isna(intangible) else float(intangible)
+    return float(eq) - goodwill - intangible
+
+
+def get_net_cash(ctx, symbol: str) -> Optional[float]:
+    """最新 PIT 年报**净现金**(元)= 货币资金 − 总负债。
+
+    格雷厄姆/林奇口径的「钱袋子」硬资产:>0 表示账上现金足以偿清全部负债后仍有剩余。
+    货币资金(MONETARYFUNDS)或总负债(TOTAL_LIABILITIES)缺失 → 返 None。
+    注:仅用货币资金(不含交易性金融资产/其他流动资产),保守口径。
+    """
+    row = _latest_visible_annual_row(ctx, symbol)
+    if row is None:
+        return None
+    cash = row.get("MONETARYFUNDS")
+    liab = row.get("TOTAL_LIABILITIES")
+    if cash is None or pd.isna(cash) or liab is None or pd.isna(liab):
+        return None
+    return float(cash) - float(liab)
