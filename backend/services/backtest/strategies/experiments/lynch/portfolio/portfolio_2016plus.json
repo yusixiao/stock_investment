@@ -1,0 +1,536 @@
+{
+  "since2016": {
+    "window": [
+      "2016-01-01",
+      "2026-06-01"
+    ],
+    "note": "FRESH 口径: iter 从 2016 起新跑(全历史 daily 仅供指标预热)",
+    "n_days": 2525,
+    "n_months": 125,
+    "trades": {
+      "slow_growers": 127,
+      "turnarounds": 481,
+      "asset_plays": 437,
+      "stalwarts": 112,
+      "fast_growers": 2576,
+      "cyclicals": 2868
+    },
+    "engine_metrics": {
+      "slow_growers": {
+        "annualized_return": 0.141018,
+        "total_return": 2.946567,
+        "max_drawdown": 0.232971,
+        "sharpe_ratio": 0.7401,
+        "n_trades": 127
+      },
+      "turnarounds": {
+        "annualized_return": 0.140161,
+        "total_return": 2.915805,
+        "max_drawdown": 0.395194,
+        "sharpe_ratio": 0.5487,
+        "n_trades": 481
+      },
+      "asset_plays": {
+        "annualized_return": 0.083808,
+        "total_return": 1.310654,
+        "max_drawdown": 0.3217,
+        "sharpe_ratio": 0.3612,
+        "n_trades": 437
+      },
+      "stalwarts": {
+        "annualized_return": 0.137969,
+        "total_return": 2.838171,
+        "max_drawdown": 0.322203,
+        "sharpe_ratio": 0.6465,
+        "n_trades": 112
+      },
+      "fast_growers": {
+        "annualized_return": 0.012545,
+        "total_return": 0.138527,
+        "max_drawdown": 0.469239,
+        "sharpe_ratio": 0.0512,
+        "n_trades": 2576
+      },
+      "cyclicals": {
+        "annualized_return": 0.064902,
+        "total_return": 0.923978,
+        "max_drawdown": 0.34594,
+        "sharpe_ratio": 0.2704,
+        "n_trades": 2868
+      }
+    },
+    "legs_metrics": {
+      "slow_growers": {
+        "cagr": 0.14105787724543317,
+        "ann_vol": 0.16247765885318458,
+        "max_drawdown": 0.23297110314507563,
+        "sharpe": 0.9247048664478423,
+        "total_return": 2.946566851034531,
+        "n_days": 2525
+      },
+      "turnarounds": {
+        "cagr": 0.1401999735902415,
+        "ann_vol": 0.25151609957561977,
+        "max_drawdown": 0.39519381078473315,
+        "sharpe": 0.6679648681614511,
+        "total_return": 2.915805251641116,
+        "n_days": 2525
+      },
+      "asset_plays": {
+        "cagr": 0.08383115578233591,
+        "ann_vol": 0.2089041237030715,
+        "max_drawdown": 0.32169990570285056,
+        "sharpe": 0.5047997472832043,
+        "total_return": 1.3106542777166759,
+        "n_days": 2525
+      },
+      "stalwarts": {
+        "cagr": 0.13800746327319935,
+        "ann_vol": 0.18882063892556197,
+        "max_drawdown": 0.3222032880964254,
+        "sharpe": 0.8054020986481419,
+        "total_return": 2.8381712708259537,
+        "n_days": 2525
+      },
+      "fast_growers": {
+        "cagr": 0.012547988183038594,
+        "ann_vol": 0.24165376404243283,
+        "max_drawdown": 0.46923914172358416,
+        "sharpe": 0.1753440584380616,
+        "total_return": 0.13852653021934414,
+        "n_days": 2525
+      },
+      "cyclicals": {
+        "cagr": 0.06491969759757454,
+        "ann_vol": 0.22339425392620255,
+        "max_drawdown": 0.3459396754657956,
+        "sharpe": 0.4047063822366463,
+        "total_return": 0.9239777752268543,
+        "n_days": 2525
+      },
+      "CSI300": {
+        "cagr": 0.03261531896460168,
+        "ann_vol": 0.18754071434524688,
+        "max_drawdown": 0.456026204848648,
+        "sharpe": 0.2716782626125515,
+        "total_return": 0.396414942811699,
+        "n_days": 2525
+      }
+    },
+    "corr": {
+      "matrix": {
+        "slow_growers": {
+          "slow_growers": 1.0,
+          "turnarounds": 0.329,
+          "asset_plays": 0.532,
+          "stalwarts": 0.691,
+          "fast_growers": 0.411,
+          "cyclicals": 0.668,
+          "CSI300": 0.575
+        },
+        "turnarounds": {
+          "slow_growers": 0.329,
+          "turnarounds": 1.0,
+          "asset_plays": 0.464,
+          "stalwarts": 0.228,
+          "fast_growers": 0.552,
+          "cyclicals": 0.545,
+          "CSI300": 0.472
+        },
+        "asset_plays": {
+          "slow_growers": 0.532,
+          "turnarounds": 0.464,
+          "asset_plays": 1.0,
+          "stalwarts": 0.499,
+          "fast_growers": 0.553,
+          "cyclicals": 0.746,
+          "CSI300": 0.543
+        },
+        "stalwarts": {
+          "slow_growers": 0.691,
+          "turnarounds": 0.228,
+          "asset_plays": 0.499,
+          "stalwarts": 1.0,
+          "fast_growers": 0.385,
+          "cyclicals": 0.607,
+          "CSI300": 0.613
+        },
+        "fast_growers": {
+          "slow_growers": 0.411,
+          "turnarounds": 0.552,
+          "asset_plays": 0.553,
+          "stalwarts": 0.385,
+          "fast_growers": 1.0,
+          "cyclicals": 0.66,
+          "CSI300": 0.697
+        },
+        "cyclicals": {
+          "slow_growers": 0.668,
+          "turnarounds": 0.545,
+          "asset_plays": 0.746,
+          "stalwarts": 0.607,
+          "fast_growers": 0.66,
+          "cyclicals": 1.0,
+          "CSI300": 0.646
+        },
+        "CSI300": {
+          "slow_growers": 0.575,
+          "turnarounds": 0.472,
+          "asset_plays": 0.543,
+          "stalwarts": 0.613,
+          "fast_growers": 0.697,
+          "cyclicals": 0.646,
+          "CSI300": 1.0
+        }
+      },
+      "avg_offdiag": 0.544,
+      "pairs_sorted": [
+        [
+          "turnarounds",
+          "stalwarts",
+          0.228
+        ],
+        [
+          "slow_growers",
+          "turnarounds",
+          0.329
+        ],
+        [
+          "stalwarts",
+          "fast_growers",
+          0.385
+        ],
+        [
+          "slow_growers",
+          "fast_growers",
+          0.411
+        ],
+        [
+          "turnarounds",
+          "asset_plays",
+          0.464
+        ],
+        [
+          "turnarounds",
+          "CSI300",
+          0.472
+        ],
+        [
+          "asset_plays",
+          "stalwarts",
+          0.499
+        ],
+        [
+          "slow_growers",
+          "asset_plays",
+          0.532
+        ],
+        [
+          "asset_plays",
+          "CSI300",
+          0.543
+        ],
+        [
+          "turnarounds",
+          "cyclicals",
+          0.545
+        ],
+        [
+          "turnarounds",
+          "fast_growers",
+          0.552
+        ],
+        [
+          "asset_plays",
+          "fast_growers",
+          0.553
+        ],
+        [
+          "slow_growers",
+          "CSI300",
+          0.575
+        ],
+        [
+          "stalwarts",
+          "cyclicals",
+          0.607
+        ],
+        [
+          "stalwarts",
+          "CSI300",
+          0.613
+        ],
+        [
+          "cyclicals",
+          "CSI300",
+          0.646
+        ],
+        [
+          "fast_growers",
+          "cyclicals",
+          0.66
+        ],
+        [
+          "slow_growers",
+          "cyclicals",
+          0.668
+        ],
+        [
+          "slow_growers",
+          "stalwarts",
+          0.691
+        ],
+        [
+          "fast_growers",
+          "CSI300",
+          0.697
+        ],
+        [
+          "asset_plays",
+          "cyclicals",
+          0.746
+        ]
+      ]
+    },
+    "schemes": {
+      "slow_only_ref": {
+        "cagr": 0.14105787724543317,
+        "ann_vol": 0.16247765885318458,
+        "max_drawdown": 0.23297110314507563,
+        "sharpe": 0.9247048664478416,
+        "total_return": 2.946566851034531,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 1.0,
+          "turnarounds": 0.0,
+          "asset_plays": 0.0,
+          "stalwarts": 0.0,
+          "fast_growers": 0.0,
+          "cyclicals": 0.0
+        },
+        "robust": false
+      },
+      "equal3_core": {
+        "cagr": 0.13092286815721343,
+        "ann_vol": 0.17078522537970078,
+        "max_drawdown": 0.24277886179562425,
+        "sharpe": 0.8338295515489367,
+        "total_return": 2.5967302034101545,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.3333,
+          "turnarounds": 0.3333,
+          "asset_plays": 0.3333,
+          "stalwarts": 0.0,
+          "fast_growers": 0.0,
+          "cyclicals": 0.0
+        },
+        "robust": true
+      },
+      "inv_vol3_core": {
+        "cagr": 0.13118821042605955,
+        "ann_vol": 0.16440449691300543,
+        "max_drawdown": 0.2198753274750197,
+        "sharpe": 0.8611255529633188,
+        "total_return": 2.60551949442097,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.4126,
+          "turnarounds": 0.2665,
+          "asset_plays": 0.3209,
+          "stalwarts": 0.0,
+          "fast_growers": 0.0,
+          "cyclicals": 0.0
+        },
+        "robust": true
+      },
+      "min_var3_core": {
+        "cagr": 0.1348595681261342,
+        "ann_vol": 0.15456218375561695,
+        "max_drawdown": 0.20256945334945486,
+        "sharpe": 0.9274541455982667,
+        "total_return": 2.7291399139636483,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.7,
+          "turnarounds": 0.1,
+          "asset_plays": 0.2,
+          "stalwarts": 0.0,
+          "fast_growers": 0.0,
+          "cyclicals": 0.0
+        },
+        "robust": true
+      },
+      "slow40_3legs": {
+        "cagr": 0.13268685614465126,
+        "ann_vol": 0.16596744315192594,
+        "max_drawdown": 0.2243102028558699,
+        "sharpe": 0.8628691631897524,
+        "total_return": 2.6555266655533565,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.4,
+          "turnarounds": 0.3,
+          "asset_plays": 0.3,
+          "stalwarts": 0.0,
+          "fast_growers": 0.0,
+          "cyclicals": 0.0
+        },
+        "robust": true
+      },
+      "slow50_3legs": {
+        "cagr": 0.13502397450848536,
+        "ann_vol": 0.16022902333338976,
+        "max_drawdown": 0.19608604109615002,
+        "sharpe": 0.9012477640051633,
+        "total_return": 2.7347642912334647,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.5,
+          "turnarounds": 0.25,
+          "asset_plays": 0.25,
+          "stalwarts": 0.0,
+          "fast_growers": 0.0,
+          "cyclicals": 0.0
+        },
+        "robust": true
+      },
+      "max_sharpe3_core_OVERFIT": {
+        "cagr": 0.14794435383848747,
+        "ann_vol": 0.15811133455926546,
+        "max_drawdown": 0.21331721681156168,
+        "sharpe": 0.9854661571991797,
+        "total_return": 3.2015194049633013,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.75,
+          "turnarounds": 0.25,
+          "asset_plays": 0.0,
+          "stalwarts": 0.0,
+          "fast_growers": 0.0,
+          "cyclicals": 0.0
+        },
+        "robust": false
+      },
+      "equal6": {
+        "cagr": 0.10568546465083273,
+        "ann_vol": 0.1708784811780813,
+        "max_drawdown": 0.257640861318293,
+        "sharpe": 0.6963532304746354,
+        "total_return": 1.8440412008524132,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.1667,
+          "turnarounds": 0.1667,
+          "asset_plays": 0.1667,
+          "stalwarts": 0.1667,
+          "fast_growers": 0.1667,
+          "cyclicals": 0.1667
+        },
+        "robust": true
+      },
+      "inv_vol6": {
+        "cagr": 0.10917174033268529,
+        "ann_vol": 0.16618100136276995,
+        "max_drawdown": 0.24945626343918892,
+        "sharpe": 0.7308993054971923,
+        "total_return": 1.9387318411226175,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.2135,
+          "turnarounds": 0.1379,
+          "asset_plays": 0.166,
+          "stalwarts": 0.1837,
+          "fast_growers": 0.1435,
+          "cyclicals": 0.1553
+        },
+        "robust": true
+      },
+      "min_var6": {
+        "cagr": 0.13093180941769056,
+        "ann_vol": 0.15240765889874927,
+        "max_drawdown": 0.19192819414741058,
+        "sharpe": 0.9147576932237207,
+        "total_return": 2.597026061289167,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.6,
+          "turnarounds": 0.05,
+          "asset_plays": 0.15,
+          "stalwarts": 0.15,
+          "fast_growers": 0.05,
+          "cyclicals": 0.0
+        },
+        "robust": true
+      },
+      "max_sharpe6_OVERFIT": {
+        "cagr": 0.14798963419003464,
+        "ann_vol": 0.15504728082888244,
+        "max_drawdown": 0.2329184327803142,
+        "sharpe": 1.0020956736510758,
+        "total_return": 3.2032439289823555,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.6,
+          "turnarounds": 0.2,
+          "asset_plays": 0.0,
+          "stalwarts": 0.2,
+          "fast_growers": 0.0,
+          "cyclicals": 0.0
+        },
+        "robust": false
+      },
+      "inv_vol_core3+stalwarts": {
+        "cagr": 0.13574215599142359,
+        "ann_vol": 0.15826908116173846,
+        "max_drawdown": 0.21793235630877572,
+        "sharpe": 0.9145654283180189,
+        "total_return": 2.7594234458116844,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.3045,
+          "turnarounds": 0.1967,
+          "asset_plays": 0.2368,
+          "stalwarts": 0.262,
+          "fast_growers": 0.0,
+          "cyclicals": 0.0
+        },
+        "robust": true
+      },
+      "inv_vol_core3+fast_growers": {
+        "cagr": 0.10742108388621152,
+        "ann_vol": 0.16920364632590798,
+        "max_drawdown": 0.2322674999309653,
+        "sharpe": 0.7111713964115913,
+        "total_return": 1.8908319253401271,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.323,
+          "turnarounds": 0.2086,
+          "asset_plays": 0.2512,
+          "stalwarts": 0.0,
+          "fast_growers": 0.2172,
+          "cyclicals": 0.0
+        },
+        "robust": true
+      },
+      "inv_vol_core3+cyclicals": {
+        "cagr": 0.11693378252628572,
+        "ann_vol": 0.16921737777226203,
+        "max_drawdown": 0.20746850014903617,
+        "sharpe": 0.7635876668127219,
+        "total_return": 2.159870805947495,
+        "n_days": 2525,
+        "weights": {
+          "slow_growers": 0.3174,
+          "turnarounds": 0.205,
+          "asset_plays": 0.2468,
+          "stalwarts": 0.0,
+          "fast_growers": 0.0,
+          "cyclicals": 0.2308
+        },
+        "robust": true
+      }
+    }
+  }
+}

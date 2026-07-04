@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Exp-3 引擎保真验证 · 单腿复现 (since2016 主窗口)。
+"""Exp-3 引擎保真验证 · 单腿复现 (full 全期窗口)。
 
 背景
 ----
-Exp-3(``run_portfolio_shared_pool.py``)真回测的组合 CAGR 系统性高出 Exp-2 净值层估计 ~2.4%。
-排查已否定两个良性解释:①日期区间错配(n_days 完全一致 2525);②跨腿再平衡频率
-(收益流空间里 none→daily 全扫仅 12.68%~14.85%, 任何频率都到不了 16%)。
-故须验证 meta 引擎是否**忠实还原单条腿**——否则上翘可能是 meta 的 bug。
+Exp-3(``run_portfolio_shared_pool.py``)是"一份现金同时跑三腿"的单账户真回测, Exp-2 则是
+各腿独立净值按权重混合的乐观估计。二者数字必有差额, 但差额必须能被**现实摩擦**(成本 / 整手 /
+现金约束 / 重叠净额 / within-leg 再平衡)完全解释; 若 meta 引擎自身有 look-ahead / 账务 /
+现金复用 bug, 差额会失真。故须验证 meta 引擎是否**忠实还原单条腿**。
 
 方法
 ----
 用 ``LynchMetaComboStrategy`` 只装一条腿(weight=1.0), 真回测, 与 Exp-2 缓存的该腿
-standalone 逐日收益(``legs_daily_returns_since2016.parquet``, 同样是含成本的真回测)对照。
+standalone 逐日收益(``legs_daily_returns_full.parquet``, 同样是含成本的真回测)对照。
 - ``on_change``: 仅腿真正改持仓的月份交易, **最贴近 standalone**(唯一残差=调仓月 len 不变时
   保留仓不被重置等权 → 任其漂移)。若 CAGR ≈ standalone(±~0.5%), 证明引擎无系统性放大。
 - ``monthly``: 每月把该腿持仓重置等权(比 standalone 的自身调仓周期更频繁), 用于量化
@@ -52,8 +52,8 @@ from services.backtest.strategies.experiments.lynch.portfolio.run_portfolio_shar
     OUT_DIR,
 )
 
-WNAME = "since2016"
-START, END = "2016-01-01", "2026-06-01"
+WNAME = "full"
+START, END = "2010-01-01", "2026-06-01"
 MODES = ["monthly", "on_change"]
 LEG_BY_NAME = {name: (cls, ov) for name, cls, ov in LEG_CONFIGS}
 

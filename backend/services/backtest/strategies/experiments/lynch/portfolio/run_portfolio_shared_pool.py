@@ -65,15 +65,15 @@ LEG_CONFIGS = [
      {"rebalance_months": [6, 12], "pb_max": 1.0, "sort_by": "net_cash",
       "mktcap_min_yi": 50.0, "mktcap_max_yi": 300.0, "trend_ma_days": 150}),
 ]
-# 推荐组合 slow40_3legs(权重顺序对齐 Exp-2 parquet 列序 slow/turn/asset/fast)
+# 推荐组合 slow40_3legs(权重顺序对齐 Exp-2 parquet 列序 slow/turn/asset/stalwarts;
+# 第 4 腿 stalwarts 权重 0 → 即核心三腿, 换第 4 腿不影响本 slow40 估计)
 WEIGHTS = {"slow_growers": 0.40, "turnarounds": 0.30, "asset_plays": 0.30}
-LEG_NAMES_4 = ["slow_growers", "turnarounds", "asset_plays", "fast_growers"]
-W_VEC_4 = np.array([0.40, 0.30, 0.30, 0.0])  # slow40
+LEG_NAMES_4 = ["slow_growers", "turnarounds", "asset_plays", "stalwarts"]
+W_VEC_4 = np.array([0.40, 0.30, 0.30, 0.0])  # slow40(核心三腿, stalwarts=0)
 
 MODES = ["monthly", "on_change"]
 WINDOWS = {
-    "since2016": ("2016-01-01", "2026-06-01"),  # 主
-    "full": ("2010-01-01", "2026-06-01"),       # 辅
+    "full": ("2010-01-01", "2026-06-01"),  # 全期单一口径(since2016 窗口已弃, 2026-07-04)
 }
 
 

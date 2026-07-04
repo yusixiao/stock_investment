@@ -1,0 +1,103 @@
+{
+  "window": [
+    "2016-01-01",
+    "2026-06-01"
+  ],
+  "note": "FRESH iter 从 2016 起",
+  "sets": {
+    "min_var3_70_10_20": {
+      "weights": {
+        "slow_growers": 0.7,
+        "turnarounds": 0.1,
+        "asset_plays": 0.2
+      },
+      "exp2_estimate": {
+        "cagr": 0.13485956812613353,
+        "ann_vol": 0.15456218375561703,
+        "max_drawdown": 0.20256945334945564,
+        "sharpe": 0.9274541455982628,
+        "total_return": 2.729139913963625,
+        "n_days": 2525
+      },
+      "modes": {
+        "on_change": {
+          "cagr": 0.1376600462722033,
+          "ann_vol": 0.1616434958333879,
+          "max_drawdown": 0.2157915286684965,
+          "sharpe": 0.909570959336155,
+          "total_return": 2.825998193880097,
+          "n_days": 2525,
+          "n_trades": 832,
+          "total_cost": 30634.51,
+          "cost_pct_of_final": 0.008006933315786698,
+          "final_value": 3825998.19,
+          "turnover_ann": 0.9117433099167583
+        },
+        "monthly": {
+          "cagr": 0.12427863045296306,
+          "ann_vol": 0.15655787162798104,
+          "max_drawdown": 0.22082356214788745,
+          "sharpe": 0.8554572632767957,
+          "total_return": 2.382860907905703,
+          "n_days": 2525,
+          "n_trades": 3604,
+          "total_cost": 48315.82,
+          "cost_pct_of_final": 0.01428253125534891,
+          "final_value": 3382860.91,
+          "turnover_ann": 1.189749649238937
+        }
+      }
+    },
+    "slow_only_100": {
+      "weights": {
+        "slow_growers": 1.0,
+        "turnarounds": 0.0,
+        "asset_plays": 0.0
+      },
+      "exp2_estimate": {
+        "cagr": 0.14105787724543317,
+        "ann_vol": 0.16247765885318458,
+        "max_drawdown": 0.23297110314507563,
+        "sharpe": 0.9247048664478416,
+        "total_return": 2.946566851034531,
+        "n_days": 2525
+      },
+      "modes": {
+        "on_change": {
+          "cagr": 0.13985117052087737,
+          "ann_vol": 0.1613778662544424,
+          "max_drawdown": 0.23358675103800008,
+          "sharpe": 0.923088170614343,
+          "total_return": 2.903360416934404,
+          "n_days": 2525,
+          "n_trades": 120,
+          "total_cost": 21875.65,
+          "cost_pct_of_final": 0.0056043116340612625,
+          "final_value": 3903360.42,
+          "turnover_ann": 0.6487257174700862
+        },
+        "monthly": {
+          "cagr": 0.12356794057492593,
+          "ann_vol": 0.1597406087008416,
+          "max_drawdown": 0.2565965536369075,
+          "sharpe": 0.837337367135814,
+          "total_return": 2.360679289175038,
+          "n_days": 2525,
+          "n_trades": 934,
+          "total_cost": 30167.35,
+          "cost_pct_of_final": 0.008976563148623435,
+          "final_value": 3360679.29,
+          "turnover_ann": 0.9179842435184122
+        }
+      }
+    }
+  },
+  "csi300": {
+    "cagr": 0.03261531896460168,
+    "ann_vol": 0.18754071434524688,
+    "max_drawdown": 0.456026204848648,
+    "sharpe": 0.2716782626125515,
+    "total_return": 0.396414942811699,
+    "n_days": 2525
+  }
+}

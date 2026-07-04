@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""林奇 4 腿组合 · 权重搜索 (Exp-2) —— 求风险调整后最优的稳健组合。
+"""林奇组合 · 权重搜索 (Exp-2) —— 求风险调整后最优的稳健组合。
 
-前提(Exp-1 相关性闸门已通过):
-- 只用稳健复现的 4 腿: slow_growers / turnarounds / asset_plays / fast_growers。
-  stalwarts / cyclicals 因 data/market/ 数据漂移在当前数据上塌缩至 ~0 笔(根因=数据漂移,
-  strategy+因子 util 代码 git 可证未变), 无有效曲线, 已剔除, 见 Exp-1 overview。
-- 2016+ 主窗口 4 腿平均月度相关 ≈0.39, slow_growers 为低相关高 Sharpe 锚
-  (与各腿 0.12~0.45、与 CSI300 仅 0.15), 有真实分散价值。
+前提(Exp-1 相关性闸门已通过, 全期修复后数据 2026-07-04):
+- 核心三腿(主组合) = slow_growers / turnarounds / asset_plays: 全期年化 13.90/16.14/14.73%,
+  互相关全 <0.5(slow×turn 0.33、turn×asset 0.42、slow×asset 0.46), 市场 beta 低(×CSI300 0.45~0.58),
+  分散价值最强。
+- 第 4 腿 = stalwarts(对照): INDUSTRY_NAME 修复后已恢复 11.24%(此前坏数据塌缩至 ~0 笔),
+  与 turnarounds 相关 0.22(全场最低对) —— 但与 slow_growers 相关 0.59(高股息+质量+大盘价值重叠)、
+  市场 beta 0.64 偏高, 收益低于核心三腿。故列为对照(*4 方案含它), 由数据决定是否值得纳入。
+- fast_growers / cyclicals 已剔: 修复后全期仅 4.48/6.43%、市场 beta 0.68/0.81 近纯 beta, 组合无增量。
 
 方法学:
 - 各腿独立满仓回测取「逐日净值曲线」→ 日度简单收益率。
@@ -16,7 +18,8 @@
   保证组合与单腿口径一致可比(与引擎日度指标略有出入属正常, 引擎值见 Exp-1)。
 - 权重方案强调「稳健 / 非过拟合」: 等权 / 逆波动 / 最小方差; 「样本内最大 Sharpe」仅作
   过拟合上界参考(样本内最优 ≠ 样本外可得), 不作推荐。
-- 窗口: 2016+(主) + 全期(辅)。持久化各腿日度收益到 parquet, 便于日后免重跑迭代权重。
+- 窗口: 全期(2010-01 → 2026-06)单一口径(since2016 窗口已弃, 2026-07-04)。
+  持久化各腿日度收益到 parquet, 便于日后免重跑迭代权重。
 
 用法(长任务, 后台跑):
   nohup python backend/services/backtest/strategies/experiments/lynch/portfolio/run_portfolio_weights.py \
@@ -51,15 +54,16 @@ from services.backtest.strategies.experiments.lynch.lynch_turnarounds.lynch_turn
 from services.backtest.strategies.experiments.lynch.lynch_asset_plays.asset_plays_strategy import (
     LynchAssetPlaysStrategy,
 )
-from services.backtest.strategies.experiments.lynch.lynch_fast_growers.lynch_fast_growers_strategy import (
-    LynchFastGrowersStrategy,
+from services.backtest.strategies.experiments.lynch.lynch_stalwarts.lynch_stalwarts_strategy import (
+    LynchStalwartsStrategy,
 )
 
 CSI300_CODE = "CSI300"
 OUT_DIR = Path(__file__).resolve().parent
 TRADING_DAYS = 252
 
-# 稳健 4 腿(配置与 Exp-1 逐字一致, 来源见 run_portfolio_corr.py TYPES 注释)
+# 腿池(配置与 Exp-1 逐字一致, 来源见 run_portfolio_corr.py TYPES 注释)。
+# 前 3 = 核心三腿(主组合); 第 4 = stalwarts(对照, *4 方案含它, *3legs 方案权重置 0)。
 LEGS = [
     ("slow_growers", LynchSlowGrowersStrategy,
      {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 12,
@@ -69,13 +73,14 @@ LEGS = [
     ("asset_plays", LynchAssetPlaysStrategy,
      {"rebalance_months": [6, 12], "pb_max": 1.0, "sort_by": "net_cash",
       "mktcap_min_yi": 50.0, "mktcap_max_yi": 300.0, "trend_ma_days": 150}),
-    ("fast_growers", LynchFastGrowersStrategy, {}),
+    ("stalwarts", LynchStalwartsStrategy,
+     {"peg_max": 1.0, "rebalance_months": [6], "min_div_yield": 0.03, "np_cagr_min": 0.08,
+      "np_cagr_max": 0.20, "require_industry": True, "max_per_sector": 2, "mktcap_min_yi": 250.0}),
 ]
 LEG_NAMES = [n for n, _, _ in LEGS]
 
 WINDOWS = {
-    "since2016": ("2016-01-01", "2026-06-01"),  # 主
-    "full": ("2010-01-01", "2026-06-01"),       # 辅
+    "full": ("2010-01-01", "2026-06-01"),  # 全期单一口径(since2016 窗口已弃, 2026-07-04)
 }
 
 
@@ -171,12 +176,20 @@ def _grid_weights(n: int, step: float = 0.05):
             yield np.array(parts, dtype=float) * step
 
 
-def _search(R: pd.DataFrame, objective: str) -> np.ndarray:
-    """网格搜索: objective in {max_sharpe, min_var}。用日度加权代理(R@w)快速评估。"""
+def _search(R: pd.DataFrame, objective: str, drop: str = None) -> np.ndarray:
+    """网格搜索: objective in {max_sharpe, min_var}。用日度加权代理(R@w)快速评估。
+
+    drop=腿名 → 该腿强制权重 0, 只在其余腿上搜索(用于核心三腿最优)。
+    返回全长(=R 列数)权重向量, 被 drop 的腿位置为 0。
+    """
+    cols = list(R.columns)
+    active = [i for i, c in enumerate(cols) if c != drop]
     Rv = R.values
     best_w, best_score = None, None
     with np.errstate(all="ignore"):
-        for w in _grid_weights(R.shape[1], step=0.05):
+        for wsub in _grid_weights(len(active), step=0.05):
+            w = np.zeros(len(cols))
+            w[active] = wsub
             pr = Rv @ w
             sd = pr.std(ddof=1)
             if objective == "max_sharpe":
@@ -189,21 +202,28 @@ def _search(R: pd.DataFrame, objective: str) -> np.ndarray:
 
 
 def _named_schemes(R: pd.DataFrame) -> dict:
-    """构造权重方案(部分依赖窗口内数据: 逆波动)。顺序 = LEG_NAMES。"""
+    """构造权重方案(部分依赖窗口内数据: 逆波动)。顺序 = LEG_NAMES。
+
+    命名约定: `*4` = 含 stalwarts 的 4 腿对照; `*3_core`/`*3legs` = 核心三腿
+    (slow/turn/asset, stalwarts 权重=0)= 主组合。
+    """
     vol = R.std(ddof=1).values  # 各腿日度波动
     inv = 1.0 / np.where(vol > 0, vol, np.inf)
     inv_vol4 = inv / inv.sum()
-    # 3 腿(去 fast_growers)逆波动
-    inv3 = inv.copy(); inv3[LEG_NAMES.index("fast_growers")] = 0.0
+    # 核心三腿(去 stalwarts)逆波动
+    inv3 = inv.copy(); inv3[LEG_NAMES.index("stalwarts")] = 0.0
     inv_vol3 = inv3 / inv3.sum()
 
     schemes = {
+        # 4 腿(含 stalwarts 对照)
         "equal4": np.array([0.25, 0.25, 0.25, 0.25]),
         "inv_vol4": inv_vol4,
         "min_var4": _search(R, "min_var"),
         "max_sharpe4_OVERFIT": _search(R, "max_sharpe"),
-        "equal3_nofast": np.array([1 / 3, 1 / 3, 1 / 3, 0.0]),
-        "inv_vol3_nofast": inv_vol3,
+        # 核心三腿(slow/turn/asset, stalwarts=0)—— 主组合
+        "equal3_core": np.array([1 / 3, 1 / 3, 1 / 3, 0.0]),
+        "inv_vol3_core": inv_vol3,
+        "min_var3_core": _search(R, "min_var", drop="stalwarts"),
         "slow40_3legs": np.array([0.40, 0.30, 0.30, 0.0]),
         "slow50_3legs": np.array([0.50, 0.25, 0.25, 0.0]),
         "slow_only_ref": np.array([1.0, 0.0, 0.0, 0.0]),
@@ -211,8 +231,8 @@ def _named_schemes(R: pd.DataFrame) -> dict:
     return schemes
 
 
-ROBUST = {"equal4", "inv_vol4", "min_var4", "equal3_nofast",
-          "inv_vol3_nofast", "slow40_3legs", "slow50_3legs"}
+ROBUST = {"equal4", "inv_vol4", "min_var4", "equal3_core", "inv_vol3_core",
+          "min_var3_core", "slow40_3legs", "slow50_3legs"}
 
 
 def _pct(x):
@@ -288,12 +308,13 @@ def main():
 
 def _write_overview(report):
     lines = [
-        "# 林奇 4 腿组合 · 权重搜索 (Exp-2)",
+        "# 林奇组合 · 权重搜索 (Exp-2)",
         "",
-        "> 腿 = slow_growers / turnarounds / asset_plays / fast_growers(stalwarts/cyclicals 数据漂移塌缩已剔除)。",
+        "> 核心三腿(主组合) = slow_growers / turnarounds / asset_plays;第 4 腿 = stalwarts(对照)。",
+        "> `*4` 方案含 stalwarts;`*3_core`/`*3legs` 方案 stalwarts 权重=0 即核心三腿。fast/cyclicals 已剔。",
         "> 所有指标从「日度收益」自算(CAGR/年化波动/MaxDD/Sharpe rf=0), 单腿与组合同口径可比。",
         "> 组合 = 目标权重「月度再平衡」合成; `*_OVERFIT` 为样本内最优, 仅作上界参考, **不推荐**。",
-        "> 权重顺序 = slow_growers/turnarounds/asset_plays/fast_growers。",
+        "> 权重顺序 = slow_growers/turnarounds/asset_plays/stalwarts。",
         "",
     ]
     for wname, blk in report.items():
@@ -316,7 +337,7 @@ def _write_overview(report):
         rows = sorted(blk["schemes"].items(),
                       key=lambda kv: (kv[1].get("sharpe") or -9), reverse=True)
         lines += ["### 组合权重方案(按 Sharpe 降序)", "",
-                  "| 方案 | 稳健 | 权重(slow/turn/asset/fast) | CAGR | 年化波动 | MaxDD | Sharpe |",
+                  "| 方案 | 稳健 | 权重(slow/turn/asset/stalwarts) | CAGR | 年化波动 | MaxDD | Sharpe |",
                   "|---|---|---|---|---|---|---|"]
         for sname, m in rows:
             w = m["weights"]

@@ -9,8 +9,8 @@
 - 相关性口径 = 月度收益率(低换手策略, 日度波动≈市场 beta 噪声, 会系统性高估相关)。
 - 每型配置 = 诚实/可部署版本(周期型用朴素基线 6.43%, 而非过拟合冠军 11.11%;
   隐蔽资产型用冠军 K4 但诚实值看 2016+; 其余用各自研究冠军), 见 TYPES 常量的来源注释。
-- 窗口: 全期(2010-2026, 辅) + 2016+(主, 机会集充实、幸存者偏差较轻)。
-  2016+ 内再切 牛(2016-2020) / 熊(2021-2026) 子区间, 看相关性是否随行情漂移。
+- 窗口: 全期(2010-01 → 2026-06)单一口径。since2016 窗口 + 牛/熊子区间已弃
+  (2026-07-04): 对组合选腿无增量信息, full 全期即主口径。
 - 各型 CAGR/MaxDD/Sharpe 用引擎指标(日度口径, 与各型研究报告一致);
   相关矩阵用月度收益(口径不同, 勿混用两套数字)。
 - 🚨 每型均为独立标准回测(各自满仓现金起步、各自复利), 这是「元组合」曲线级研究;
@@ -88,14 +88,7 @@ TYPES = [
 ]
 
 WINDOWS = {
-    "full": ("2010-01-01", "2026-06-01"),       # 辅: 全期
-    "since2016": ("2016-01-01", "2026-06-01"),  # 主: 机会集充实、幸存者偏差较轻
-}
-
-# 2016+ 内再切子区间(牛/熊), 直接从 since2016 月度序列切片, 不重跑引擎
-SUBPERIODS = {
-    "bull_2016_2020": ("2016-01", "2020-12"),  # 沪深300 期间 +8.49%
-    "bear_2021_2026": ("2021-01", "2026-06"),  # 沪深300 期间 -1.54%
+    "full": ("2010-01-01", "2026-06-01"),  # 全期单一口径(since2016 窗口已弃, 2026-07-04)
 }
 
 
@@ -217,15 +210,6 @@ def _write_overview(report):
                 lines.append(f"- {a} × {b}: **{v}**")
             lines.append("")
 
-        subs = block.get("subperiods", {})
-        if subs:
-            lines.append("子区间相关(检验相关性是否随行情漂移):")
-            for sname, sb in subs.items():
-                lines.append(
-                    f"- {sname} (n={sb['n_months']} 月): 平均非对角相关 **{sb['corr']['avg_offdiag']}**"
-                )
-            lines.append("")
-
     (OUT_DIR / "portfolio_corr_overview.md").write_text("\n".join(lines))
 
 
@@ -285,16 +269,6 @@ def main():
             "n_months": int(len(ret_df)),
             "corr": _corr_block(ret_df) if not ret_df.empty else None,
         }
-
-        # 子区间相关(只在 since2016 上做, 从同一 2016+ 月度序列切片)
-        if wname == "since2016" and not ret_df.empty:
-            subs = {}
-            for sname, (s0, s1) in SUBPERIODS.items():
-                mask = (ret_df.index >= pd.Period(s0, "M")) & (ret_df.index <= pd.Period(s1, "M"))
-                sub = ret_df.loc[mask]
-                if len(sub) >= 6:
-                    subs[sname] = {"n_months": int(len(sub)), "corr": _corr_block(sub)}
-            block["subperiods"] = subs
 
         report[wname] = block
         _write_overview(report)  # 增量刷新
