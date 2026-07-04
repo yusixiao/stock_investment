@@ -107,4 +107,10 @@ app.include_router(hk_connect_router)
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok"}
+    # 浮现写入完整性护栏状态: 近 24h 内有违规(拒写或 force 放行)→ degraded,
+    # 提示排查(数据更新任务疑似试图销毁源数据)。历史违规不会永久拉红。
+    from backend.repositories.base import read_integrity_violations
+
+    integrity = read_integrity_violations(limit=10)
+    status = "degraded" if integrity["recent_24h"] > 0 else "ok"
+    return {"status": status, "data_integrity": integrity}

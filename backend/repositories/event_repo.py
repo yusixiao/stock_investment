@@ -3,9 +3,14 @@ from typing import List
 
 from backend.models.event import DividendRecord
 from backend.repositories.base import (
+    IntegrityPolicy,
     read_parquet_as_models,
     write_models_as_parquet,
 )
+
+# 分红台账型: 历史除权事件不可被 null/删除。已公告分红的金额修正(方案→实施)属
+# 合法值变更(ledger 放行), 非空→null / 整列消失 / 行数骤减则拦截。
+_DIVIDEND_INTEGRITY = IntegrityPolicy(key="dividOperateDate", mode="ledger")
 
 
 class EventRepository:
@@ -31,6 +36,7 @@ class EventRepository:
             records,
             sort_by="dividOperateDate",
             ascending=False,
+            integrity=_DIVIDEND_INTEGRITY,
         )
 
     def list_codes(self) -> List[str]:

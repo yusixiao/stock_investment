@@ -23,9 +23,13 @@ import pandas as pd
 from backend.config import MARKET_DIR
 from backend.models.market import DailyKlineRecord
 from backend.repositories.base import (
+    IntegrityPolicy,
     append_models_to_parquet,
     write_models_as_parquet,
 )
+
+# 指数 K 线台账型(同日 K 线): 历史 bar 不可 null/删除。
+_INDEX_INTEGRITY = IntegrityPolicy(key="date", mode="ledger")
 
 logger = logging.getLogger(__name__)
 
@@ -204,11 +208,15 @@ def update_index(item: dict, full: bool = False) -> dict:
         path = _index_path(market, code)
         if full or not path.exists():
             # date 降序,与 daily 约定一致
-            write_models_as_parquet(path, records, sort_by="date", ascending=False)
+            write_models_as_parquet(
+                path, records, sort_by="date", ascending=False,
+                integrity=_INDEX_INTEGRITY,
+            )
         else:
             append_models_to_parquet(
                 path, records, DailyKlineRecord,
                 dedup_key="date", sort_by="date", ascending=False,
+                integrity=_INDEX_INTEGRITY,
             )
         result["written"] = len(records)
         logger.info("index %s: 写入 %d 条 (%s)", code, len(records), result["mode"])

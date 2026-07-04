@@ -4,7 +4,15 @@ from typing import List
 import pandas as pd
 
 from backend.models.basic import StockBasicInfo
-from backend.repositories.base import read_parquet_as_models, write_models_as_parquet
+from backend.repositories.base import (
+    IntegrityPolicy,
+    read_parquet_as_models,
+    write_models_as_parquet,
+)
+
+# 股票列表是全量快照(重算型): IPO 增行 / 退市减行 / 名称行业变更均合法, 不做逐行
+# 值校验; 只护结构(整列消失)与灾难性骤减(数据源半拉子返回, <50% 视为异常)。
+_STOCK_LIST_INTEGRITY = IntegrityPolicy(key="code", mode="recompute")
 
 
 class BasicRepository:
@@ -19,7 +27,13 @@ class BasicRepository:
         )
 
     def write_stock_list(self, records: List[StockBasicInfo]) -> None:
-        write_models_as_parquet(self._path, records, sort_by="code", ascending=True)
+        write_models_as_parquet(
+            self._path,
+            records,
+            sort_by="code",
+            ascending=True,
+            integrity=_STOCK_LIST_INTEGRITY,
+        )
 
     def get_by_code(self, code: str) -> StockBasicInfo | None:
         """按代码查找单只股票信息"""

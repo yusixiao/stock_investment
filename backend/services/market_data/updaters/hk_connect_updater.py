@@ -26,6 +26,7 @@ import pandas as pd
 
 from backend.adapters.eastmoney_adapter import EastMoneyAdapter
 from backend.config import MARKET_DIR
+from backend.repositories.base import check_write_integrity
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,12 @@ def fetch_and_save_hk_connect(
     merged = merged.sort_values(
         ["as_of_date", "code"], ascending=[False, True]
     ).reset_index(drop=True)
+    # 台账型: 历史快照(as_of_date, code, board)是不可变成员事实; merged 为
+    # 旧+新累积集, 正常周更只增行。若读旧失败回退成"仅本次快照"导致历史腰斩,
+    # 护栏会拦截并留痕(force 逃生), 避免静默丢历史。
+    check_write_integrity(
+        path, merged, key=["as_of_date", "code", "board"], mode="ledger"
+    )
     merged.to_parquet(path, index=False)
     invalidate_cache()
 

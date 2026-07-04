@@ -21,10 +21,18 @@ from backend.models.holder import (
     HolderCountRecord,
 )
 from backend.repositories.base import (
+    IntegrityPolicy,
     read_parquet_as_models,
     write_models_as_parquet,
     append_models_to_parquet,
 )
+
+# 股东表台账型: 历史报告期的持股行不可被 null/删除。top10/top10_free 复合键
+# (END_DATE, HOLDER_RANK); holder_count 单键 END_DATE。
+_HOLDER_RANK_INTEGRITY = IntegrityPolicy(
+    key=["END_DATE", "HOLDER_RANK"], mode="ledger"
+)
+_HOLDER_COUNT_INTEGRITY = IntegrityPolicy(key="END_DATE", mode="ledger")
 
 
 class HolderRepository:
@@ -52,6 +60,7 @@ class HolderRepository:
             records,
             sort_by="END_DATE",
             ascending=False,
+            integrity=_HOLDER_RANK_INTEGRITY,
         )
 
     def append_top10_holders(
@@ -64,6 +73,7 @@ class HolderRepository:
             dedup_key=("END_DATE", "HOLDER_RANK"),
             sort_by="END_DATE",
             ascending=False,
+            integrity=_HOLDER_RANK_INTEGRITY,
         )
 
     # ---------- 十大流通股东 ----------
@@ -83,6 +93,7 @@ class HolderRepository:
             records,
             sort_by="END_DATE",
             ascending=False,
+            integrity=_HOLDER_RANK_INTEGRITY,
         )
 
     def append_top10_free_holders(
@@ -95,6 +106,7 @@ class HolderRepository:
             dedup_key=("END_DATE", "HOLDER_RANK"),
             sort_by="END_DATE",
             ascending=False,
+            integrity=_HOLDER_RANK_INTEGRITY,
         )
 
     # ---------- 股东户数 ----------
@@ -112,6 +124,7 @@ class HolderRepository:
             records,
             sort_by="END_DATE",
             ascending=False,
+            integrity=_HOLDER_COUNT_INTEGRITY,
         )
 
     def append_holder_count(
@@ -124,6 +137,7 @@ class HolderRepository:
             dedup_key="END_DATE",
             sort_by="END_DATE",
             ascending=False,
+            integrity=_HOLDER_COUNT_INTEGRITY,
         )
 
     # ---------- 缓存元信息 ----------

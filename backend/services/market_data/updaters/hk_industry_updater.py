@@ -33,6 +33,7 @@ from typing import Iterable
 import pandas as pd
 
 from backend.config import MARKET_DIR
+from backend.repositories.base import check_write_integrity
 from backend.services.market_data.updaters.hk_connect_updater import get_latest_hk_connect_codes
 
 logger = logging.getLogger(__name__)
@@ -197,6 +198,9 @@ def fetch_and_save_hk_industry(
         # 列顺序固定
         merged = merged[["code", "name", "sector", "industry", "updated_at"]]
         merged = merged.sort_values("code").reset_index(drop=True)
+        # 重算型: sector/industry 分类会随 yfinance 更新而合法变动; merged 由旧全集
+        # 增量更新而来(未抓的 code 原样保留), 仅护结构 + 灾难性骤减。
+        check_write_integrity(path, merged, key="code", mode="recompute")
         merged.to_parquet(path, index=False)
         total_rows = len(merged)
     else:

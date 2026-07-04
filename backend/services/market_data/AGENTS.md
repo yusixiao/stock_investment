@@ -39,6 +39,12 @@ market_data/updaters/
 - 其它:`stock_index.py`(全市场代码索引)、`stock_data.py::aggregate_kline`(W-FRI / M 聚合)、`indicator.py`(指标计算工具)。
 - A 股代码索引源 `stock_index` 从 `data/market/A/stock_list.parquet` 读(`A_INDEX_DIR = MARKET_DIR/"A"`,与 HK/US 的 `data/market/<mkt>/stock_list.*` 对齐)。
 
+## 🚨 批量写入 / 数据完整性铁律
+
+- **批量写入改动铁律**:凡新增/修改任何批量数据更新或 parquet 写入逻辑(updater、repo 写方法、字段映射、dedup/merge、`model_dump` 参数等),**全量跑前必须做「改动前后抽样对比」**——**定向 + 分层**取样(优先覆盖改动直接影响的字段/报表类型,再跨 A/HK/US、含 `extra` 携带字段如 `INDUSTRY_NAME` 各取若干,合计 ≥100 条;纯随机抽样有盲区易全抽到正常数据,故必须定向+分层),核查三类**销毁信号**:①已有非空字段被写成 null ②整列消失 ③行数骤减,并抽验若干值是否合理;有任一非预期破坏即**停下排查、禁止全量跑**。改数据写入代码的往往是 AI,本条 AI 是首要约束对象。
+- **与运行时护栏互补(两道防线不可偏废)**:上条是**开发期主动预防**(能查脏值 + 改代码引入的逻辑破坏);运行时护栏 `repositories/base.py::check_write_integrity` 是**被动兜底**(fail-closed,只防"销毁"不防脏值,且不依赖自觉)。各 updater/repo 已按类别 opt-in 传入 `IntegrityPolicy`(ledger:旧非空→null / 列消失 / 行数<50% 即拦并 raise `DataIntegrityError`;recompute:仅结构护栏);`write/append_models_as_parquet` 默认 `integrity=None`(OFF)。违规告警落 `logs/data_integrity.{log,jsonl}` + app.log;`GET /api/health` 近 24h 有违规(拒写或 `force=True` 放行)→ `status=degraded`。**误拦合法大改**时需临时把对应 `IntegrityPolicy.force` 设 True(当前硬编码,未做运行时开关)。
+- **07-02 根因(为什么要两道防线)**:`fetch_balance` 某次命中明细报表(不含靠 `extra=allow` 携带的 `INDUSTRY_NAME`),`model_dump(exclude_none=False)` 把缺失字段写成显式 NULL,静默覆盖全历史该列(100%→6%),全程零校验零告警。**若由源漂移触发**(未改代码)→ 抽样纪律不生效,靠护栏兜;**若由改写入逻辑触发** → 靠抽样纪律在全量前拦下。
+
 ## 🚨 历史教训(HK/US 数据源限制)
 
 1. **EastMoney HK** 单次 ≤ 250 行 / ≤ 12 个月,长历史必须切片。

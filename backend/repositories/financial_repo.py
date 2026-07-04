@@ -8,10 +8,16 @@ from backend.models.financial import (
     FinancialIndicator,
 )
 from backend.repositories.base import (
+    IntegrityPolicy,
     read_parquet_as_models,
     write_models_as_parquet,
     append_models_to_parquet,
 )
+
+# 财务 4 表均台账型: 历史报告期一旦落盘, 其字段(含 INDUSTRY_NAME 这类 extra 携带
+# 字段)不可被 null 覆盖 —— 正是 2026-07-02 事故点。null→有值回填 / 数值修正属
+# 合法变更(ledger 放行), 非空→null 或整列消失则拦截。
+_FIN_INTEGRITY = IntegrityPolicy(key="REPORT_DATE", mode="ledger")
 
 
 class FinancialRepository:
@@ -40,6 +46,7 @@ class FinancialRepository:
             records,
             sort_by="REPORT_DATE",
             ascending=False,
+            integrity=_FIN_INTEGRITY,
         )
 
     def append_income(self, code: str, new_records: List[IncomeStatement]) -> None:
@@ -50,6 +57,7 @@ class FinancialRepository:
             dedup_key="REPORT_DATE",
             sort_by="REPORT_DATE",
             ascending=False,
+            integrity=_FIN_INTEGRITY,
         )
 
     def read_balance(self, code: str) -> List[BalanceSheet]:
@@ -66,6 +74,7 @@ class FinancialRepository:
             records,
             sort_by="REPORT_DATE",
             ascending=False,
+            integrity=_FIN_INTEGRITY,
         )
 
     def append_balance(self, code: str, new_records: List[BalanceSheet]) -> None:
@@ -76,6 +85,7 @@ class FinancialRepository:
             dedup_key="REPORT_DATE",
             sort_by="REPORT_DATE",
             ascending=False,
+            integrity=_FIN_INTEGRITY,
         )
 
     def read_cashflow(self, code: str) -> List[CashFlow]:
@@ -92,6 +102,7 @@ class FinancialRepository:
             records,
             sort_by="REPORT_DATE",
             ascending=False,
+            integrity=_FIN_INTEGRITY,
         )
 
     def append_cashflow(self, code: str, new_records: List[CashFlow]) -> None:
@@ -102,6 +113,7 @@ class FinancialRepository:
             dedup_key="REPORT_DATE",
             sort_by="REPORT_DATE",
             ascending=False,
+            integrity=_FIN_INTEGRITY,
         )
 
     def read_indicator(self, code: str) -> List[FinancialIndicator]:
@@ -118,6 +130,7 @@ class FinancialRepository:
             records,
             sort_by="REPORT_DATE",
             ascending=False,
+            integrity=_FIN_INTEGRITY,
         )
 
     def append_indicator(
@@ -130,4 +143,5 @@ class FinancialRepository:
             dedup_key="REPORT_DATE",
             sort_by="REPORT_DATE",
             ascending=False,
+            integrity=_FIN_INTEGRITY,
         )

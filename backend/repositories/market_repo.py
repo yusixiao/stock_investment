@@ -3,10 +3,17 @@ from typing import List, Optional
 
 from backend.models.market import DailyKlineRecord, AdjustFactorRecord
 from backend.repositories.base import (
+    IntegrityPolicy,
     read_parquet_as_models,
     write_models_as_parquet,
     append_models_to_parquet,
 )
+
+# 日K线是台账型: 历史 bar 一旦落盘不可被 null/删除(盘中 partial→收盘完整 bar 属
+# 合法值变更, ledger 放行)。复权因子是重算型: 每逢新除权全历史 foreAdjustFactor
+# 归一化重算, 值合法变动, 仅护结构(整列消失/行数骤减)。
+_KLINE_INTEGRITY = IntegrityPolicy(key="date", mode="ledger")
+_ADJUST_INTEGRITY = IntegrityPolicy(key="dividOperateDate", mode="recompute")
 
 
 class MarketRepository:
@@ -29,7 +36,11 @@ class MarketRepository:
 
     def write_daily_kline(self, code: str, records: List[DailyKlineRecord]) -> None:
         write_models_as_parquet(
-            self._daily_path(code), records, sort_by="date", ascending=False
+            self._daily_path(code),
+            records,
+            sort_by="date",
+            ascending=False,
+            integrity=_KLINE_INTEGRITY,
         )
 
     def append_daily_kline(
@@ -42,6 +53,7 @@ class MarketRepository:
             dedup_key="date",
             sort_by="date",
             ascending=False,
+            integrity=_KLINE_INTEGRITY,
         )
 
     def read_adjust_factor(self, code: str) -> List[AdjustFactorRecord]:
@@ -54,7 +66,11 @@ class MarketRepository:
 
     def write_adjust_factor(self, code: str, records: List[AdjustFactorRecord]) -> None:
         write_models_as_parquet(
-            self._adjust_path(code), records, sort_by="dividOperateDate", ascending=True
+            self._adjust_path(code),
+            records,
+            sort_by="dividOperateDate",
+            ascending=True,
+            integrity=_ADJUST_INTEGRITY,
         )
 
     def list_codes(self) -> List[str]:

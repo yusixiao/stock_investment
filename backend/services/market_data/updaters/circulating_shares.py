@@ -14,6 +14,7 @@ from datetime import date
 import pandas as pd
 
 from config import META_DIR
+from repositories.base import check_write_integrity
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,11 @@ def update_circulating_shares(on_phase: callable = None) -> dict:
         .reset_index(drop=True)
     )
     _phase(f"保存 {len(result)} 只股票数据...")
+    # 重算型快照: 流通股随报告期变动属合法, 仅护结构 + 灾难性骤减(如 v_a_indicator
+    # 半拉子导致全市场股票数腰斩), 违规 raise 中止, 保留旧快照。
+    check_write_integrity(
+        CIRCULATING_SHARES_FILE, result, key="symbol", mode="recompute"
+    )
     result.to_parquet(CIRCULATING_SHARES_FILE, index=False)
 
     logger.info(
