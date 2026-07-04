@@ -1,0 +1,552 @@
+{
+  "windows": {
+    "since2016": {
+      "window": [
+        "2016-01-01",
+        "2026-06-01"
+      ],
+      "champions": {
+        "slow_growers": {
+          "label": "缓慢增长(已发布冠军)",
+          "report_note": "报告 14.28% (2010-06 起全期, ✅已采纳发布)",
+          "overrides": {
+            "min_div_yield": 0.035,
+            "mktcap_min_yi": 300.0,
+            "top_n": 12,
+            "max_per_sector": 2,
+            "rebalance_months": [
+              6
+            ]
+          },
+          "cagr": 0.14105787724543317,
+          "ann_vol": 0.16247765885318458,
+          "max_drawdown": 0.23297110314507563,
+          "sharpe": 0.9247048664478423,
+          "total_return": 2.946566851034531,
+          "n_days": 2525,
+          "n_trades": 127,
+          "total_cost": 22322.9,
+          "cost_pct_of_final": 0.005656283138451926,
+          "final_value": 3946566.85,
+          "turnover_ann": 0.6547252243599638
+        },
+        "stalwarts": {
+          "label": "稳健增长 D基(进取冠军)",
+          "report_note": "报告 11.24% (全期, ⏳暂定; 均衡变体 Sh0.56/DD37%)",
+          "overrides": {
+            "peg_max": 1.0,
+            "rebalance_months": [
+              6
+            ],
+            "min_div_yield": 0.03,
+            "np_cagr_min": 0.08,
+            "np_cagr_max": 0.2,
+            "max_per_sector": 2,
+            "mktcap_min_yi": 250.0
+          },
+          "cagr": 0.13800746327319935,
+          "ann_vol": 0.18882063892556197,
+          "max_drawdown": 0.3222032880964254,
+          "sharpe": 0.8054020986481419,
+          "total_return": 2.8381712708259537,
+          "n_days": 2525,
+          "n_trades": 112,
+          "total_cost": 20904.29,
+          "cost_pct_of_final": 0.0054464200368604014,
+          "final_value": 3838171.27,
+          "turnover_ann": 0.6650723272001181
+        },
+        "fast_growers": {
+          "label": "快速增长(默认画像冠军)",
+          "report_note": "报告 4.48% (全期, ⏳暂定; 收益弱风险高)",
+          "overrides": {},
+          "cagr": 0.012547988183038594,
+          "ann_vol": 0.24165376404243283,
+          "max_drawdown": 0.46923914172358416,
+          "sharpe": 0.1753440584380616,
+          "total_return": 0.13852653021934414,
+          "n_days": 2525,
+          "n_trades": 2576,
+          "total_cost": 47495.69,
+          "cost_pct_of_final": 0.04171680310982766,
+          "final_value": 1138526.53,
+          "turnover_ann": 2.7339181128798753
+        },
+        "cyclicals_baseline": {
+          "label": "周期·诚实基线(可部署)",
+          "report_note": "报告 6.43% (全期基线; 近5年 11.57%/DD22%, 唯一可泛化配置)",
+          "overrides": {
+            "trailing_stop_pct": 0.25
+          },
+          "cagr": 0.06491969759757454,
+          "ann_vol": 0.22339425392620255,
+          "max_drawdown": 0.3459396754657956,
+          "sharpe": 0.4047063822366463,
+          "total_return": 0.9239777752268543,
+          "n_days": 2525,
+          "n_trades": 2868,
+          "total_cost": 67372.91,
+          "cost_pct_of_final": 0.03501750987134938,
+          "final_value": 1923977.78,
+          "turnover_ann": 2.8130504229726245
+        },
+        "cyclicals_overfit": {
+          "label": "周期·全样本冠军(海市蜃楼·仅对照)",
+          "report_note": "报告 11.11% (全期; 判定2015泡沫过拟合·禁部署)",
+          "overrides": {
+            "sector_tier": "core_no_prop",
+            "mktcap_max_yi": 100.0,
+            "max_per_sector": 2,
+            "trailing_stop_pct": 0.25
+          },
+          "cagr": 0.07003704192459992,
+          "ann_vol": 0.24333247882822065,
+          "max_drawdown": 0.4321190045817114,
+          "sharpe": 0.41150663893417505,
+          "total_return": 1.022368681908787,
+          "n_days": 2525,
+          "n_trades": 2889,
+          "total_cost": 88532.56,
+          "cost_pct_of_final": 0.04377666677291639,
+          "final_value": 2022368.68,
+          "turnover_ann": 3.731864010459832
+        },
+        "turnarounds": {
+          "label": "困境反转(低杠杆冠军)",
+          "report_note": "报告 15.88% (2010-01 起全期, 达标存疑/幸存者偏差重)",
+          "overrides": {
+            "rebalance_months": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "top_n": 10,
+            "max_debt_ratio": 0.6
+          },
+          "cagr": 0.1401999735902415,
+          "ann_vol": 0.25151609957561977,
+          "max_drawdown": 0.39519381078473315,
+          "sharpe": 0.6679648681614511,
+          "total_return": 2.915805251641116,
+          "n_days": 2525,
+          "n_trades": 481,
+          "total_cost": 50562.64,
+          "cost_pct_of_final": 0.012912450116077646,
+          "final_value": 3915805.25,
+          "turnover_ann": 1.7018620607781838
+        },
+        "asset_plays": {
+          "label": "隐蔽资产 K4(冠军)",
+          "report_note": "报告 14.73% 全期 / 8.38% 2016+ (诚实值 ~8%)",
+          "overrides": {
+            "rebalance_months": [
+              6,
+              12
+            ],
+            "pb_max": 1.0,
+            "sort_by": "net_cash",
+            "mktcap_min_yi": 50.0,
+            "mktcap_max_yi": 300.0,
+            "trend_ma_days": 150
+          },
+          "cagr": 0.08383115578233591,
+          "ann_vol": 0.2089041237030715,
+          "max_drawdown": 0.32169990570285056,
+          "sharpe": 0.5047997472832043,
+          "total_return": 1.3106542777166759,
+          "n_days": 2525,
+          "n_trades": 437,
+          "total_cost": 35213.65,
+          "cost_pct_of_final": 0.015239688040064021,
+          "final_value": 2310654.28,
+          "turnover_ann": 1.2730958096024698
+        }
+      },
+      "combo_slow40": {
+        "on_change": {
+          "cagr": 0.16240711933482377,
+          "ann_vol": 0.179312460957906,
+          "max_drawdown": 0.19090688798015298,
+          "sharpe": 0.9615578627713087,
+          "total_return": 3.7860412137116475,
+          "n_days": 2525,
+          "engine_metrics": {
+            "total_return": 3.786041,
+            "annualized_return": 0.162361,
+            "max_drawdown": 0.190907,
+            "sharpe_ratio": 0.7943,
+            "win_rate": 0.4946,
+            "profit_factor": 4.0096,
+            "avg_win": 0.325367,
+            "avg_loss": -0.128719,
+            "total_trades": 742,
+            "round_trip_count": 372,
+            "daily_turnover_rate": 0.01004
+          },
+          "n_trades": 742,
+          "buy_value": 30344397.6,
+          "sell_value": 29662630.29,
+          "total_cost": 47686.16,
+          "cost_pct_of_final": 0.009963592465806992,
+          "final_value": 4786041.21,
+          "turnover_ann": 1.2185646087617716
+        },
+        "monthly": {
+          "cagr": 0.1572871010354424,
+          "ann_vol": 0.1743018919647027,
+          "max_drawdown": 0.1876239357807783,
+          "sharpe": 0.9577949586636634,
+          "total_return": 3.571205439984409,
+          "n_days": 2525,
+          "engine_metrics": {
+            "total_return": 3.571205,
+            "annualized_return": 0.157243,
+            "max_drawdown": 0.187624,
+            "sharpe_ratio": 0.7857,
+            "win_rate": 0.557,
+            "profit_factor": 3.385,
+            "avg_win": 0.226388,
+            "avg_loss": -0.09698,
+            "total_trades": 3037,
+            "round_trip_count": 2542,
+            "daily_turnover_rate": 0.012714
+          },
+          "n_trades": 3037,
+          "buy_value": 37927767.8,
+          "sell_value": 37072575.75,
+          "total_cost": 67824.85,
+          "cost_pct_of_final": 0.014837410074841047,
+          "final_value": 4571205.44,
+          "turnover_ann": 1.5431025249114814
+        }
+      },
+      "csi300": {
+        "cagr": 0.03261531896460168,
+        "ann_vol": 0.18754071434524688,
+        "max_drawdown": 0.456026204848648,
+        "sharpe": 0.2716782626125515,
+        "total_return": 0.396414942811699,
+        "n_days": 2525
+      }
+    },
+    "full": {
+      "window": [
+        "2010-01-01",
+        "2026-06-01"
+      ],
+      "champions": {
+        "slow_growers": {
+          "label": "缓慢增长(已发布冠军)",
+          "report_note": "报告 14.28% (2010-06 起全期, ✅已采纳发布)",
+          "overrides": {
+            "min_div_yield": 0.035,
+            "mktcap_min_yi": 300.0,
+            "top_n": 12,
+            "max_per_sector": 2,
+            "rebalance_months": [
+              6
+            ]
+          },
+          "cagr": 0.13901543154096596,
+          "ann_vol": 0.17865068628185465,
+          "max_drawdown": 0.23851397096122562,
+          "sharpe": 0.8459829864887204,
+          "total_return": 7.457166170319196,
+          "n_days": 3981,
+          "n_trades": 139,
+          "total_cost": 52501.55,
+          "cost_pct_of_final": 0.006207936506959342,
+          "final_value": 8457166.17,
+          "turnover_ann": 0.6101290307496817
+        },
+        "stalwarts": {
+          "label": "稳健增长 D基(进取冠军)",
+          "report_note": "报告 11.24% (全期, ⏳暂定; 均衡变体 Sh0.56/DD37%)",
+          "overrides": {
+            "peg_max": 1.0,
+            "rebalance_months": [
+              6
+            ],
+            "min_div_yield": 0.03,
+            "np_cagr_min": 0.08,
+            "np_cagr_max": 0.2,
+            "max_per_sector": 2,
+            "mktcap_min_yi": 250.0
+          },
+          "cagr": 0.11244428150298358,
+          "ann_vol": 0.1914072376890778,
+          "max_drawdown": 0.4715747965441567,
+          "sharpe": 0.6745236214831366,
+          "total_return": 4.742190892361002,
+          "n_days": 3981,
+          "n_trades": 129,
+          "total_cost": 36784.9,
+          "cost_pct_of_final": 0.00640607410689282,
+          "final_value": 5742190.89,
+          "turnover_ann": 0.6318223984025232
+        },
+        "fast_growers": {
+          "label": "快速增长(默认画像冠军)",
+          "report_note": "报告 4.48% (全期, ⏳暂定; 收益弱风险高)",
+          "overrides": {},
+          "cagr": 0.04477785992346717,
+          "ann_vol": 0.24979537176809546,
+          "max_drawdown": 0.4752821940427441,
+          "sharpe": 0.3078976828047689,
+          "total_return": 1.051350320878976,
+          "n_days": 3981,
+          "n_trades": 3620,
+          "total_cost": 108377.82,
+          "cost_pct_of_final": 0.0528324288110263,
+          "final_value": 2051350.32,
+          "turnover_ann": 2.7556569918790075
+        },
+        "cyclicals_baseline": {
+          "label": "周期·诚实基线(可部署)",
+          "report_note": "报告 6.43% (全期基线; 近5年 11.57%/DD22%, 唯一可泛化配置)",
+          "overrides": {
+            "trailing_stop_pct": 0.25
+          },
+          "cagr": 0.06434255323624449,
+          "ann_vol": 0.2421529450543549,
+          "max_drawdown": 0.4648185007402469,
+          "sharpe": 0.38929281271040933,
+          "total_return": 1.7810072151016345,
+          "n_days": 3981,
+          "n_trades": 4454,
+          "total_cost": 125027.31,
+          "cost_pct_of_final": 0.04495756325947799,
+          "final_value": 2781007.22,
+          "turnover_ann": 2.9092724321970262
+        },
+        "cyclicals_overfit": {
+          "label": "周期·全样本冠军(海市蜃楼·仅对照)",
+          "report_note": "报告 11.11% (全期; 判定2015泡沫过拟合·禁部署)",
+          "overrides": {
+            "sector_tier": "core_no_prop",
+            "mktcap_max_yi": 100.0,
+            "max_per_sector": 2,
+            "trailing_stop_pct": 0.25
+          },
+          "cagr": 0.1111233168556065,
+          "ann_vol": 0.2525741187457466,
+          "max_drawdown": 0.4567289382646639,
+          "sharpe": 0.5605702329027408,
+          "total_return": 4.631367201693364,
+          "n_days": 3981,
+          "n_trades": 3597,
+          "total_cost": 283688.07,
+          "cost_pct_of_final": 0.050376411389846165,
+          "final_value": 5631367.2,
+          "turnover_ann": 3.6598593152657317
+        },
+        "turnarounds": {
+          "label": "困境反转(低杠杆冠军)",
+          "report_note": "报告 15.88% (2010-01 起全期, 达标存疑/幸存者偏差重)",
+          "overrides": {
+            "rebalance_months": [
+              3,
+              6,
+              9,
+              12
+            ],
+            "top_n": 10,
+            "max_debt_ratio": 0.6
+          },
+          "cagr": 0.16142780585854255,
+          "ann_vol": 0.24592667258096504,
+          "max_drawdown": 0.39119310087764336,
+          "sharpe": 0.7554511740401636,
+          "total_return": 10.642132608647579,
+          "n_days": 3981,
+          "n_trades": 562,
+          "total_cost": 162080.51,
+          "cost_pct_of_final": 0.013921891981058263,
+          "final_value": 11642132.61,
+          "turnover_ann": 1.6359012413316223
+        },
+        "asset_plays": {
+          "label": "隐蔽资产 K4(冠军)",
+          "report_note": "报告 14.73% 全期 / 8.38% 2016+ (诚实值 ~8%)",
+          "overrides": {
+            "rebalance_months": [
+              6,
+              12
+            ],
+            "pb_max": 1.0,
+            "sort_by": "net_cash",
+            "mktcap_min_yi": 50.0,
+            "mktcap_max_yi": 300.0,
+            "trend_ma_days": 150
+          },
+          "cagr": 0.14730993711079088,
+          "ann_vol": 0.19972593408166195,
+          "max_drawdown": 0.3299284412263668,
+          "sharpe": 0.8139540000565433,
+          "total_return": 8.526018954787771,
+          "n_days": 3981,
+          "n_trades": 447,
+          "total_cost": 153885.69,
+          "cost_pct_of_final": 0.01615425005288551,
+          "final_value": 9526018.95,
+          "turnover_ann": 1.182591236111584
+        }
+      },
+      "combo_slow40": {
+        "on_change": {
+          "cagr": 0.16630034530110382,
+          "ann_vol": 0.18697517577519748,
+          "max_drawdown": 0.29919741731079486,
+          "sharpe": 0.9481857511311348,
+          "total_return": 11.469678436457183,
+          "n_days": 3981,
+          "engine_metrics": {
+            "total_return": 11.469678,
+            "annualized_return": 0.16627,
+            "max_drawdown": 0.299197,
+            "sharpe_ratio": 0.7877,
+            "win_rate": 0.5111,
+            "profit_factor": 4.1268,
+            "avg_win": 0.375461,
+            "avg_loss": -0.129339,
+            "total_trades": 870,
+            "round_trip_count": 452,
+            "daily_turnover_rate": 0.009878
+          },
+          "n_trades": 870,
+          "buy_value": 85293028.52,
+          "sell_value": 85114975.59,
+          "total_cost": 136269.62,
+          "cost_pct_of_final": 0.010928078138273177,
+          "final_value": 12469678.44,
+          "turnover_ann": 1.1988560508208352
+        },
+        "monthly": {
+          "cagr": 0.16719645850569087,
+          "ann_vol": 0.18316733967711907,
+          "max_drawdown": 0.2702827827840858,
+          "sharpe": 0.9683987902590222,
+          "total_return": 11.627762642540619,
+          "n_days": 3981,
+          "engine_metrics": {
+            "total_return": 11.627763,
+            "annualized_return": 0.167166,
+            "max_drawdown": 0.270283,
+            "sharpe_ratio": 0.8046,
+            "win_rate": 0.573,
+            "profit_factor": 3.5951,
+            "avg_win": 0.239616,
+            "avg_loss": -0.100081,
+            "total_trades": 3491,
+            "round_trip_count": 2939,
+            "daily_turnover_rate": 0.012479
+          },
+          "n_trades": 3491,
+          "buy_value": 112373387.27,
+          "sell_value": 111746153.57,
+          "total_cost": 185176.47,
+          "cost_pct_of_final": 0.014664234639632725,
+          "final_value": 12627762.64,
+          "turnover_ann": 1.5144972799080412
+        }
+      },
+      "csi300": {
+        "cagr": 0.01939098698560482,
+        "ann_vol": 0.21531671705623134,
+        "max_drawdown": 0.46696138837984813,
+        "sharpe": 0.2007221168025499,
+        "total_return": 0.3702805673974823,
+        "n_days": 3981
+      }
+    }
+  },
+  "champions_meta": [
+    {
+      "key": "slow_growers",
+      "label": "缓慢增长(已发布冠军)",
+      "overrides": {
+        "min_div_yield": 0.035,
+        "mktcap_min_yi": 300.0,
+        "top_n": 12,
+        "max_per_sector": 2,
+        "rebalance_months": [
+          6
+        ]
+      },
+      "report_note": "报告 14.28% (2010-06 起全期, ✅已采纳发布)"
+    },
+    {
+      "key": "stalwarts",
+      "label": "稳健增长 D基(进取冠军)",
+      "overrides": {
+        "peg_max": 1.0,
+        "rebalance_months": [
+          6
+        ],
+        "min_div_yield": 0.03,
+        "np_cagr_min": 0.08,
+        "np_cagr_max": 0.2,
+        "max_per_sector": 2,
+        "mktcap_min_yi": 250.0
+      },
+      "report_note": "报告 11.24% (全期, ⏳暂定; 均衡变体 Sh0.56/DD37%)"
+    },
+    {
+      "key": "fast_growers",
+      "label": "快速增长(默认画像冠军)",
+      "overrides": {},
+      "report_note": "报告 4.48% (全期, ⏳暂定; 收益弱风险高)"
+    },
+    {
+      "key": "cyclicals_baseline",
+      "label": "周期·诚实基线(可部署)",
+      "overrides": {
+        "trailing_stop_pct": 0.25
+      },
+      "report_note": "报告 6.43% (全期基线; 近5年 11.57%/DD22%, 唯一可泛化配置)"
+    },
+    {
+      "key": "cyclicals_overfit",
+      "label": "周期·全样本冠军(海市蜃楼·仅对照)",
+      "overrides": {
+        "sector_tier": "core_no_prop",
+        "mktcap_max_yi": 100.0,
+        "max_per_sector": 2,
+        "trailing_stop_pct": 0.25
+      },
+      "report_note": "报告 11.11% (全期; 判定2015泡沫过拟合·禁部署)"
+    },
+    {
+      "key": "turnarounds",
+      "label": "困境反转(低杠杆冠军)",
+      "overrides": {
+        "rebalance_months": [
+          3,
+          6,
+          9,
+          12
+        ],
+        "top_n": 10,
+        "max_debt_ratio": 0.6
+      },
+      "report_note": "报告 15.88% (2010-01 起全期, 达标存疑/幸存者偏差重)"
+    },
+    {
+      "key": "asset_plays",
+      "label": "隐蔽资产 K4(冠军)",
+      "overrides": {
+        "rebalance_months": [
+          6,
+          12
+        ],
+        "pb_max": 1.0,
+        "sort_by": "net_cash",
+        "mktcap_min_yi": 50.0,
+        "mktcap_max_yi": 300.0,
+        "trend_ma_days": 150
+      },
+      "report_note": "报告 14.73% 全期 / 8.38% 2016+ (诚实值 ~8%)"
+    }
+  ]
+}

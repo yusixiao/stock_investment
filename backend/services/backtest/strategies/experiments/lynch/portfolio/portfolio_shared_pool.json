@@ -1,0 +1,172 @@
+{
+  "since2016": {
+    "window": [
+      "2016-01-01",
+      "2026-06-01"
+    ],
+    "weights": {
+      "slow_growers": 0.4,
+      "turnarounds": 0.3,
+      "asset_plays": 0.3
+    },
+    "modes": {
+      "monthly": {
+        "cagr": 0.1572871010354424,
+        "ann_vol": 0.1743018919647027,
+        "max_drawdown": 0.1876239357807783,
+        "sharpe": 0.9577949586636634,
+        "total_return": 3.571205439984409,
+        "n_days": 2525,
+        "engine_metrics": {
+          "total_return": 3.571205,
+          "annualized_return": 0.157243,
+          "max_drawdown": 0.187624,
+          "sharpe_ratio": 0.7857,
+          "win_rate": 0.557,
+          "profit_factor": 3.385,
+          "avg_win": 0.226388,
+          "avg_loss": -0.09698,
+          "total_trades": 3037,
+          "round_trip_count": 2542,
+          "daily_turnover_rate": 0.012714
+        },
+        "n_trades": 3037,
+        "buy_value": 37927767.8,
+        "sell_value": 37072575.75,
+        "total_cost": 67824.85,
+        "cost_pct_of_final": 0.014837410074841047,
+        "final_value": 4571205.44,
+        "turnover_ann": 1.5431025249114814
+      },
+      "on_change": {
+        "cagr": 0.16240711933482377,
+        "ann_vol": 0.179312460957906,
+        "max_drawdown": 0.19090688798015298,
+        "sharpe": 0.9615578627713087,
+        "total_return": 3.7860412137116475,
+        "n_days": 2525,
+        "engine_metrics": {
+          "total_return": 3.786041,
+          "annualized_return": 0.162361,
+          "max_drawdown": 0.190907,
+          "sharpe_ratio": 0.7943,
+          "win_rate": 0.4946,
+          "profit_factor": 4.0096,
+          "avg_win": 0.325367,
+          "avg_loss": -0.128719,
+          "total_trades": 742,
+          "round_trip_count": 372,
+          "daily_turnover_rate": 0.01004
+        },
+        "n_trades": 742,
+        "buy_value": 30344397.6,
+        "sell_value": 29662630.29,
+        "total_cost": 47686.16,
+        "cost_pct_of_final": 0.009963592465806992,
+        "final_value": 4786041.21,
+        "turnover_ann": 1.2185646087617716
+      }
+    },
+    "exp2_estimate": {
+      "cagr": 0.13459991252417458,
+      "ann_vol": 0.16031676965920597,
+      "max_drawdown": 0.21337903040489026,
+      "sharpe": 0.898412437752704,
+      "total_return": 2.7202726332252283,
+      "n_days": 2525
+    },
+    "csi300": {
+      "cagr": 0.03261531896460168,
+      "ann_vol": 0.18754071434524688,
+      "max_drawdown": 0.456026204848648,
+      "sharpe": 0.2716782626125515,
+      "total_return": 0.396414942811699,
+      "n_days": 2525
+    }
+  },
+  "full": {
+    "window": [
+      "2010-01-01",
+      "2026-06-01"
+    ],
+    "weights": {
+      "slow_growers": 0.4,
+      "turnarounds": 0.3,
+      "asset_plays": 0.3
+    },
+    "modes": {
+      "monthly": {
+        "cagr": 0.16719645850569087,
+        "ann_vol": 0.18316733967711907,
+        "max_drawdown": 0.2702827827840858,
+        "sharpe": 0.9683987902590222,
+        "total_return": 11.627762642540619,
+        "n_days": 3981,
+        "engine_metrics": {
+          "total_return": 11.627763,
+          "annualized_return": 0.167166,
+          "max_drawdown": 0.270283,
+          "sharpe_ratio": 0.8046,
+          "win_rate": 0.573,
+          "profit_factor": 3.5951,
+          "avg_win": 0.239616,
+          "avg_loss": -0.100081,
+          "total_trades": 3491,
+          "round_trip_count": 2939,
+          "daily_turnover_rate": 0.012479
+        },
+        "n_trades": 3491,
+        "buy_value": 112373387.27,
+        "sell_value": 111746153.57,
+        "total_cost": 185176.47,
+        "cost_pct_of_final": 0.014664234639632725,
+        "final_value": 12627762.64,
+        "turnover_ann": 1.5144972799080412
+      },
+      "on_change": {
+        "cagr": 0.16630034530110382,
+        "ann_vol": 0.18697517577519748,
+        "max_drawdown": 0.29919741731079486,
+        "sharpe": 0.9481857511311348,
+        "total_return": 11.469678436457183,
+        "n_days": 3981,
+        "engine_metrics": {
+          "total_return": 11.469678,
+          "annualized_return": 0.16627,
+          "max_drawdown": 0.299197,
+          "sharpe_ratio": 0.7877,
+          "win_rate": 0.5111,
+          "profit_factor": 4.1268,
+          "avg_win": 0.375461,
+          "avg_loss": -0.129339,
+          "total_trades": 870,
+          "round_trip_count": 452,
+          "daily_turnover_rate": 0.009878
+        },
+        "n_trades": 870,
+        "buy_value": 85293028.52,
+        "sell_value": 85114975.59,
+        "total_cost": 136269.62,
+        "cost_pct_of_final": 0.010928078138273177,
+        "final_value": 12469678.44,
+        "turnover_ann": 1.1988560508208352
+      }
+    },
+    "exp2_estimate": {
+      "cagr": 0.14331823962839962,
+      "ann_vol": 0.15706198155101425,
+      "max_drawdown": 0.2081397231132882,
+      "sharpe": 0.9642697588744726,
+      "total_return": 7.996721807310443,
+      "n_days": 3981
+    },
+    "csi300": {
+      "cagr": 0.01939098698560482,
+      "ann_vol": 0.21531671705623134,
+      "max_drawdown": 0.46696138837984813,
+      "sharpe": 0.2007221168025499,
+      "total_return": 0.3702805673974823,
+      "n_days": 3981
+    }
+  }
+}

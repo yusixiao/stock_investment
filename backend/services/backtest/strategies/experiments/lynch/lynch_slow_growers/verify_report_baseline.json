@@ -1,0 +1,62 @@
+{
+  "purpose": "slow_growers 冠军报告头条值(2010-06 起 14.28%)精确复现·INDUSTRY_NAME 修复后终局判据",
+  "champion_overrides": {
+    "min_div_yield": 0.035,
+    "mktcap_min_yi": 300.0,
+    "top_n": 12,
+    "max_per_sector": 2,
+    "rebalance_months": [
+      6
+    ]
+  },
+  "initial_capital": 1000000,
+  "cases": {
+    "report_2010_06": {
+      "window": [
+        "2010-06-01",
+        "2026-06-01"
+      ],
+      "cagr": 0.1427769502689724,
+      "ann_vol": 0.18090837458587883,
+      "max_drawdown": 0.23851397096122562,
+      "sharpe": 0.8567306273885474,
+      "total_return": 7.457166170000001,
+      "n_days": 3882,
+      "n_trades": 139,
+      "total_cost": 52501.55,
+      "cost_pct_of_final": 0.006207936506959342,
+      "final_value": 8457166.17,
+      "turnover_ann": 0.6146718083816313,
+      "expect": {
+        "cagr": "14.28%",
+        "total_return": "745.72%",
+        "max_drawdown": "23.85%",
+        "n_trades": 139,
+        "role": "报告头条值·精确复现判据"
+      }
+    },
+    "report_2010_01": {
+      "window": [
+        "2010-01-01",
+        "2026-06-01"
+      ],
+      "cagr": 0.13901543154096596,
+      "ann_vol": 0.17865068628185465,
+      "max_drawdown": 0.23851397096122562,
+      "sharpe": 0.8459829864887204,
+      "total_return": 7.457166170000001,
+      "n_days": 3981,
+      "n_trades": 139,
+      "total_cost": 52501.55,
+      "cost_pct_of_final": 0.006207936506959342,
+      "final_value": 8457166.17,
+      "turnover_ann": 0.6101290307496817,
+      "expect": {
+        "cagr": "13.90%",
+        "max_drawdown": "23.85%",
+        "n_trades": 139,
+        "role": "报告注记口径·交叉校验(应与 2010-06 同 trades/DD)"
+      }
+    }
+  }
+}

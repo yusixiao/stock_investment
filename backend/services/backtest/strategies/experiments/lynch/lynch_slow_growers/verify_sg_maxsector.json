@@ -1,0 +1,228 @@
+{
+  "purpose": "slow_growers 下降归因:固定冠军配置,仅扫 max_per_sector,验证行业数据回归传导",
+  "base_overrides": {
+    "min_div_yield": 0.035,
+    "mktcap_min_yi": 300.0,
+    "top_n": 12,
+    "rebalance_months": [
+      6
+    ]
+  },
+  "sweep_param": "max_per_sector",
+  "sweep_values": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "windows": {
+    "since2016": {
+      "window": [
+        "2016-01-01",
+        "2026-06-01"
+      ],
+      "by_max_per_sector": {
+        "0": {
+          "overrides": {
+            "min_div_yield": 0.035,
+            "mktcap_min_yi": 300.0,
+            "top_n": 12,
+            "rebalance_months": [
+              6
+            ],
+            "max_per_sector": 0
+          },
+          "cagr": 0.11933082380012094,
+          "ann_vol": 0.14501310057109476,
+          "max_drawdown": 0.217307273475985,
+          "sharpe": 0.8797618592740385,
+          "total_return": 2.2311392634263254,
+          "n_days": 2525,
+          "n_trades": 146,
+          "total_cost": 11426.37,
+          "cost_pct_of_final": 0.003536327892803316,
+          "final_value": 3231139.26,
+          "turnover_ann": 0.3864378267331504
+        },
+        "1": {
+          "overrides": {
+            "min_div_yield": 0.035,
+            "mktcap_min_yi": 300.0,
+            "top_n": 12,
+            "rebalance_months": [
+              6
+            ],
+            "max_per_sector": 1
+          },
+          "cagr": 0.15623594817944952,
+          "ann_vol": 0.16988860190744293,
+          "max_drawdown": 0.23158577512519407,
+          "sharpe": 0.9724083903932018,
+          "total_return": 3.528192919795419,
+          "n_days": 2525,
+          "n_trades": 108,
+          "total_cost": 25759.66,
+          "cost_pct_of_final": 0.005688729207507286,
+          "final_value": 4528192.92,
+          "turnover_ann": 0.6615390923642186
+        },
+        "2": {
+          "overrides": {
+            "min_div_yield": 0.035,
+            "mktcap_min_yi": 300.0,
+            "top_n": 12,
+            "rebalance_months": [
+              6
+            ],
+            "max_per_sector": 2
+          },
+          "cagr": 0.14105787724543317,
+          "ann_vol": 0.16247765885318458,
+          "max_drawdown": 0.23297110314507563,
+          "sharpe": 0.9247048664478423,
+          "total_return": 2.946566851034531,
+          "n_days": 2525,
+          "n_trades": 127,
+          "total_cost": 22322.9,
+          "cost_pct_of_final": 0.005656283138451926,
+          "final_value": 3946566.85,
+          "turnover_ann": 0.6547252243599638
+        },
+        "3": {
+          "overrides": {
+            "min_div_yield": 0.035,
+            "mktcap_min_yi": 300.0,
+            "top_n": 12,
+            "rebalance_months": [
+              6
+            ],
+            "max_per_sector": 3
+          },
+          "cagr": 0.13742742675125452,
+          "ann_vol": 0.15387887232302525,
+          "max_drawdown": 0.20840095532090597,
+          "sharpe": 0.9460448973100366,
+          "total_return": 2.8178670005542488,
+          "n_days": 2525,
+          "n_trades": 133,
+          "total_cost": 20064.46,
+          "cost_pct_of_final": 0.005255411950269351,
+          "final_value": 3817867.0,
+          "turnover_ann": 0.6187259150048389
+        }
+      },
+      "csi300": {
+        "cagr": 0.03261531896460168,
+        "ann_vol": 0.18754071434524688,
+        "max_drawdown": 0.456026204848648,
+        "sharpe": 0.2716782626125515,
+        "total_return": 0.396414942811699,
+        "n_days": 2525
+      }
+    },
+    "full": {
+      "window": [
+        "2010-01-01",
+        "2026-06-01"
+      ],
+      "by_max_per_sector": {
+        "0": {
+          "overrides": {
+            "min_div_yield": 0.035,
+            "mktcap_min_yi": 300.0,
+            "top_n": 12,
+            "rebalance_months": [
+              6
+            ],
+            "max_per_sector": 0
+          },
+          "cagr": 0.12726802031578788,
+          "ann_vol": 0.16999535047519418,
+          "max_drawdown": 0.23851397096122562,
+          "sharpe": 0.8167831628479105,
+          "total_return": 6.134672760466215,
+          "n_days": 3981,
+          "n_trades": 162,
+          "total_cost": 31138.94,
+          "cost_pct_of_final": 0.004364452324088735,
+          "final_value": 7134672.76,
+          "turnover_ann": 0.39931721639897805
+        },
+        "1": {
+          "overrides": {
+            "min_div_yield": 0.035,
+            "mktcap_min_yi": 300.0,
+            "top_n": 12,
+            "rebalance_months": [
+              6
+            ],
+            "max_per_sector": 1
+          },
+          "cagr": 0.14827879675872002,
+          "ann_vol": 0.18322206846470185,
+          "max_drawdown": 0.23851397096122562,
+          "sharpe": 0.8753089285498116,
+          "total_return": 8.658827892632669,
+          "n_days": 3981,
+          "n_trades": 122,
+          "total_cost": 60294.09,
+          "cost_pct_of_final": 0.0062423818738126195,
+          "final_value": 9658827.89,
+          "turnover_ann": 0.6298299033323616
+        },
+        "2": {
+          "overrides": {
+            "min_div_yield": 0.035,
+            "mktcap_min_yi": 300.0,
+            "top_n": 12,
+            "rebalance_months": [
+              6
+            ],
+            "max_per_sector": 2
+          },
+          "cagr": 0.13901543154096596,
+          "ann_vol": 0.17865068628185465,
+          "max_drawdown": 0.23851397096122562,
+          "sharpe": 0.8459829864887204,
+          "total_return": 7.457166170319196,
+          "n_days": 3981,
+          "n_trades": 139,
+          "total_cost": 52501.55,
+          "cost_pct_of_final": 0.006207936506959342,
+          "final_value": 8457166.17,
+          "turnover_ann": 0.6101290307496817
+        },
+        "3": {
+          "overrides": {
+            "min_div_yield": 0.035,
+            "mktcap_min_yi": 300.0,
+            "top_n": 12,
+            "rebalance_months": [
+              6
+            ],
+            "max_per_sector": 3
+          },
+          "cagr": 0.1318155371152654,
+          "ann_vol": 0.1748948186769975,
+          "max_drawdown": 0.23851397096122562,
+          "sharpe": 0.822696582398959,
+          "total_return": 6.621723522667936,
+          "n_days": 3981,
+          "n_trades": 148,
+          "total_cost": 49928.59,
+          "cost_pct_of_final": 0.006550826968364797,
+          "final_value": 7621723.52,
+          "turnover_ann": 0.5962094739667487
+        }
+      },
+      "csi300": {
+        "cagr": 0.01939098698560482,
+        "ann_vol": 0.21531671705623134,
+        "max_drawdown": 0.46696138837984813,
+        "sharpe": 0.2007221168025499,
+        "total_return": 0.3702805673974823,
+        "n_days": 3981
+      }
+    }
+  }
+}
