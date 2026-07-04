@@ -35,6 +35,19 @@ REQUEST_INTERVAL = 0.1
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2
 
+# A 股明细资产负债表按公司类型拆 4 张报表(spike 2026-07-02 验证 600519/601398/
+# 600030/601318/002415):普通工商/银行/券商/保险,每张均含明细科目 GOODWILL /
+# INTANGIBLE_ASSET / TOTAL_PARENT_EQUITY / MINORITY_EQUITY(简况 RPT_DMSK_FN_BALANCE
+# 仅 57 列、缺这些科目)。每张报表仅返回对应公司类型的数据,其余返回空(success=False
+# "返回数据为空")。按普通→银行→券商→保险顺序试,首个非空即用(普通型覆盖绝大多数,
+# 命中率最高)。全空(极少数特殊主体)兜底回简况,保证聚合字段(总资产/负债/权益)不回归。
+_BALANCE_DETAIL_REPORTS = (
+    "RPT_F10_FINANCE_GBALANCE",  # 普通工商(319 列)
+    "RPT_F10_FINANCE_BBALANCE",  # 银行(221 列)
+    "RPT_F10_FINANCE_SBALANCE",  # 券商(215 列)
+    "RPT_F10_FINANCE_IBALANCE",  # 保险(253 列)
+)
+
 
 def _fetch_page_with_retry(params: dict, code: str, report_name: str) -> dict | None:
     """单页请求 + 指数退避重试"""
@@ -105,6 +118,42 @@ def _fetch_report(
         time.sleep(REQUEST_INTERVAL)
 
     return all_records
+
+
+def _fetch_industry_fields(code: str) -> dict:
+    """补取行业旁路字段 INDUSTRY_NAME / INDUSTRY_CODE。
+
+    A 股类型明细资产负债表(G/B/S/I)不含这两个字段 —— 它们是简况
+    RPT_DMSK_FN_BALANCE 独有的旁路列,且行业分类跨期恒定。故命中明细报表后
+    只发一次请求(仅取最新 1 行)补回,避免整表二次分页拉取。
+    quality.get_industry / 选股 max_per_sector 依赖 INDUSTRY_NAME。
+    取不到(HK/US 或异常)返回 {},不阻断主流程。
+    """
+    security_code = code.split(".")[0] if "." in code else code
+    params = {
+        "reportName": "RPT_DMSK_FN_BALANCE",
+        "columns": "ALL",
+        "quoteColumns": "",
+        "filter": f'(SECURITY_CODE="{security_code}")',
+        "pageNumber": 1,
+        "pageSize": 1,
+        "sortTypes": -1,
+        "sortColumns": "REPORT_DATE",
+        "source": "HSF10",
+        "client": "PC",
+    }
+    data = _fetch_page_with_retry(params, code, "RPT_DMSK_FN_BALANCE(industry)")
+    if data is None or not data.get("success") or not data.get("result"):
+        return {}
+    records = data["result"].get("data") or []
+    if not records:
+        return {}
+    out = {}
+    for key in ("INDUSTRY_NAME", "INDUSTRY_CODE"):
+        val = records[0].get(key)
+        if val is not None:
+            out[key] = val
+    return out
 
 
 def _clean_record(record: dict) -> dict:
@@ -292,6 +341,21 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
         return _records_to_models(records, IncomeStatement)
 
     def fetch_balance(self, code: str) -> List[BalanceSheet]:
+        """资产负债表 — A 股走 4 张类型明细报表(含商誉/无形/归母权益),
+        按普通→银行→券商→保险试,首个非空即用;全空兜底回简况(保聚合字段)。
+
+        明细报表不含行业旁路字段 INDUSTRY_NAME/INDUSTRY_CODE(简况独有),命中后
+        补取注入 —— quality.get_industry / 选股 max_per_sector 依赖它;不补会导致
+        全市场行业塌成单桶。兜底走简况的路径本就带该字段,无需补。"""
+        for report_name in _BALANCE_DETAIL_REPORTS:
+            records = _fetch_report(report_name, code)
+            if records:
+                industry = _fetch_industry_fields(code)
+                for rec in records:
+                    for key, val in industry.items():
+                        rec.setdefault(key, val)
+                return _records_to_models(records, BalanceSheet)
+        # 全部明细报表为空(HK/US 或极少数特殊 A 股主体)→ 用简况兜底,不回归
         records = _fetch_report("RPT_DMSK_FN_BALANCE", code)
         return _records_to_models(records, BalanceSheet)
 

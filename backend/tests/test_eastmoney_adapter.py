@@ -151,22 +151,131 @@ class TestEastMoneyAdapterIncome:
 class TestEastMoneyAdapterBalance:
     @patch("backend.adapters.eastmoney_adapter.requests.get")
     def test_fetch_balance_success(self, mock_get):
-        mock_get.return_value = _mock_response(
+        # 首个明细报表(GBALANCE)非空即命中,并捕获简况所缺的明细科目
+        gbalance = _mock_response(
             [
                 {
                     "REPORT_DATE": "2025-12-31 00:00:00",
                     "TOTAL_ASSETS": 5000000000.0,
                     "TOTAL_LIABILITIES": 4000000000.0,
                     "TOTAL_EQUITY": 1000000000.0,
+                    "TOTAL_PARENT_EQUITY": 900000000.0,
+                    "GOODWILL": 12000000.0,
+                    "INTANGIBLE_ASSET": 34000000.0,
+                    "MINORITY_EQUITY": 100000000.0,
                 },
             ]
         )
+        # 明细报表不含行业字段,命中后单独补取简况的 INDUSTRY_NAME/INDUSTRY_CODE
+        industry = _mock_response(
+            [
+                {
+                    "REPORT_DATE": "2025-12-31 00:00:00",
+                    "INDUSTRY_NAME": "白酒Ⅱ",
+                    "INDUSTRY_CODE": "451700",
+                },
+            ]
+        )
+        mock_get.side_effect = [gbalance, industry]
         adapter = EastMoneyAdapter()
         records = adapter.fetch_balance("000001.SZ")
 
         assert len(records) == 1
-        assert isinstance(records[0], BalanceSheet)
-        assert records[0].TOTAL_ASSETS == 5000000000.0
+        r = records[0]
+        assert isinstance(r, BalanceSheet)
+        assert r.TOTAL_ASSETS == 5000000000.0
+        # 明细科目(简况报表所缺)已捕获
+        assert r.TOTAL_PARENT_EQUITY == 900000000.0
+        assert r.GOODWILL == 12000000.0
+        assert r.INTANGIBLE_ASSET == 34000000.0
+        assert r.MINORITY_EQUITY == 100000000.0
+        # 行业旁路字段已补回(选股 max_per_sector 依赖)
+        assert r.model_extra["INDUSTRY_NAME"] == "白酒Ⅱ"
+        assert r.model_extra["INDUSTRY_CODE"] == "451700"
+        # 命中明细(1)+ 补取行业(1),共 2 次
+        assert mock_get.call_count == 2
+        assert (
+            mock_get.call_args_list[0].kwargs["params"]["reportName"]
+            == "RPT_F10_FINANCE_GBALANCE"
+        )
+        # 补取用简况、且只拉 1 行
+        assert (
+            mock_get.call_args_list[1].kwargs["params"]["reportName"]
+            == "RPT_DMSK_FN_BALANCE"
+        )
+        assert mock_get.call_args_list[1].kwargs["params"]["pageSize"] == 1
+
+    @patch("backend.adapters.eastmoney_adapter.requests.get")
+    def test_fetch_balance_type_fallthrough(self, mock_get):
+        # 普通报表(GBALANCE)空 → 落到银行报表(BBALANCE)取数
+        empty = _mock_response([], success=True)
+        bank = _mock_response(
+            [
+                {
+                    "REPORT_DATE": "2025-12-31 00:00:00",
+                    "TOTAL_PARENT_EQUITY": 4.3e12,
+                    "MINORITY_EQUITY": 2.8e10,
+                },
+            ]
+        )
+        industry = _mock_response(
+            [{"REPORT_DATE": "2025-12-31 00:00:00", "INDUSTRY_NAME": "银行Ⅱ"}]
+        )
+        mock_get.side_effect = [empty, bank, industry]
+        adapter = EastMoneyAdapter()
+        records = adapter.fetch_balance("601398.SH")
+
+        assert len(records) == 1
+        assert records[0].TOTAL_PARENT_EQUITY == 4.3e12
+        assert records[0].model_extra["INDUSTRY_NAME"] == "银行Ⅱ"
+        # G 空 → B 命中(2)+ 补取行业(1),共 3 次
+        assert mock_get.call_count == 3
+        used = [c.kwargs["params"]["reportName"] for c in mock_get.call_args_list]
+        assert used == [
+            "RPT_F10_FINANCE_GBALANCE",
+            "RPT_F10_FINANCE_BBALANCE",
+            "RPT_DMSK_FN_BALANCE",
+        ]
+
+    @patch("backend.adapters.eastmoney_adapter.requests.get")
+    def test_fetch_balance_dmsk_fallback(self, mock_get):
+        # 4 张明细报表全空 → 兜底回简况 DMSK(保聚合字段,不回归)
+        empty = _mock_response([], success=True)
+        dmsk = _mock_response(
+            [
+                {
+                    "REPORT_DATE": "2025-12-31 00:00:00",
+                    "TOTAL_ASSETS": 8000000.0,
+                    "TOTAL_LIABILITIES": 5000000.0,
+                    "TOTAL_EQUITY": 3000000.0,
+                },
+            ]
+        )
+        mock_get.side_effect = [empty, empty, empty, empty, dmsk]
+        adapter = EastMoneyAdapter()
+        records = adapter.fetch_balance("999999.SH")
+
+        assert len(records) == 1
+        assert records[0].TOTAL_ASSETS == 8000000.0
+        assert mock_get.call_count == 5
+        used = [c.kwargs["params"]["reportName"] for c in mock_get.call_args_list]
+        assert used[-1] == "RPT_DMSK_FN_BALANCE"
+
+    @patch("backend.adapters.eastmoney_adapter.requests.get")
+    def test_fetch_balance_industry_fetch_fails_gracefully(self, mock_get):
+        # 明细命中但行业补取失败(接口异常/空)→ 仍返回记录,只是无行业字段,不阻断
+        gbalance = _mock_response(
+            [{"REPORT_DATE": "2025-12-31 00:00:00", "TOTAL_ASSETS": 5e9}]
+        )
+        industry_fail = _mock_response(None, success=False)
+        mock_get.side_effect = [gbalance, industry_fail]
+        adapter = EastMoneyAdapter()
+        records = adapter.fetch_balance("000001.SZ")
+
+        assert len(records) == 1
+        assert records[0].TOTAL_ASSETS == 5e9
+        assert "INDUSTRY_NAME" not in (records[0].model_extra or {})
+        assert mock_get.call_count == 2
 
 
 class TestEastMoneyAdapterCashflow:
