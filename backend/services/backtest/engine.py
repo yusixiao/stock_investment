@@ -111,6 +111,32 @@ class BacktestEngine:
             prices[sym] = close
         return bars, prices
 
+    def _valuation_prices(
+        self, idx: int, current_prices: dict[str, float]
+    ) -> dict[str, float]:
+        """持仓估值价表:在 ``current_prices``(仅今日有实盘 bar 的 symbol)基础上,
+        为**当前持仓**中今日缺 bar 者(停牌 / 残缺数据日)回退到 ≤ 今日的最近一根
+        daily bar。
+
+        ``get_bar_at(strict=False)`` 用 ``searchsorted(..., "right") - 1`` 取 ≤ 今日
+        的最后一根 bar,保证**无未来函数**。仅用于 ``snapshot`` 估值,不影响交易撮合
+        与涨跌停判定(那两条路径仍用 strict 的 ``current_prices`` / ``prev_closes``)。
+        只遍历持仓(通常 ≤ 数十只)且仅补今日缺价者,热路径开销可忽略。
+        某 symbol 全历史无任何 bar 时不补,交由 Portfolio 兜底成本价。
+        """
+        positions = self._broker.portfolio.get_positions()
+        if not positions:
+            return current_prices
+        valuation = dict(current_prices)
+        get_bar = self._market_data.get_bar_at
+        for sym in positions:
+            if sym in valuation:
+                continue
+            bar = get_bar(sym, idx, period="daily", strict=False)
+            if bar is not None:
+                valuation[sym] = float(bar["close"])
+        return valuation
+
     # ---------- 主循环 ----------
 
     def run(self) -> dict:
@@ -199,8 +225,12 @@ class BacktestEngine:
             self._strategy.on_buy(ctx)
 
             # 5) 快照 + prev_closes 滚动
+            # 估值用"最近可得价"回退:停牌 / 残缺数据日缺 bar 的持仓不再被
+            # 按成本价虚估(否则会把缺数据当成零涨跌)。prev_closes 用于涨跌停
+            # 判定,仍取 strict 的今日实盘价,不受估值回退影响。
+            valuation_prices = self._valuation_prices(idx, current_prices)
             equity_curve.append(
-                self._broker.portfolio.snapshot(current_date, current_prices)
+                self._broker.portfolio.snapshot(current_date, valuation_prices)
             )
             prev_closes = dict(current_prices)
 

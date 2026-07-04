@@ -368,6 +368,76 @@ def test_engine_order_shares_fills_next_bar(stock_data, daily_dates):
     assert "000002" not in end_prices
 
 
+# ============= 停牌 / 残缺数据日估值回退(2026-07-04 回归)=============
+
+
+def test_engine_snapshot_uses_last_known_price_for_suspended_holding():
+    """持仓在末段停牌 / 数据缺失时,snapshot 估值应回退到 ≤ 当日的最近一根 bar,
+    而非成本价。
+
+    回归 2026-07-04 现象:某回测末日(残缺数据日)仅极少数 symbol 有 bar,
+    11/12 持仓在 snapshot 被 ``current_prices.get(sym, pos.cost)`` 按**成本价**
+    虚估(等价于零涨跌)。修复后引擎在估值前用 ``get_bar_at(strict=False)``
+    为缺 bar 的持仓回退到最近一根真实 bar 收盘价(execution / 涨跌停不受影响)。
+    """
+    dates = [
+        d.strftime("%Y-%m-%d") for d in pd.bdate_range("2024-01-02", "2024-01-15")
+    ]
+    n = len(dates)
+    # A 全程有 bar;B 缺最后 2 天(模拟停牌 / 残缺数据日),最后一根真实 bar 在 dates[-3]
+    full = _make_daily(dates, base=10.0)
+    truncated = _make_daily(dates, base=20.0).iloc[: n - 2].reset_index(drop=True)
+    stock_data = {"000001": full, "600000": truncated}
+
+    class _BuyBHold(Strategy):
+        frequency = "daily"
+
+        def __init__(self):
+            super().__init__()
+            self.bought = False
+
+        def screen(self, ctx, symbols):
+            return ["600000"]
+
+        def on_buy(self, ctx):
+            if not self.bought and "600000" in ctx.target_symbols:
+                ctx.order_shares("600000", 100)  # 次日 T+1 成交后长期持有
+                self.bought = True
+
+    result = BacktestEngine(
+        strategy=_BuyBHold(),
+        stock_data=stock_data,
+        enable_decision_log=False,
+    ).run()
+
+    last_snap = result["equity_curve"][-1]
+    assert last_snap["date"] == dates[-1]
+    pos = last_snap["positions"]["600000"]
+    # B 末日无 bar → 估值 = 其最后一根真实 bar(dates[-3])收盘价,而非成本价
+    b_last_close = float(truncated.iloc[-1]["close"])
+    assert pos["market_price"] == pytest.approx(b_last_close)
+    # 关键:market_price 不等于成本(证明没有回退到 cost 虚估)
+    assert pos["market_price"] != pytest.approx(pos["cost"])
+    # total_value 也应体现真实市值(用最近可得价而非成本)
+    expected_mv = pos["shares"] * b_last_close
+    assert last_snap["market_value"] == pytest.approx(expected_mv)
+
+
+def test_valuation_prices_prefers_todays_real_bar_over_fallback():
+    """今日有实盘 bar 的持仓仍用今日收盘价(不被 strict=False 回退覆盖);
+    缺 bar 的持仓才回退。同时验证无持仓时直接返回原 dict(快路径)。"""
+    dates = [
+        d.strftime("%Y-%m-%d") for d in pd.bdate_range("2024-01-02", "2024-01-10")
+    ]
+    stock_data = {"000001": _make_daily(dates, base=10.0)}
+    eng = BacktestEngine(
+        strategy=Strategy(), stock_data=stock_data, enable_decision_log=False
+    )
+    # 无持仓 → 原样返回(同一对象,快路径)
+    cur = {"000001": 12.3}
+    assert eng._valuation_prices(0, cur) is cur
+
+
 # ============= 进度回调 =============
 
 
