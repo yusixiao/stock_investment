@@ -3,6 +3,11 @@ from config import SCHEDULER_HOUR, SCHEDULER_MINUTE
 
 scheduler = BackgroundScheduler()
 
+# 熔断早停市场的限次延迟重跑:数据源故障(如 baostock 10002007)多为间歇性,
+# 隔一段时间大概率恢复;最多重试 MARKET_RETRY_MAX_ATTEMPTS 次,仍失败则告警放弃。
+MARKET_RETRY_DELAY_MIN = 30
+MARKET_RETRY_MAX_ATTEMPTS = 3
+
 
 def _snapshot_job():
     """每日收盘快照:从 DuckDB 取 A 股最新收盘价 → 持仓估值。"""
@@ -32,20 +37,13 @@ def _snapshot_job():
     conn.close()
 
 
-def _market_update_job():
-    """每日增量更新三市场 K线数据;完成后失效 data_cache 并触发后台重建,
-    让回测/雷达页 6:30 之后立刻能用最新数据(含预算指标)。"""
+def _post_market_update_refresh():
+    """市场增量更新后的衍生刷新:流通股快照 + data_cache 失效重建。
+
+    主更新与熔断重跑成功后都需调用,避免用「半更新」的数据重建缓存。"""
     import logging
 
     logger = logging.getLogger(__name__)
-    logger.info("Scheduled market update started")
-    try:
-        from services.market_data.updaters.market_updater import update_all_markets
-
-        update_all_markets(parallel=True)
-    except Exception as e:
-        logger.error(f"Scheduled market update failed: {e}")
-        return
 
     # 刷新流通股快照(依赖 v_a_indicator 财务指标视图,需在市场更新之后)
     # data_pack §2 市值/流通市值 + EV/EBITDA 等衍生指标依赖此 parquet
@@ -67,6 +65,84 @@ def _market_update_job():
         logger.info("data_cache invalidated + async rebuild kicked off")
     except Exception as e:
         logger.error(f"data_cache rebuild kickoff failed: {e}")
+
+
+def _schedule_market_retry(markets, attempt):
+    """为熔断早停的市场安排一次性延迟重跑(APScheduler date 触发)。"""
+    import logging
+    from datetime import datetime, timedelta
+
+    logger = logging.getLogger(__name__)
+    run_date = datetime.now() + timedelta(minutes=MARKET_RETRY_DELAY_MIN)
+    scheduler.add_job(
+        _market_retry_job,
+        "date",
+        run_date=run_date,
+        args=[markets, attempt],
+        id=f"market_update_retry_{attempt}",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.warning(
+        f"Market update aborted for {markets}; scheduled retry attempt "
+        f"{attempt}/{MARKET_RETRY_MAX_ATTEMPTS} at {run_date:%Y-%m-%d %H:%M}"
+    )
+
+
+def _market_retry_job(markets, attempt):
+    """熔断重跑:逐个市场重试;若仍被熔断且未达上限则再排下一次,否则告警放弃。"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Market update retry attempt {attempt} for {markets}")
+    from services.market_data.updaters.market_updater import update_single_market
+
+    still_aborted = []
+    for market in markets:
+        try:
+            r = update_single_market(market)
+            if getattr(r, "aborted", False):
+                still_aborted.append(market)
+        except Exception as e:
+            logger.error(f"Market retry {market} failed: {e}")
+            still_aborted.append(market)
+
+    # 有市场这次成功了 → 用新数据重建衍生缓存
+    if len(still_aborted) < len(markets):
+        _post_market_update_refresh()
+
+    if still_aborted:
+        if attempt < MARKET_RETRY_MAX_ATTEMPTS:
+            _schedule_market_retry(still_aborted, attempt + 1)
+        else:
+            logger.error(
+                f"Market update still aborted after {MARKET_RETRY_MAX_ATTEMPTS} "
+                f"retries: {still_aborted} — manual intervention needed"
+            )
+
+
+def _market_update_job():
+    """每日增量更新三市场 K线数据;完成后失效 data_cache 并触发后台重建,
+    让回测/雷达页 6:30 之后立刻能用最新数据(含预算指标)。
+
+    若某市场因数据源故障被熔断早停(result.aborted),安排限次延迟重跑。"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    logger.info("Scheduled market update started")
+    try:
+        from services.market_data.updaters.market_updater import update_all_markets
+
+        results = update_all_markets(parallel=True)
+    except Exception as e:
+        logger.error(f"Scheduled market update failed: {e}")
+        return
+
+    _post_market_update_refresh()
+
+    aborted = [r.market for r in results if getattr(r, "aborted", False)]
+    if aborted:
+        _schedule_market_retry(aborted, attempt=1)
 
 
 def _financial_sync_job():

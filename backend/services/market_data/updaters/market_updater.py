@@ -71,6 +71,12 @@ MARKETS = ["A", "HK", "US"]
 MAX_RETRIES = 3
 RETRY_BACKOFF_CAP = 30
 
+# 熔断阈值:单市场增量中「连续失败」达到此数即判定数据源会话/服务端异常
+# (典型如 baostock 10002007 坏 session 之后后续全挂),立即中止本市场增量,
+# 避免在坏会话上硬跑完全市场空转数小时。任意一次成功(含成功但返回空)会把
+# 连续计数清零,故间歇性/零星失败不会误触发。中止后交由调度层限次延迟重跑。
+CONSECUTIVE_FAILURE_LIMIT = 20
+
 # 单股拉取间节流(秒),用于缓解 yfinance 的 Yahoo 限流。
 # A 股走 BaoStock 不需要节流。
 THROTTLE_SEC_BY_MARKET = {
@@ -99,6 +105,7 @@ class MarketUpdateResult:
     failed: int = 0
     errors: list = field(default_factory=list)
     elapsed_sec: float = 0.0
+    aborted: bool = False  # 连续失败触发熔断早停时置 True(未跑完全市场)
 
 
 @dataclass
@@ -185,6 +192,7 @@ def _update_market_kline(
         f"end_date={end_date} (last closed), throttle={throttle_sec}s"
     )
 
+    consecutive_failures = 0  # 熔断计数:任一成功(含成功但空)清零
     for idx, code in enumerate(codes, 1):
         try:
             latest = repo.get_latest_date(code)
@@ -209,6 +217,8 @@ def _update_market_kline(
                 continue
 
             records = _fetch_with_retry(adapter, code, start, end_date)
+            # fetch 成功(即使返回空)即证明数据源会话健康 → 重置熔断计数
+            consecutive_failures = 0
 
             if not records:
                 # 真正空数据(delisted / 区间无交易): 计为 skipped
@@ -221,9 +231,20 @@ def _update_market_kline(
         except Exception as e:
             # 重试后仍失败(含限流耗尽): 计为 failed,不再混入 skipped
             result.failed += 1
+            consecutive_failures += 1
             if len(result.errors) < 50:
                 result.errors.append(f"{code}: {e}")
             logger.error(f"[{market}] Failed {code}: {e}")
+
+            # 熔断:连续失败达阈值 → 判定会话/服务端故障,中止本市场,不再空转
+            if consecutive_failures >= CONSECUTIVE_FAILURE_LIMIT:
+                result.aborted = True
+                logger.error(
+                    f"[{market}] Circuit breaker tripped: {consecutive_failures} "
+                    f"consecutive failures, aborting remaining {total - idx} stocks "
+                    f"(likely data-source outage; will be retried later)"
+                )
+                break
 
         if throttle_sec > 0:
             time.sleep(throttle_sec)
@@ -347,8 +368,10 @@ def update_all_markets(parallel: bool = True) -> list[MarketUpdateResult]:
 
     total_updated = sum(r.updated for r in results)
     total_failed = sum(r.failed for r in results)
+    aborted = [r.market for r in results if r.aborted]
     logger.info(
-        f"All markets done: total_updated={total_updated} total_failed={total_failed}"
+        f"All markets done: total_updated={total_updated} "
+        f"total_failed={total_failed} aborted={aborted or 'none'}"
     )
 
     return results
