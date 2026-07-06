@@ -201,8 +201,31 @@ class TestBroker:
         assert abs(trades[0]["price"] - expected_price) < 0.01
 
     def test_insufficient_funds_rejects(self):
+        """现金连一手都买不起时,整单拒绝。"""
         b = self._make_broker(capital=1000)
         b.submit_order("600519.SH", shares=100, direction="buy")
         bar = {"open": 100.0, "close": 100.0, "high": 110.0, "low": 90.0}
         trades = b.fill_orders("2024-01-16", {"600519.SH": bar}, {"600519.SH": 95.0})
         assert len(trades) == 0
+
+    def test_insufficient_funds_partial_fill(self):
+        """资金不足以买满目标手数时,按可用现金买最大整百手【部分成交】,而非整单拒绝。
+
+        避免"差一点点就整单丢弃、导致近一整个仓位的现金空转"(等权满仓策略在
+        每次调仓最后一只上系统性发生)。排序靠前的已按目标买满,只有排序最后
+        (现金不够的)那只被缩减,策略排序优先级不受影响。
+        """
+        b = self._make_broker(capital=50_000)
+        b.submit_order("600519.SH", shares=1000, direction="buy")
+        bar = {"open": 100.0, "close": 100.0, "high": 110.0, "low": 90.0}
+        trades = b.fill_orders("2024-01-16", {"600519.SH": bar}, {"600519.SH": 95.0})
+        # fill_price = 100*(1+0.002)=100.2;50000/(100.2*1.0003)=498.8 → 整百手=400
+        assert len(trades) == 1
+        assert trades[0]["shares"] == 400
+        assert trades[0]["shares"] < 1000  # 确为部分成交,非整单
+        # 成交总成本不得超过初始可用现金,且现金非负
+        cost = trades[0]["shares"] * trades[0]["price"] + trades[0]["commission"]
+        assert cost <= 50_000
+        assert b.portfolio.cash >= 0
+        # 再多买一手(500)必然超出预算,验证 400 是可买上界
+        assert 500 * trades[0]["price"] + 5.0 > 50_000

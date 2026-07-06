@@ -91,13 +91,38 @@ class Broker:
             commission = max(shares * fill_price * self.commission_rate, 5.0)
             total_cost = shares * fill_price + commission
             if total_cost > self.portfolio.cash:
+                # 资金不足:按可用现金能买的最大整百手【部分成交】,而非整单拒绝。
+                # 背景:等权满仓策略每次调仓把 100% 权益均摊到 N 只,按信号日收盘价
+                # 定股数、次日中间价+滑点成交,累计成本必然略超预算,排序最后一只常
+                # 因差一点被整单丢弃 → 近一整个仓位现金空转。改为尽量买,只缩减该只。
+                cash = self.portfolio.cash
+                # 上界估计:total_cost ≈ shares*fill_price*(1+commission_rate)
+                # (大额单佣金取比例项;向下取整到整百手保证不超支)
+                affordable = int(cash / (fill_price * (1 + self.commission_rate))) // 100 * 100
+                # 佣金 5 元下限可能使上界估计略微超支,逐手回退到严格满足为止
+                while affordable > 0:
+                    commission = max(affordable * fill_price * self.commission_rate, 5.0)
+                    if affordable * fill_price + commission <= cash:
+                        break
+                    affordable -= 100
+                if affordable <= 0:
+                    logger.debug(
+                        "订单被拒: %s 资金不足,可用%.2f 不足一手 (@%.3f)",
+                        order.symbol,
+                        cash,
+                        fill_price,
+                    )
+                    return None
                 logger.debug(
-                    "订单被拒: %s 资金不足 (需%.2f, 可用%.2f)",
+                    "部分成交: %s 资金不足,目标%d 股缩减至%d 股 (可用%.2f)",
                     order.symbol,
-                    total_cost,
-                    self.portfolio.cash,
+                    shares,
+                    affordable,
+                    cash,
                 )
-                return None
+                shares = affordable
+                commission = max(shares * fill_price * self.commission_rate, 5.0)
+                total_cost = shares * fill_price + commission
             self.portfolio.buy(order.symbol, shares, fill_price, commission, date)
             logger.debug(
                 "成交: date=%s, symbol=%s, buy@%.3f, shares=%d",
