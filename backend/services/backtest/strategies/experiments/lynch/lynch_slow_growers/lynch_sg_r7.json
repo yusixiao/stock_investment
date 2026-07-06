@@ -1,0 +1,140 @@
+[
+  {
+    "tag": "R7_t05_s2",
+    "note": "Top5(极集中)",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 5,
+      "max_per_sector": 2
+    },
+    "elapsed_sec": 100.3,
+    "n_trades": 722,
+    "total_return": 5.960652,
+    "annualized_return": 0.12555,
+    "max_drawdown": 0.322514,
+    "sharpe_ratio": 0.5904,
+    "win_rate": 0.6581,
+    "profit_factor": 3.0801,
+    "avg_win": 0.166712,
+    "avg_loss": -0.074225,
+    "total_trades": 722,
+    "round_trip_count": 585,
+    "daily_turnover_rate": 0.019316
+  },
+  {
+    "tag": "R7_t06_s2",
+    "note": "Top6",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 6,
+      "max_per_sector": 2
+    },
+    "elapsed_sec": 99.4,
+    "n_trades": 843,
+    "total_return": 5.556776,
+    "annualized_return": 0.121456,
+    "max_drawdown": 0.322514,
+    "sharpe_ratio": 0.568,
+    "win_rate": 0.6706,
+    "profit_factor": 2.7783,
+    "avg_win": 0.159376,
+    "avg_loss": -0.080037,
+    "total_trades": 843,
+    "round_trip_count": 680,
+    "daily_turnover_rate": 0.020202
+  },
+  {
+    "tag": "R7_t07_s2",
+    "note": "Top7",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 7,
+      "max_per_sector": 2
+    },
+    "elapsed_sec": 98.3,
+    "n_trades": 930,
+    "total_return": 5.483325,
+    "annualized_return": 0.120687,
+    "max_drawdown": 0.322514,
+    "sharpe_ratio": 0.562,
+    "win_rate": 0.6631,
+    "profit_factor": 2.5944,
+    "avg_win": 0.159366,
+    "avg_loss": -0.077038,
+    "total_trades": 930,
+    "round_trip_count": 754,
+    "daily_turnover_rate": 0.020252
+  },
+  {
+    "tag": "R7_t08_s2",
+    "note": "Top8",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 8,
+      "max_per_sector": 2
+    },
+    "elapsed_sec": 102.5,
+    "n_trades": 989,
+    "total_return": 5.08404,
+    "annualized_return": 0.116353,
+    "max_drawdown": 0.322514,
+    "sharpe_ratio": 0.5403,
+    "win_rate": 0.6679,
+    "profit_factor": 2.4696,
+    "avg_win": 0.158536,
+    "avg_loss": -0.080782,
+    "total_trades": 989,
+    "round_trip_count": 804,
+    "daily_turnover_rate": 0.020036
+  },
+  {
+    "tag": "R7_t09_s2",
+    "note": "Top9",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 9,
+      "max_per_sector": 2
+    },
+    "elapsed_sec": 104.5,
+    "n_trades": 1050,
+    "total_return": 4.957778,
+    "annualized_return": 0.114927,
+    "max_drawdown": 0.322514,
+    "sharpe_ratio": 0.5322,
+    "win_rate": 0.6576,
+    "profit_factor": 2.3628,
+    "avg_win": 0.15427,
+    "avg_loss": -0.081516,
+    "total_trades": 1050,
+    "round_trip_count": 850,
+    "daily_turnover_rate": 0.020327
+  },
+  {
+    "tag": "R7_t12_s2",
+    "note": "Top12(复现锚·应=11.79%)",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 12,
+      "max_per_sector": 2
+    },
+    "elapsed_sec": 100.1,
+    "n_trades": 1162,
+    "total_return": 5.223197,
+    "annualized_return": 0.117893,
+    "max_drawdown": 0.322514,
+    "sharpe_ratio": 0.5467,
+    "win_rate": 0.6507,
+    "profit_factor": 2.4499,
+    "avg_win": 0.153106,
+    "avg_loss": -0.083022,
+    "total_trades": 1162,
+    "round_trip_count": 939,
+    "daily_turnover_rate": 0.01998
+  }
+]

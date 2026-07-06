@@ -259,6 +259,24 @@ ROUNDS: dict[str, list] = {
         ("R6_a_m05_y345", "年度5月 + 股息真峰3.45%",
          {"min_div_yield": 0.0345, "mktcap_min_yi": 300.0, "top_n": 12, "max_per_sector": 2, "rebalance_months": [5]}),
     ],
+    # ── Round 7:top_n<10 补扫 —— R5 只扫到 Top10(峰在12,左侧10→11→12 单调升),
+    # 未验证更集中(5-9)的表现。固定最优画像(y3.5%+市值≥300+行业≤2,月度,同 R5 top 精扫口径),
+    # 只变 top_n。t12 为复现锚(应=11.79%,校验与 R5 同口径)。更小 top_n 会抬高单票权重,
+    # 尤其早年合格池仅 5-7 只时高度集中,重点看回撤/Sharpe 是否恶化。
+    "7": [
+        ("R7_t05_s2", "Top5(极集中)",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 5, "max_per_sector": 2}),
+        ("R7_t06_s2", "Top6",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 6, "max_per_sector": 2}),
+        ("R7_t07_s2", "Top7",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 7, "max_per_sector": 2}),
+        ("R7_t08_s2", "Top8",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 8, "max_per_sector": 2}),
+        ("R7_t09_s2", "Top9",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 9, "max_per_sector": 2}),
+        ("R7_t12_s2", "Top12(复现锚·应=11.79%)",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 12, "max_per_sector": 2}),
+    ],
 }
 
 CSI300_CODE = "CSI300"  # v_a_index 里沪深300 的 _symbol 标识
