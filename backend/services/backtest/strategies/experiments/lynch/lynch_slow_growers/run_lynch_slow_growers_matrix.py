@@ -277,6 +277,32 @@ ROUNDS: dict[str, list] = {
         ("R7_t12_s2", "Top12(复现锚·应=11.79%)",
          {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 12, "max_per_sector": 2}),
     ],
+    # ── Round 8:年度[6]口径 top_n 补扫 ——
+    # ⚠️ R7 各配置【漏传 rebalance_months】→ 落到运行期默认跑成【月度】(笔数 722~1162 铁证,
+    #    对比发布冠军年度[6]+Top12 仅 139 笔),故 R7 的 Top5=12.55% 只是"月度口径"冠军,
+    #    低于发布版年度口径 13.90%,不可作 deployed 选参依据。
+    # 本轮修正:固定发布画像(y3.5%+市值≥300+行业≤2)并【显式写死 rebalance_months=[6]】,
+    #    只变 top_n=5~12,求【年度口径】下的真 top_n 冠军。
+    # t12 为复现锚:应≈发布冠军 full(2010-01→2026-06) 13.90%/139 笔 —— 若复现即证本轮口径
+    #    确为年度[6](而非月度),Top5~11 的对比方可信。
+    "8": [
+        ("R8_t05_a6", "Top5·年度6月",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 5, "max_per_sector": 2, "rebalance_months": [6]}),
+        ("R8_t06_a6", "Top6·年度6月",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 6, "max_per_sector": 2, "rebalance_months": [6]}),
+        ("R8_t07_a6", "Top7·年度6月",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 7, "max_per_sector": 2, "rebalance_months": [6]}),
+        ("R8_t08_a6", "Top8·年度6月",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 8, "max_per_sector": 2, "rebalance_months": [6]}),
+        ("R8_t09_a6", "Top9·年度6月",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 9, "max_per_sector": 2, "rebalance_months": [6]}),
+        ("R8_t10_a6", "Top10·年度6月",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 10, "max_per_sector": 2, "rebalance_months": [6]}),
+        ("R8_t11_a6", "Top11·年度6月",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 11, "max_per_sector": 2, "rebalance_months": [6]}),
+        ("R8_t12_a6", "Top12·年度6月(复现锚·应≈13.90%/139笔)",
+         {"min_div_yield": 0.035, "mktcap_min_yi": 300.0, "top_n": 12, "max_per_sector": 2, "rebalance_months": [6]}),
+    ],
 }
 
 CSI300_CODE = "CSI300"  # v_a_index 里沪深300 的 _symbol 标识

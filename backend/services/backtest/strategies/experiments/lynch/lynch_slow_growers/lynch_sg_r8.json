@@ -1,0 +1,210 @@
+[
+  {
+    "tag": "R8_t05_a6",
+    "note": "Top5·年度6月",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 5,
+      "max_per_sector": 2,
+      "rebalance_months": [
+        6
+      ]
+    },
+    "elapsed_sec": 71.5,
+    "n_trades": 105,
+    "total_return": 10.592948,
+    "annualized_return": 0.161099,
+    "max_drawdown": 0.422849,
+    "sharpe_ratio": 0.7023,
+    "win_rate": 0.7273,
+    "profit_factor": 6.0558,
+    "avg_win": 0.384631,
+    "avg_loss": -0.159779,
+    "total_trades": 105,
+    "round_trip_count": 55,
+    "daily_turnover_rate": 0.006007
+  },
+  {
+    "tag": "R8_t06_a6",
+    "note": "Top6·年度6月",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 6,
+      "max_per_sector": 2,
+      "rebalance_months": [
+        6
+      ]
+    },
+    "elapsed_sec": 66.8,
+    "n_trades": 115,
+    "total_return": 9.748452,
+    "annualized_return": 0.155758,
+    "max_drawdown": 0.422849,
+    "sharpe_ratio": 0.6935,
+    "win_rate": 0.7419,
+    "profit_factor": 6.5549,
+    "avg_win": 0.395007,
+    "avg_loss": -0.155554,
+    "total_trades": 115,
+    "round_trip_count": 62,
+    "daily_turnover_rate": 0.005678
+  },
+  {
+    "tag": "R8_t07_a6",
+    "note": "Top7·年度6月",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 7,
+      "max_per_sector": 2,
+      "rebalance_months": [
+        6
+      ]
+    },
+    "elapsed_sec": 65.5,
+    "n_trades": 127,
+    "total_return": 8.544969,
+    "annualized_return": 0.147423,
+    "max_drawdown": 0.422849,
+    "sharpe_ratio": 0.6527,
+    "win_rate": 0.7206,
+    "profit_factor": 5.0732,
+    "avg_win": 0.38257,
+    "avg_loss": -0.160542,
+    "total_trades": 127,
+    "round_trip_count": 68,
+    "daily_turnover_rate": 0.005678
+  },
+  {
+    "tag": "R8_t08_a6",
+    "note": "Top8·年度6月",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 8,
+      "max_per_sector": 2,
+      "rebalance_months": [
+        6
+      ]
+    },
+    "elapsed_sec": 68.1,
+    "n_trades": 135,
+    "total_return": 7.549255,
+    "annualized_return": 0.139743,
+    "max_drawdown": 0.422849,
+    "sharpe_ratio": 0.6184,
+    "win_rate": 0.662,
+    "profit_factor": 4.2758,
+    "avg_win": 0.390373,
+    "avg_loss": -0.144647,
+    "total_trades": 135,
+    "round_trip_count": 71,
+    "daily_turnover_rate": 0.005703
+  },
+  {
+    "tag": "R8_t09_a6",
+    "note": "Top9·年度6月",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 9,
+      "max_per_sector": 2,
+      "rebalance_months": [
+        6
+      ]
+    },
+    "elapsed_sec": 69.0,
+    "n_trades": 143,
+    "total_return": 7.73819,
+    "annualized_return": 0.141262,
+    "max_drawdown": 0.422849,
+    "sharpe_ratio": 0.6205,
+    "win_rate": 0.64,
+    "profit_factor": 3.828,
+    "avg_win": 0.385021,
+    "avg_loss": -0.146902,
+    "total_trades": 143,
+    "round_trip_count": 75,
+    "daily_turnover_rate": 0.005677
+  },
+  {
+    "tag": "R8_t10_a6",
+    "note": "Top10·年度6月",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 10,
+      "max_per_sector": 2,
+      "rebalance_months": [
+        6
+      ]
+    },
+    "elapsed_sec": 67.0,
+    "n_trades": 150,
+    "total_return": 8.00099,
+    "annualized_return": 0.143326,
+    "max_drawdown": 0.422849,
+    "sharpe_ratio": 0.6289,
+    "win_rate": 0.6538,
+    "profit_factor": 4.0823,
+    "avg_win": 0.376274,
+    "avg_loss": -0.146902,
+    "total_trades": 150,
+    "round_trip_count": 78,
+    "daily_turnover_rate": 0.005735
+  },
+  {
+    "tag": "R8_t11_a6",
+    "note": "Top11·年度6月",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 11,
+      "max_per_sector": 2,
+      "rebalance_months": [
+        6
+      ]
+    },
+    "elapsed_sec": 66.5,
+    "n_trades": 153,
+    "total_return": 8.798122,
+    "annualized_return": 0.149255,
+    "max_drawdown": 0.422849,
+    "sharpe_ratio": 0.655,
+    "win_rate": 0.6538,
+    "profit_factor": 4.2458,
+    "avg_win": 0.376318,
+    "avg_loss": -0.146902,
+    "total_trades": 153,
+    "round_trip_count": 78,
+    "daily_turnover_rate": 0.005702
+  },
+  {
+    "tag": "R8_t12_a6",
+    "note": "Top12·年度6月(复现锚·应≈13.90%/139笔)",
+    "overrides": {
+      "min_div_yield": 0.035,
+      "mktcap_min_yi": 300.0,
+      "top_n": 12,
+      "max_per_sector": 2,
+      "rebalance_months": [
+        6
+      ]
+    },
+    "elapsed_sec": 68.0,
+    "n_trades": 159,
+    "total_return": 8.589169,
+    "annualized_return": 0.147746,
+    "max_drawdown": 0.422849,
+    "sharpe_ratio": 0.649,
+    "win_rate": 0.6543,
+    "profit_factor": 4.3458,
+    "avg_win": 0.365396,
+    "avg_loss": -0.141757,
+    "total_trades": 159,
+    "round_trip_count": 81,
+    "daily_turnover_rate": 0.005749
+  }
+]
