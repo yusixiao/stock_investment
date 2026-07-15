@@ -76,12 +76,25 @@ def get_index_catalog() -> List[dict]:
 def _fetch_yfinance_index(
     src_symbol: str, code: str, start_date: Optional[str]
 ) -> List[DailyKlineRecord]:
-    """用 yfinance 抓指数日线。start_date=None → period='max' 全量。"""
+    """用 yfinance 抓指数日线。start_date=None → period='max' 全量。
+
+    增量(start_date 非空)时向前多取一段缓冲窗口: yfinance history(start=...)
+    含 start_date 当天, 但该行是窗口首行、没有前一根 bar 可算 preclose, 会得到
+    null。而磁盘上 start_date(=库内最新日)的 preclose 是非空的 —— 台账护栏会
+    把"非空 preclose → null"判为销毁并拒写, 导致指数增量永久停更(2026-07 HSI
+    卡在 07-02 达 12 天即此因)。故向前挪 15 自然日取数为 start_date 当天播种
+    prev_close, 算完 preclose 再过滤回 date >= start_date 落库。
+    """
     import yfinance as yf
 
     t = yf.Ticker(src_symbol)
     if start_date:
-        df = t.history(start=start_date, auto_adjust=False)
+        # 15 自然日足够覆盖任意港/美市连续休市(含农历新年),保证 start_date
+        # 之前至少有一根 bar 播种 prev_close。
+        buffer_start = (
+            pd.Timestamp(start_date) - pd.Timedelta(days=15)
+        ).strftime("%Y-%m-%d")
+        df = t.history(start=buffer_start, auto_adjust=False)
     else:
         df = t.history(period="max", auto_adjust=False)
 
@@ -91,10 +104,11 @@ def _fetch_yfinance_index(
     records: List[DailyKlineRecord] = []
     prev_close: Optional[float] = None
     for idx, row in df.iterrows():
+        row_date = idx.strftime("%Y-%m-%d")
         close = float(row["Close"])
         volume = float(row["Volume"]) if pd.notna(row.get("Volume")) else 0.0
         data = {
-            "date": idx.strftime("%Y-%m-%d"),
+            "date": row_date,
             "code": code,
             "open": float(row["Open"]),
             "high": float(row["High"]),
@@ -107,6 +121,9 @@ def _fetch_yfinance_index(
             data["preclose"] = prev_close
             data["pctChg"] = (close - prev_close) / prev_close * 100
         prev_close = close
+        # 缓冲窗口的行仅用于播种 prev_close, 不落库(date 为 ISO 串, 字典序=时序)
+        if start_date and row_date < start_date:
+            continue
         records.append(DailyKlineRecord(**data))
     return records
 

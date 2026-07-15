@@ -68,6 +68,36 @@ def test_fetch_yfinance_index_builds_records():
     assert recs[1].pctChg == pytest.approx((101.0 - 102.0) / 102.0 * 100)
 
 
+def test_fetch_yfinance_index_incremental_seeds_preclose():
+    """回归(2026-07 HSI 停更): 增量抓取时首个落库行(=start_date, 库内最新日)
+    必须有非空 preclose, 否则台账护栏判"非空→null"拒写导致指数永久停更。
+
+    实现靠向前挪 15 自然日取缓冲窗口播种 prev_close, 再过滤回 date>=start_date。
+    FakeTicker.history 忽略 start 参数、返回含缓冲行的整段 df, 正好模拟真实
+    yfinance 从 buffer_start 起返回的数据。
+    """
+    idx = pd.to_datetime(["2026-06-30", "2026-07-01", "2026-07-02", "2026-07-03"])
+    df = pd.DataFrame(
+        {
+            "Open": [100.0, 110.0, 120.0, 130.0],
+            "High": [101.0, 111.0, 121.0, 131.0],
+            "Low": [99.0, 109.0, 119.0, 129.0],
+            "Close": [100.0, 110.0, 120.0, 130.0],
+            "Volume": [1000.0, 1000.0, 1000.0, 1000.0],
+        },
+        index=idx,
+    )
+    with patch("yfinance.Ticker", _make_yf_ticker(df)):
+        recs = _fetch_yfinance_index("^HSI", "HSI", start_date="2026-07-02")
+
+    # 缓冲行(06-30 / 07-01)被过滤, 只落 start_date 当天及之后
+    assert [r.date for r in recs] == ["2026-07-02", "2026-07-03"]
+    # 关键: 首个落库行(07-02)preclose 非空 = 缓冲行 07-01 的收盘(110)
+    assert recs[0].preclose == 110.0
+    assert recs[0].pctChg == pytest.approx((120.0 - 110.0) / 110.0 * 100)
+    assert recs[1].preclose == 120.0
+
+
 def test_fetch_baostock_index_builds_records():
     raw = pd.DataFrame(
         {
