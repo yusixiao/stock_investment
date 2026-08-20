@@ -86,7 +86,6 @@ def _evaluate_buy_opportunities_after_refresh(record, markets):
     """按市场隔离提醒评估，单个市场失败不影响其它市场。"""
     import logging
     from datetime import date
-    from services.portfolio.buy_opportunity import evaluate_buy_opportunities
 
     class _NullSink:
         def emit(self, alert):
@@ -94,6 +93,8 @@ def _evaluate_buy_opportunities_after_refresh(record, markets):
 
     for market in sorted(markets):
         try:
+            from services.portfolio.buy_opportunity import evaluate_buy_opportunities
+
             evaluate_buy_opportunities(
                 date.today().isoformat(), _NullSink(), markets={market}
             )

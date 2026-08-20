@@ -1,3 +1,4 @@
+import builtins
 from unittest.mock import MagicMock
 
 import pandas as pd
@@ -108,3 +109,20 @@ def test_evaluator_isolates_market_failures(monkeypatch, caplog):
         frozenset({"A"}), frozenset({"HK"}), frozenset({"US"})
     }
     assert "market=A" in caplog.text
+
+
+def test_evaluator_import_failure_isolated_to_market_iteration(monkeypatch, caplog):
+    real_import = builtins.__import__
+
+    def fail_buy_opportunity_import(name, *args, **kwargs):
+        if name == "services.portfolio.buy_opportunity":
+            raise ImportError("notification service unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fail_buy_opportunity_import)
+
+    scheduler._evaluate_buy_opportunities_after_refresh(
+        MagicMock(), {"A", "HK", "US"}
+    )
+
+    assert caplog.text.count("buy opportunity evaluation failed for market=") == 3

@@ -973,7 +973,10 @@ const PortfolioPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {positionRows.map((row) => (
+                  {positionRows.map((row) => {
+                    const rowStrategyBound = strategyBound
+                      && accounts.some((account) => account.id === row.accountId && Boolean(account.strategyTaskId));
+                    return (
                     <tr key={`${row.accountId}-${row.symbol}-${row.market}`} className="border-b border-white/5">
                       <td className="py-2 pr-2 text-secondary">{row.accountName}</td>
                       <td className="py-2 pr-2 font-mono text-foreground">{row.symbol}</td>
@@ -987,15 +990,15 @@ const PortfolioPage: React.FC = () => {
                       </td>
                       <td className="py-2 pr-2 text-right">{formatPositionMoney(row.marketValueBase, row)}</td>
                       {strategyBound ? <>
-                        <td className="py-2 pr-2 text-right">{row.targetQuantity == null ? '--' : row.targetQuantity.toFixed(2)}</td>
-                        <td className="py-2 pr-2 text-right">{row.referencePrice == null ? '--' : row.referencePrice.toFixed(4)}</td>
-                        <td className="py-2 pr-2 text-right">{row.remainingQuantity == null ? '--' : row.remainingQuantity.toFixed(2)}</td>
-                        <td className="py-2 pr-2 text-right">{row.overTargetQuantity == null ? '--' : row.overTargetQuantity.toFixed(2)}</td>
+                        <td className="py-2 pr-2 text-right">{!rowStrategyBound || row.targetQuantity == null ? '--' : row.targetQuantity.toFixed(2)}</td>
+                        <td className="py-2 pr-2 text-right">{!rowStrategyBound || row.referencePrice == null ? '--' : row.referencePrice.toFixed(4)}</td>
+                        <td className="py-2 pr-2 text-right">{!rowStrategyBound || row.remainingQuantity == null ? '--' : row.remainingQuantity.toFixed(2)}</td>
+                        <td className="py-2 pr-2 text-right">{!rowStrategyBound || row.overTargetQuantity == null ? '--' : row.overTargetQuantity.toFixed(2)}</td>
                         <td className="py-2 pr-2">
-                          {row.targetStatus === 'exited' ? <Badge variant="default">策略已退出</Badge> : row.targetStatus === 'completed' ? <Badge variant="success">目标已完成</Badge> : row.targetStatus ? <Badge variant="info">目标执行中</Badge> : '--'}
+                          {!rowStrategyBound ? '--' : row.targetStatus === 'exited' ? <Badge variant="default">策略已退出</Badge> : row.targetStatus === 'completed' ? <Badge variant="success">目标已完成</Badge> : row.targetStatus ? <Badge variant="info">目标执行中</Badge> : '--'}
                         </td>
                         <td className="py-2 pr-2">
-                          {row.targetStatus === 'exited' || row.alertStatus === 'none' ? <span className="text-secondary">无提醒</span> : row.alertStatus === 'buy' || row.alertStatus === 'triggered' ? <Badge variant="warning">买入提醒</Badge> : row.alertStatus || '--'}
+                          {!rowStrategyBound ? '--' : row.targetStatus === 'exited' || row.alertStatus === 'none' ? <span className="text-secondary">无提醒</span> : row.alertStatus === 'buy' || row.alertStatus === 'triggered' ? <Badge variant="warning">买入提醒</Badge> : row.alertStatus || '--'}
                         </td>
                       </> : null}
                       <td
@@ -1021,7 +1024,8 @@ const PortfolioPage: React.FC = () => {
                         {formatSignedPct(row.unrealizedPnlPct)}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

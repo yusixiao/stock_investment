@@ -310,7 +310,7 @@ describe('PortfolioPage FX refresh', () => {
       { id: 1, name: '普通账户' },
       { id: 2, name: '策略账户', strategyTaskId: 'task-1' },
     ]));
-    getSnapshot.mockResolvedValue(makeSnapshot({ positions: [{
+    getSnapshot.mockResolvedValue(makeSnapshot({ accountId: 2, positions: [{
       symbol: 'TARGET.SZ', quantity: 0, avgCost: 0, totalCost: 0, lastPrice: 12,
       marketValueBase: 0, unrealizedPnlBase: 0, unrealizedPnlPct: null, valuationCurrency: 'CNY',
       targetQuantity: 10, referencePrice: 15, remainingQuantity: 10, overTargetQuantity: 0,
@@ -323,6 +323,50 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.getByText('目标持仓')).toBeInTheDocument();
     expect(screen.getByText('TARGET.SZ')).toBeInTheDocument();
     expect(screen.getAllByText('10.00').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not show strategy values for ordinary rows in the all-accounts view', async () => {
+    getAccounts.mockResolvedValue(makeAccounts([
+      { id: 1, name: '普通账户' },
+      { id: 2, name: '策略账户', strategyTaskId: 'task-1' },
+    ]));
+    getSnapshot.mockResolvedValue({
+      ...makeSnapshot({ accountCount: 2 }),
+      accounts: [
+        {
+          ...makeSnapshot({ accountId: 1 }).accounts[0],
+          accountName: '普通账户',
+          positions: [{
+            symbol: 'NORMAL.SZ', quantity: 1, avgCost: 10, totalCost: 10, lastPrice: 11,
+            marketValueBase: 11, unrealizedPnlBase: 1, unrealizedPnlPct: 10, valuationCurrency: 'CNY',
+            targetQuantity: 0, referencePrice: 12, remainingQuantity: 3, overTargetQuantity: 1,
+            targetStatus: 'active', alertStatus: 'buy',
+          }],
+        },
+        {
+          ...makeSnapshot({ accountId: 2 }).accounts[0],
+          accountName: '策略账户',
+          positions: [{
+            symbol: 'STRATEGY.SZ', quantity: 2, avgCost: 10, totalCost: 20, lastPrice: 11,
+            marketValueBase: 22, unrealizedPnlBase: 2, unrealizedPnlPct: 10, valuationCurrency: 'CNY',
+            targetQuantity: 10, referencePrice: 12, remainingQuantity: 8, overTargetQuantity: 0,
+            targetStatus: 'active', alertStatus: 'buy',
+          }],
+        },
+      ],
+    });
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+
+    const ordinaryRow = screen.getByText('普通账户').closest('tr');
+    const strategyRow = screen.getAllByText('策略账户').find((element) => element.closest('tr'))?.closest('tr');
+    expect(ordinaryRow).not.toBeNull();
+    expect(strategyRow).not.toBeNull();
+    expect(within(ordinaryRow!).getAllByText('--')).toHaveLength(6);
+    expect(within(ordinaryRow!).queryByText('12.0000')).not.toBeInTheDocument();
+    expect(within(strategyRow!).getByText('10.00')).toBeInTheDocument();
+    expect(within(strategyRow!).getByText('12.0000')).toBeInTheDocument();
   });
 
   it('shows exited targets with actual holdings but no buy alert', async () => {
