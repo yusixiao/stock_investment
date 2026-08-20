@@ -209,6 +209,7 @@ const PortfolioPage: React.FC = () => {
   const [error, setError] = useState<ParsedApiError | null>(null);
   const [riskWarning, setRiskWarning] = useState<string | null>(null);
   const [writeWarning, setWriteWarning] = useState<string | null>(null);
+  const [strategyActionLoading, setStrategyActionLoading] = useState(false);
 
   const [brokers, setBrokers] = useState<PortfolioImportBrokerItem[]>([]);
   const [selectedBroker, setSelectedBroker] = useState('huatai');
@@ -268,6 +269,7 @@ const PortfolioPage: React.FC = () => {
   const refreshContextRef = useRef<FxRefreshContext>({ viewKey: refreshViewKey, requestId: 0 });
   const hasAccounts = accounts.length > 0;
   const writableAccount = selectedAccount === 'all' ? undefined : accounts.find((item) => item.id === selectedAccount);
+  const strategyBound = Boolean(writableAccount?.strategyTaskId);
   const writableAccountId = writableAccount?.id;
   const writeBlocked = !writableAccountId;
   const totalEventPages = Math.max(1, Math.ceil(eventTotal / DEFAULT_PAGE_SIZE));
@@ -475,6 +477,7 @@ const PortfolioPage: React.FC = () => {
     const rows: FlatPosition[] = [];
     for (const account of snapshot.accounts || []) {
       for (const position of account.positions || []) {
+        if (position.quantity <= 0) continue;
         rows.push({
           ...position,
           accountId: account.accountId,
@@ -485,6 +488,19 @@ const PortfolioPage: React.FC = () => {
     rows.sort((a, b) => Number(b.marketValueBase || 0) - Number(a.marketValueBase || 0));
     return rows;
   }, [snapshot]);
+
+  const handleUnbindStrategy = async () => {
+    if (!writableAccount?.strategyTaskId) return;
+    try {
+      setStrategyActionLoading(true);
+      await portfolioApi.unbindStrategy(writableAccount.id);
+      await Promise.all([loadAccounts(), loadSnapshotAndRisk()]);
+    } catch (err) {
+      setError(getParsedApiError(err));
+    } finally {
+      setStrategyActionLoading(false);
+    }
+  };
 
   const sectorPieData = useMemo(() => {
     const sectors = risk?.sectorConcentration?.topSectors || [];
@@ -859,6 +875,16 @@ const PortfolioPage: React.FC = () => {
                 >
                   {isLoading ? '刷新中...' : '刷新数据'}
                 </button>
+                {strategyBound ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleUnbindStrategy()}
+                    disabled={strategyActionLoading}
+                    className="btn-secondary text-sm flex-1"
+                  >
+                    {strategyActionLoading ? '解绑中...' : '解绑策略'}
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>
@@ -884,6 +910,13 @@ const PortfolioPage: React.FC = () => {
           variant="warning"
           title="操作提示"
           message={writeWarning}
+        />
+      ) : null}
+      {strategyBound ? (
+        <InlineAlert
+          variant="info"
+          title="策略账户"
+          message={`已绑定回测任务 ${writableAccount?.strategyTaskId}。买入范围由当前策略目标约束，卖出和数量不受限制。`}
         />
       ) : null}
 
@@ -1018,6 +1051,13 @@ const PortfolioPage: React.FC = () => {
                     <th className="text-right py-2 pr-2">均价</th>
                     <th className="text-right py-2 pr-2">现价</th>
                     <th className="text-right py-2 pr-2">市值</th>
+                    {strategyBound ? <>
+                      <th className="text-right py-2 pr-2">目标持仓</th>
+                      <th className="text-right py-2 pr-2">策略参考价</th>
+                      <th className="text-right py-2 pr-2">剩余待买</th>
+                      <th className="text-left py-2 pr-2">目标状态</th>
+                      <th className="text-left py-2 pr-2">提醒状态</th>
+                    </> : null}
                     <th className="text-right py-2">未实现盈亏</th>
                     <th className="text-right py-2">收益率</th>
                   </tr>
@@ -1036,6 +1076,17 @@ const PortfolioPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="py-2 pr-2 text-right">{formatPositionMoney(row.marketValueBase, row)}</td>
+                      {strategyBound ? <>
+                        <td className="py-2 pr-2 text-right">{row.targetQuantity == null ? '--' : row.targetQuantity.toFixed(2)}</td>
+                        <td className="py-2 pr-2 text-right">{row.referencePrice == null ? '--' : row.referencePrice.toFixed(4)}</td>
+                        <td className="py-2 pr-2 text-right">{row.remainingQuantity == null ? '--' : row.remainingQuantity.toFixed(2)}</td>
+                        <td className="py-2 pr-2">
+                          {row.targetStatus === 'exited' ? <Badge variant="default">策略已退出</Badge> : row.targetStatus === 'completed' ? <Badge variant="success">目标已完成</Badge> : row.targetStatus ? <Badge variant="info">目标执行中</Badge> : '--'}
+                        </td>
+                        <td className="py-2 pr-2">
+                          {row.targetStatus === 'exited' || row.alertStatus === 'none' ? <span className="text-secondary">无提醒</span> : row.alertStatus === 'buy' || row.alertStatus === 'triggered' ? <Badge variant="warning">买入提醒</Badge> : row.alertStatus || '--'}
+                        </td>
+                      </> : null}
                       <td
                         className={`py-2 text-right ${
                           hasPositionPrice(row)

@@ -3,6 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BacktestHistory from '../BacktestHistory';
 
 const { listTasks } = vi.hoisted(() => ({ listTasks: vi.fn() }));
+const { getAccounts, bindStrategy, createAccount } = vi.hoisted(() => ({
+  getAccounts: vi.fn(),
+  bindStrategy: vi.fn(),
+  createAccount: vi.fn(),
+}));
 
 vi.mock('../../../api/backtestEngine', async () => {
   const actual = await vi.importActual<typeof import('../../../api/backtestEngine')>(
@@ -10,6 +15,10 @@ vi.mock('../../../api/backtestEngine', async () => {
   );
   return { ...actual, backtestEngineApi: { ...actual.backtestEngineApi, listTasks } };
 });
+
+vi.mock('../../../api/portfolio', () => ({
+  portfolioApi: { getAccounts, bindStrategy, createAccount },
+}));
 
 const tasks = [
   {
@@ -63,5 +72,18 @@ describe('BacktestHistory execution ordering', () => {
     expect(rowIds()).toEqual(['active-task', 'inactive-task']);
     fireEvent.click(sortButton);
     expect(rowIds()).toEqual(['active-task', 'inactive-task']);
+  });
+
+  it('binds a successful history task to an existing account', async () => {
+    getAccounts.mockResolvedValue({ accounts: [{ id: 7 }] });
+    bindStrategy.mockResolvedValue({ id: 7, strategy_task_id: 'inactive-task' });
+
+    render(<BacktestHistory />);
+    await screen.findByText('执行中');
+    fireEvent.click(screen.getAllByRole('button', { name: '绑定账户' })[1]);
+
+    expect(await screen.findByText('绑定账户')).toBeInTheDocument();
+    expect(bindStrategy).toHaveBeenCalledWith(7, 'inactive-task');
+    expect(createAccount).not.toHaveBeenCalled();
   });
 });

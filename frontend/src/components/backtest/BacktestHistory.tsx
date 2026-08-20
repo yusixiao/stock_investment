@@ -12,6 +12,7 @@ import { Badge, Tooltip } from '../common';
 import { backtestEngineApi, type TaskListItem } from '../../api/backtestEngine';
 import type { BacktestTask } from './BacktestAnalysis';
 import { mapPayloadToResultData } from '../../utils/backtestPayload';
+import { portfolioApi } from '../../api/portfolio';
 
 interface Props {
   // 点击行加载详情后回调,父级用 BacktestTask 切换到 BacktestResult 视图
@@ -110,6 +111,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
   const [openingId, setOpeningId] = useState<string | null>(null);
   // 排序:null = 默认(按 created_at 后端原序);'asc' / 'desc' = 按总收益率
   const [returnSort, setReturnSort] = useState<'asc' | 'desc' | null>(null);
+  const [bindingId, setBindingId] = useState<string | null>(null);
 
   const sortedTasks = useMemo(() => {
     const arr = [...tasks];
@@ -213,6 +215,31 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
       await refresh();
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleBind = async (item: TaskListItem) => {
+    if (item.status !== 'success' || item.deleted) return;
+    setBindingId(item.task_id);
+    try {
+      const accounts = (await portfolioApi.getAccounts(false)).accounts;
+      const account = accounts[0];
+      if (account) {
+        await portfolioApi.bindStrategy(account.id, item.task_id);
+      } else {
+        const market = String(item.pipeline_info?.market || 'A').toLowerCase();
+        await portfolioApi.createAccount({
+          name: `${extractStrategyName(item)}策略账户`,
+          market: market === 'hk' || market === 'us' ? market : 'cn',
+          baseCurrency: market === 'us' ? 'USD' : market === 'hk' ? 'HKD' : 'CNY',
+          strategyTaskId: item.task_id,
+        });
+      }
+      await refresh();
+    } catch (err) {
+      console.error('绑定策略账户失败', err);
+    } finally {
+      setBindingId(null);
     }
   };
 
@@ -367,7 +394,20 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                       <td className="px-3 py-2 text-xs tabular-nums">
                         {formatDateTime(task.created_at)}
                       </td>
-                      <td className="px-3 py-2 text-right">
+                        <td className="px-3 py-2 text-right">
+                        {!isDeleted && task.status === 'success' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleBind(task);
+                            }}
+                            disabled={bindingId === task.task_id}
+                            className="mr-3 text-xs text-cyan hover:text-cyan/80 disabled:opacity-50"
+                          >
+                            {bindingId === task.task_id ? '绑定中...' : '绑定账户'}
+                          </button>
+                        )}
                         {!isDeleted && (
                           <button
                             type="button"

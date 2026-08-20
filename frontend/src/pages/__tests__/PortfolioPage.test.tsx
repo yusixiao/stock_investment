@@ -22,6 +22,8 @@ const {
   parseCsvImport,
   commitCsvImport,
   createAccount,
+  bindStrategy,
+  unbindStrategy,
 } = vi.hoisted(() => ({
   getAccounts: vi.fn(),
   getSnapshot: vi.fn(),
@@ -40,6 +42,8 @@ const {
   parseCsvImport: vi.fn(),
   commitCsvImport: vi.fn(),
   createAccount: vi.fn(),
+  bindStrategy: vi.fn(),
+  unbindStrategy: vi.fn(),
 }));
 
 vi.mock('../../api/portfolio', () => ({
@@ -61,6 +65,8 @@ vi.mock('../../api/portfolio', () => ({
     parseCsvImport,
     commitCsvImport,
     createAccount,
+    bindStrategy,
+    unbindStrategy,
   },
 }));
 
@@ -78,6 +84,7 @@ type AccountItem = {
   name: string;
   market?: 'cn' | 'hk' | 'us';
   baseCurrency?: string;
+  strategyTaskId?: string | null;
 };
 
 function makeAccounts(items: AccountItem[] = [{ id: 1, name: 'Main' }]) {
@@ -92,6 +99,7 @@ function makeAccounts(items: AccountItem[] = [{ id: 1, name: 'Main' }]) {
       ownerId: null,
       createdAt: '2026-03-19T00:00:00Z',
       updatedAt: '2026-03-19T00:00:00Z',
+      strategyTaskId: item.strategyTaskId ?? null,
     })),
   };
 }
@@ -243,6 +251,47 @@ describe('PortfolioPage FX refresh', () => {
 
     expect(await screen.findByText('过期')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '刷新汇率' })).toBeInTheDocument();
+  });
+
+  it('renders strategy columns only for a bound account', async () => {
+    getAccounts.mockResolvedValue(makeAccounts([
+      { id: 1, name: '普通账户' },
+      { id: 2, name: '策略账户', strategyTaskId: 'task-1' },
+    ]));
+    getSnapshot.mockImplementation(async ({ accountId }: { accountId?: number } = {}) => makeSnapshot({
+      accountId: accountId ?? 1,
+      positions: accountId === 2 ? [{
+        symbol: '600519.SH', quantity: 6, avgCost: 1400, totalCost: 8400, lastPrice: 1450,
+        marketValueBase: 8700, unrealizedPnlBase: 300, unrealizedPnlPct: 3, valuationCurrency: 'CNY',
+        targetQuantity: 10, referencePrice: 1500, remainingQuantity: 4, overTargetQuantity: 0,
+        targetStatus: 'active', alertStatus: 'buy',
+      }] : [],
+    }));
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    expect(screen.queryByText('目标持仓')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '2' } });
+    expect(await screen.findByText('目标持仓')).toBeInTheDocument();
+    expect(screen.getByText('剩余待买')).toBeInTheDocument();
+    expect(screen.getByText('4.00')).toBeInTheDocument();
+  });
+
+  it('shows exited targets with actual holdings but no buy alert', async () => {
+    getAccounts.mockResolvedValue(makeAccounts([{ id: 2, name: '策略账户', strategyTaskId: 'task-1' }]));
+    getSnapshot.mockResolvedValue(makeSnapshot({ accountId: 2, positions: [{
+      symbol: '600519.SH', quantity: 2, avgCost: 1400, totalCost: 2800, lastPrice: 1450,
+      marketValueBase: 2900, unrealizedPnlBase: 100, unrealizedPnlPct: 3, valuationCurrency: 'CNY',
+      targetQuantity: 0, referencePrice: 1500, remainingQuantity: 0, overTargetQuantity: 0,
+      targetStatus: 'exited', alertStatus: 'none',
+    }] }));
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '2' } });
+    expect(await screen.findByText('策略已退出')).toBeInTheDocument();
+    expect(screen.queryByText('买入提醒')).not.toBeInTheDocument();
   });
 
   it('refreshes FX for a single selected account and only reloads snapshot/risk', async () => {

@@ -7,6 +7,7 @@ import { buildMergedTradeRows } from '../../utils/buildMergedTradeRows';
 import { buildPositionSummary } from '../../utils/buildPositionSummary';
 import type { BacktestTask } from './BacktestAnalysis';
 import { marketLabel } from '../../utils/marketLabel';
+import { portfolioApi } from '../../api/portfolio';
 
 interface Props {
   task: BacktestTask | null;
@@ -39,6 +40,29 @@ const StatItem: React.FC<{ label: string; value: string; tone?: 'success' | 'dan
 );
 
 const BacktestResult: React.FC<Props> = ({ task }) => {
+  const [binding, setBinding] = useState(false);
+  const [bindingMessage, setBindingMessage] = useState<string | null>(null);
+
+  const handleCreateStrategyAccount = async () => {
+    if (!task || task.status !== 'completed') return;
+    try {
+      setBinding(true);
+      setBindingMessage(null);
+      const market = String(task.market || 'A').toUpperCase();
+      await portfolioApi.createAccount({
+        name: `${task.strategyName}策略账户`,
+        market: market === 'HK' ? 'hk' : market === 'US' ? 'us' : 'cn',
+        baseCurrency: market === 'HK' ? 'HKD' : market === 'US' ? 'USD' : 'CNY',
+        strategyTaskId: task.taskId,
+      });
+      setBindingMessage('策略账户已创建并绑定，可在持仓页查看目标执行状态。');
+    } catch (err) {
+      setBindingMessage(err instanceof Error ? err.message : '创建策略账户失败');
+    } finally {
+      setBinding(false);
+    }
+  };
+
   if (!task) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -112,10 +136,21 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
             {task.symbol || marketLabel(task.market)} · {task.period} · {task.startDate} ~ {task.endDate}
           </p>
         </div>
-        <Badge variant={returnTone === 'success' ? 'success' : 'danger'} size="md">
-          {formatPct(result.totalReturn)}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="btn-secondary text-xs"
+            onClick={() => void handleCreateStrategyAccount()}
+            disabled={binding}
+          >
+            {binding ? '创建中...' : '创建并绑定策略账户'}
+          </button>
+          <Badge variant={returnTone === 'success' ? 'success' : 'danger'} size="md">
+            {formatPct(result.totalReturn)}
+          </Badge>
+        </div>
       </div>
+      {bindingMessage ? <p className="text-xs text-secondary-text">{bindingMessage}</p> : null}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">

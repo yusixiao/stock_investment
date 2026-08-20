@@ -13,6 +13,9 @@ export interface PortfolioAccountItem {
   isActive: boolean;
   createdAt?: string | null;
   updatedAt?: string | null;
+  strategyTaskId?: string | null;
+  strategyBoundAt?: string | null;
+  strategyUnboundAt?: string | null;
 }
 
 export interface PortfolioAccountListResponse {
@@ -25,6 +28,7 @@ export interface PortfolioAccountCreateRequest {
   market: 'cn' | 'hk' | 'us';
   baseCurrency: string;
   ownerId?: string;
+  strategyTaskId?: string;
 }
 
 export interface PortfolioPositionItem {
@@ -44,6 +48,12 @@ export interface PortfolioPositionItem {
   priceDate?: string | null;
   priceStale?: boolean;
   priceAvailable?: boolean;
+  targetQuantity?: number | null;
+  referencePrice?: number | null;
+  remainingQuantity?: number | null;
+  overTargetQuantity?: number | null;
+  targetStatus?: 'active' | 'exited' | 'completed' | string | null;
+  alertStatus?: 'buy' | 'none' | 'armed' | 'triggered' | string | null;
 }
 
 export interface PortfolioAccountSnapshot {

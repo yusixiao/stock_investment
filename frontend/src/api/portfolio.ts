@@ -101,10 +101,11 @@ function buildEventParams(query: EventQuery): Record<string, string | number> {
 
 export const portfolioApi = {
   async getAccounts(includeInactive = false): Promise<PortfolioAccountListResponse> {
-    const response = await apiClient.get<Record<string, unknown>>('/api/v1/portfolio/accounts', {
+    const response = await apiClient.get<Record<string, unknown> | unknown[]>('/api/v1/portfolio/accounts', {
       params: { include_inactive: includeInactive },
     });
-    return toCamelCase<PortfolioAccountListResponse>(response.data);
+    const mapped = toCamelCase<PortfolioAccountListResponse | PortfolioAccountItem[]>(response.data);
+    return Array.isArray(mapped) ? { accounts: mapped } : mapped;
   },
 
   async createAccount(payload: PortfolioAccountCreateRequest): Promise<PortfolioAccountItem> {
@@ -114,7 +115,23 @@ export const portfolioApi = {
       market: payload.market,
       base_currency: payload.baseCurrency,
       owner_id: payload.ownerId,
+      strategy_task_id: payload.strategyTaskId,
     });
+    return toCamelCase<PortfolioAccountItem>(response.data);
+  },
+
+  async bindStrategy(accountId: number, taskId: string): Promise<PortfolioAccountItem> {
+    const response = await apiClient.post<Record<string, unknown>>(
+      `/api/v1/portfolio/accounts/${accountId}/strategy`,
+      { task_id: taskId },
+    );
+    return toCamelCase<PortfolioAccountItem>(response.data);
+  },
+
+  async unbindStrategy(accountId: number): Promise<PortfolioAccountItem> {
+    const response = await apiClient.delete<Record<string, unknown>>(
+      `/api/v1/portfolio/accounts/${accountId}/strategy`,
+    );
     return toCamelCase<PortfolioAccountItem>(response.data);
   },
 
