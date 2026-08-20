@@ -2,6 +2,8 @@ import pytest
 import tempfile
 import os
 
+pytest_plugins = ["backend.tests.fixtures.mini_market"]
+
 
 @pytest.fixture(autouse=True)
 def isolated_task_manager(monkeypatch):

@@ -1,6 +1,6 @@
 """Engine v2 端到端集成测(Phase 3.4)。
 
-用 ``MaTangleValueStrategy`` + 真实 parquet (``data/market/A/daily/``) +
+用 ``MaTangleValueStrategy`` + mini DuckDB parquet fixture +
 mock valuation/dividend/financial dict,跑 24 个月回测,断言:
 
 - 返回结构完整(metrics / equity_curve / trades / log_dir)
@@ -14,48 +14,17 @@ CI 缺数据时按 plan §3.4 跳过。
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from backend import config
 from services.backtest.engine import BacktestEngine
 from services.backtest.strategies.experiments.ma_tangle_value.ma_tangle_value_strategy import MaTangleValueStrategy
-
-
-MARKET_DAILY_DIR = config.MARKET_DIR / "A" / "daily"
+from backend.tests.fixtures.mini_market import mini_store
 
 # 24 个月窗口(用相对最近的 2 年,避免依赖具体年份)
 END_DATE = "2025-12-31"
 START_DATE = "2024-01-01"
-
-
-def _load_parquet(symbol_file: Path) -> pd.DataFrame:
-    df = pd.read_parquet(symbol_file)
-    # parquet 列含 OHLCV + 指标列;Engine 只需 date/open/high/low/close/volume/amount
-    df = df[["date", "open", "high", "low", "close", "volume", "amount"]].copy()
-    # 项目约定:date 为字符串
-    if not isinstance(df["date"].iloc[0], str):
-        df["date"] = df["date"].astype(str)
-    return df
-
-
-def _pick_symbols_with_history(n: int = 5) -> dict[str, pd.DataFrame]:
-    """从 ``data/market/A/daily`` 中挑选窗口内有完整历史的前 ``n`` 只股票。"""
-    chosen: dict[str, pd.DataFrame] = {}
-    for f in sorted(MARKET_DAILY_DIR.glob("*.parquet")):
-        df = _load_parquet(f)
-        df = df[(df["date"] >= START_DATE) & (df["date"] <= END_DATE)]
-        df = df.sort_values("date").reset_index(drop=True)
-        # 24 月 ≈ 480 个交易日;放宽到 200 以容忍停牌
-        if len(df) < 200:
-            continue
-        # 取 ticker 部分(000001.SZ → 000001.SZ);策略不关心 symbol 形式
-        chosen[f.stem] = df
-        if len(chosen) >= n:
-            break
-    return chosen
 
 
 def _build_mock_valuation(symbols: list[str], start: str, end: str) -> dict:
@@ -99,18 +68,17 @@ def _build_mock_financial(symbols: list[str]) -> dict:
     return out
 
 
-@pytest.fixture(scope="module")
-def real_stock_data() -> dict[str, pd.DataFrame]:
-    if not MARKET_DAILY_DIR.exists():
-        pytest.skip(f"real parquet missing: {MARKET_DAILY_DIR} (CI without data)")
-    data = _pick_symbols_with_history(n=5)
-    if len(data) < 2:
-        pytest.skip(f"not enough symbols with >=200 bars in {START_DATE}..{END_DATE}")
-    return data
+@pytest.fixture
+def mini_stock_data(mini_store) -> dict[str, pd.DataFrame]:
+    symbols = ["002594.SZ", "600001.SH"]
+    return {
+        symbol: mini_store.query_kline("A", symbol, START_DATE, END_DATE)
+        for symbol in symbols
+    }
 
 
-def test_engine_v2_e2e_with_real_parquet(tmp_path, real_stock_data):
-    symbols = list(real_stock_data.keys())
+def test_engine_v2_e2e_with_mini_parquet(tmp_path, mini_stock_data):
+    symbols = list(mini_stock_data.keys())
     valuation = _build_mock_valuation(symbols, START_DATE, END_DATE)
     dividend = _build_mock_dividend(symbols)
     financial = _build_mock_financial(symbols)
@@ -120,7 +88,7 @@ def test_engine_v2_e2e_with_real_parquet(tmp_path, real_stock_data):
 
     engine = BacktestEngine(
         strategy=strategy,
-        stock_data=real_stock_data,
+        stock_data=mini_stock_data,
         valuation_data=valuation,
         dividend_data=dividend,
         financial_data=financial,
@@ -138,7 +106,7 @@ def test_engine_v2_e2e_with_real_parquet(tmp_path, real_stock_data):
 
     # 2) equity_curve 长度 == 参考股 bar 数(MarketData.dates 取首只股票的日历)
     ref_sym = symbols[0]
-    expected_bars = len(real_stock_data[ref_sym])
+    expected_bars = len(mini_stock_data[ref_sym])
     assert len(result["equity_curve"]) == expected_bars
 
     # 3) decisions.jsonl + flow.jsonl 存在;flow 含 strategy.screen.start

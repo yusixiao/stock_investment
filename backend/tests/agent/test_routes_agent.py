@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from services.system_config.llm_client import CompletionResult
+from backend.tests.fixtures.mini_market import mini_market
 
 
 def _client(tmp_path, monkeypatch):
@@ -144,7 +145,7 @@ def test_chat_stream_clarify_when_no_stock(tmp_path, monkeypatch):
     assert "股票" in final_text
 
 
-def test_chat_stream_full_pipeline_e2e(tmp_path, monkeypatch):
+def test_chat_stream_full_pipeline_e2e(tmp_path, monkeypatch, mini_market):
     """E2E:识别股票码 → 三阶段 SSE 事件序列 + 报告写盘 + session output_dir 落库。"""
     _setup_chat_env(tmp_path, monkeypatch)
 

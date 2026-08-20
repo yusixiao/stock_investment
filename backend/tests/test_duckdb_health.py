@@ -54,44 +54,8 @@ def test_health_check_fails_when_adjust_factor_empty(
         duckdb_store.init_duckdb_with_health_check()
 
 
-def test_health_check_passes_with_real_data(reset_store):
-    """真实 MARKET_DIR(若有数据)能通过；否则跳过。"""
-    from config import MARKET_DIR
-
-    a_daily = MARKET_DIR / "A" / "daily"
-    a_adj = MARKET_DIR / "A" / "adjust_factor"
-    if not (a_daily.exists() and any(a_daily.glob("*.parquet"))):
-        pytest.skip("无真实 A/daily parquet 数据")
-    if not (a_adj.exists() and any(a_adj.glob("*.parquet"))):
-        pytest.skip("无真实 A/adjust_factor parquet 数据")
-
-    # 不应抛错
-    duckdb_store.init_duckdb_with_health_check()
-
-
-def test_health_check_passes_with_fixture_data(tmp_path, monkeypatch, reset_store):
-    """构造完整 fixture 数据 → 健康检查通过。"""
-    daily_dir = tmp_path / "A" / "daily"
-    adj_dir = tmp_path / "A" / "adjust_factor"
-    _write_parquet(
-        daily_dir / "000001.parquet",
-        pd.DataFrame(
-            {
-                "date": ["2024-01-02"],
-                "open": [10.0],
-                "high": [11.0],
-                "low": [9.5],
-                "close": [10.5],
-                "volume": [1000.0],
-                "amount": [10500.0],
-            }
-        ),
-    )
-    _write_parquet(
-        adj_dir / "000001.parquet",
-        pd.DataFrame({"date": ["2024-01-02"], "factor": [1.0]}),
-    )
-    monkeypatch.setattr(duckdb_store, "MARKET_DIR", tmp_path)
+def test_health_check_passes_with_fixture_data(mini_market, reset_store):
+    """完整的三市场 fixture 数据应通过健康检查。"""
     duckdb_store.init_duckdb_with_health_check()
     store = duckdb_store.get_store()
-    assert "000001" in store.list_symbols("A")
+    assert "002594.SZ" in store.list_symbols("A")

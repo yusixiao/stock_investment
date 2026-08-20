@@ -4,37 +4,23 @@
 (2026-05-24 暴露的根因 bug)。
 
 策略:
-- 用真实 DuckDBStore(读 data/market/A/...),实股 002594.SZ
+- 用真实 DuckDBStore(读 mini parquet fixture),实股 002594.SZ
 - 验证 4 个 adapter 方法返回非空且字段名符合 sections 期望
 - 验证 §3/§5/§12/§6 实际 build 出含真实数字的表格(非「数据缺失」)
 
-依赖项目本地已有 002594.SZ 的 daily / financial / dividend 数据。CI 若无数据
-应跳过(pytest.skip)。
+数据由共享 mini_market fixture 提供，不依赖项目本地市场数据目录。
 """
 
 from __future__ import annotations
 
 import pytest
 
-from services.market_data.duckdb_store import DuckDBStore
+from backend.tests.fixtures.mini_market import mini_store
 
 
-@pytest.fixture(scope="module")
-def real_store():
-    s = DuckDBStore()
-    # 健康检查:无 002594.SZ 数据 → 跳过整个模块
-    try:
-        df = s._conn.execute(
-            "SELECT count(*) AS c FROM v_a_daily WHERE _symbol = '002594.SZ'"
-        ).fetchone()
-    except Exception:
-        s.close()
-        pytest.skip("v_a_daily not available in test env")
-    if df[0] == 0:
-        s.close()
-        pytest.skip("002594.SZ daily data missing in test env")
-    yield s
-    s.close()
+@pytest.fixture
+def real_store(mini_store):
+    return mini_store
 
 
 # ------------------------- adapter 单元 ----------------------------------

@@ -10,22 +10,13 @@
 import pandas as pd
 import pytest
 
-from config import MARKET_DIR
 from services.market_data.duckdb_store import DuckDBStore
+from backend.tests.fixtures.mini_market import mini_store
 
 
-def _has_real_data() -> bool:
-    a = MARKET_DIR / "A"
-    return (a / "financial" / "indicator").exists() and any(
-        (a / "financial" / "indicator").glob("*.parquet")
-    )
-
-
-@pytest.fixture(scope="module")
-def store():
-    if not _has_real_data():
-        pytest.skip("无真实 data/market 数据")
-    return DuckDBStore()
+@pytest.fixture
+def store(mini_store):
+    return mini_store
 
 
 @pytest.mark.parametrize("market", ["A", "HK", "US"])
@@ -108,9 +99,9 @@ def test_a_baseline_unchanged(store):
     ).fetchdf()
 
     assert biz is not None and not biz.empty
-    # 报告期对齐(允许业务视图行数 = indicator 主表,可能 ≥ raw balance)
+    # 报告期对齐(小型 fixture 提供 3 个报告期,允许业务视图行数 = indicator 主表)
     common_dates = set(biz["REPORT_DATE"]) & set(raw_df["REPORT_DATE"])
-    assert len(common_dates) >= 50, "A 股 balance 报告期重叠应 ≥ 50"
+    assert len(common_dates) == 3, "A 股 balance 报告期必须与 raw view 对齐"
 
     # 抽 1 期对比 MONETARYFUNDS 数值一致
     sample_date = sorted(common_dates)[-1]

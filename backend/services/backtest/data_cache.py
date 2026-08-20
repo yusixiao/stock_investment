@@ -230,19 +230,21 @@ def _aggregate_and_compute(
 ) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     """对每只股票预聚合 weekly/monthly 并预算指标。
 
-    daily 入参在调用前已经过 ``compute_indicators``;weekly/monthly 由 daily
+    daily 入参按股票逐项转换为带指标的日线;weekly/monthly 由同一项 daily
     经 ``aggregate_kline`` 聚合后再调一次 compute_indicators。
     """
     weekly: dict[str, pd.DataFrame] = {}
     monthly: dict[str, pd.DataFrame] = {}
-    daily_with_indicators: dict[str, pd.DataFrame] = {}
+    # Reuse the market-level daily container. Keeping a second full dict here
+    # doubles the peak memory while the bundle is being built.
+    daily_with_indicators = daily
 
     total = len(daily)
     progress.total = total
     progress.current = 0
     progress.phase = "预算指标(daily/weekly/monthly)..."
 
-    for sym, df in daily.items():
+    for sym, df in list(daily.items()):
         # daily:升序后追加指标列
         d = df.sort_values("date").reset_index(drop=True)
         daily_with_indicators[sym] = compute_indicators(d)

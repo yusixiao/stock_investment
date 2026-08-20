@@ -10,8 +10,7 @@ Phase 1b 验收 + 防回归。锚定:
 
 import pytest
 
-from config import MARKET_DIR
-from services.market_data.duckdb_store import DuckDBStore
+from backend.tests.fixtures.mini_market import mini_store
 
 MARKETS = ["a", "hk", "us"]
 
@@ -54,18 +53,9 @@ STRATEGY_USED_FIELDS = {
 }
 
 
-def _has_real_data() -> bool:
-    a = MARKET_DIR / "A"
-    return (a / "financial" / "indicator").exists() and any(
-        (a / "financial" / "indicator").glob("*.parquet")
-    )
-
-
-@pytest.fixture(scope="module")
-def store():
-    if not _has_real_data():
-        pytest.skip("无真实 data/market 数据")
-    return DuckDBStore()
+@pytest.fixture
+def store(mini_store):
+    return mini_store
 
 
 @pytest.mark.parametrize("market", MARKETS)

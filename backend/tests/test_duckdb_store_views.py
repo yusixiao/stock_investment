@@ -1,13 +1,8 @@
-"""DuckDB raw 视图回归测试 — 锁定三市场 21 个 raw 视图存在、有数据、含 join key。
-
-Phase 1a 验收测试。Phase 1b(业务视图)前置防回归保险。
-跑在真实 data/market/ 上,缺数据则 skip(CI 友好)。
-"""
+"""DuckDB raw 视图回归测试 — 锁定三市场 raw 视图存在、有数据、含 join key。"""
 
 import pytest
 
-from config import MARKET_DIR
-from services.market_data.duckdb_store import DuckDBStore
+from backend.tests.fixtures.mini_market import mini_store
 
 MARKETS = ["a", "hk", "us"]
 PERIODIC_TABLES = ["indicator", "income", "balance", "cashflow"]
@@ -16,22 +11,9 @@ DAILY_TABLES = ["daily", "dividend"]
 ALL_TABLES = PERIODIC_TABLES + DAILY_TABLES + ["adjust_factor"]
 
 
-def _has_real_data() -> bool:
-    """A 股 daily/financial 都得在,否则 skip。"""
-    a = MARKET_DIR / "A"
-    return (
-        (a / "daily").exists()
-        and any((a / "daily").glob("*.parquet"))
-        and (a / "financial" / "income").exists()
-        and any((a / "financial" / "income").glob("*.parquet"))
-    )
-
-
-@pytest.fixture(scope="module")
-def store():
-    if not _has_real_data():
-        pytest.skip("无真实 data/market 数据,跳过 raw 视图回归测试")
-    return DuckDBStore()
+@pytest.fixture
+def store(mini_store):
+    return mini_store
 
 
 @pytest.mark.parametrize(

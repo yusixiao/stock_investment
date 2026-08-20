@@ -23,35 +23,27 @@ from services.agent.core.qualitative.schema import (
     QualitativeReport,
 )
 from services.agent.core.symbol import StockRef
+from backend.tests.fixtures.mini_market import mini_market
 
 
 # ===== DuckDBStore.query_latest_report_date =====
 
 
-def test_query_latest_report_date_real_store():
-    """真实 DuckDBStore:002594.SZ 应返回非空 'YYYY-MM-DD' 字符串(若数据存在)。"""
+def test_query_latest_report_date_real_store(mini_market):
+    """mini parquet + 真实 DuckDBStore 应返回报告期字符串。"""
     from services.market_data.duckdb_store import DuckDBStore
 
     s = DuckDBStore()
     try:
-        df = s._conn.execute(
-            "SELECT count(*) FROM v_a_indicator WHERE _symbol = '002594.SZ'"
-        ).fetchone()
-    except Exception:
+        rd = s.query_latest_report_date("002594.SZ")
+        assert rd is not None
+        assert isinstance(rd, str)
+        assert len(rd) == 10 and rd[4] == "-" and rd[7] == "-"
+    finally:
         s.close()
-        pytest.skip("v_a_indicator not available")
-    if df[0] == 0:
-        s.close()
-        pytest.skip("002594.SZ indicator data missing")
-
-    rd = s.query_latest_report_date("002594.SZ")
-    assert rd is not None
-    assert isinstance(rd, str)
-    assert len(rd) == 10 and rd[4] == "-" and rd[7] == "-"
-    s.close()
 
 
-def test_query_latest_report_date_view_missing():
+def test_query_latest_report_date_view_missing(mini_market):
     """视图不存在 → None,不抛。"""
     from services.market_data.duckdb_store import DuckDBStore
 
@@ -61,7 +53,7 @@ def test_query_latest_report_date_view_missing():
     s.close()
 
 
-def test_query_latest_report_date_db_error():
+def test_query_latest_report_date_db_error(mini_market):
     """SQL 抛异常 → None,不冒泡。"""
     from services.market_data.duckdb_store import DuckDBStore
 

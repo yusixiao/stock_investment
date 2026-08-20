@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pandas as pd
+
 from services.backtest import data_cache
 from services.backtest.data_cache import MarketBundle
 
@@ -35,3 +37,28 @@ def test_invalidate_keeps_previous_bundle_as_stale():
     assert status["loaded"] is True
     assert status["stale"] is True
     assert status["status"] == "stale"
+
+
+def test_aggregate_and_compute_reuses_market_daily_container():
+    daily = {
+        "000001.SZ": pd.DataFrame(
+            {
+                "date": pd.date_range("2024-01-01", periods=35),
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": range(10, 45),
+                "volume": 1000.0,
+                "amount": 10000.0,
+            }
+        )
+    }
+
+    processed, weekly, monthly = data_cache._aggregate_and_compute(
+        daily, data_cache.LoadProgress()
+    )
+
+    assert processed is daily
+    assert "ma5" in daily["000001.SZ"]
+    assert weekly["000001.SZ"].shape[0] > 0
+    assert monthly["000001.SZ"].shape[0] > 0

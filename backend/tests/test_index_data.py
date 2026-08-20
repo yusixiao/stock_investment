@@ -4,8 +4,7 @@
 - 不需要复权因子,直读 v_{market}_index
 - 不进 query_qfq_kline_bulk 的股票 universe(本测试显式断言隔离)
 
-抓取测试用伪 Ticker / mock baostock 绕过网络;查询测试在真实 data/market/ 上跑,
-缺数据则 skip(CI 友好)。
+抓取测试用伪 Ticker / mock baostock 绕过网络;查询测试在 mini parquet fixture 上跑。
 """
 
 from __future__ import annotations
@@ -15,8 +14,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from config import MARKET_DIR
-from services.market_data.duckdb_store import DuckDBStore
+from backend.tests.fixtures.mini_market import mini_store
 from services.market_data.updaters.index_updater import (
     INDEX_CATALOG,
     _fetch_baostock_index,
@@ -139,19 +137,12 @@ def test_catalog_codes_are_clean_and_unique():
     assert INDEX_CATALOG[0]["code"] != "MUTATED"
 
 
-# ---------------- 查询层:DuckDB 视图(真实数据)----------------
+# ---------------- 查询层:DuckDB 视图(mini fixture)----------------
 
 
-def _has_index_data() -> bool:
-    hk = MARKET_DIR / "HK" / "index"
-    return hk.exists() and any(hk.glob("*.parquet"))
-
-
-@pytest.fixture(scope="module")
-def store():
-    if not _has_index_data():
-        pytest.skip("无真实指数数据,跳过 query_index 测试")
-    return DuckDBStore()
+@pytest.fixture
+def store(mini_store):
+    return mini_store
 
 
 def test_query_index_bulk_returns_series(store):
@@ -166,10 +157,10 @@ def test_query_index_bulk_returns_series(store):
 
 
 def test_query_index_single_with_date_filter(store):
-    df = store.query_index("HK", "HSI", start_date="2020-01-01", end_date="2020-12-31")
+    df = store.query_index("HK", "HSI", start_date="2024-01-01", end_date="2024-12-31")
     assert len(df) > 0
-    assert df["date"].min() >= "2020-01-01"
-    assert df["date"].max() <= "2020-12-31"
+    assert df["date"].min() >= "2024-01-01"
+    assert df["date"].max() <= "2024-12-31"
 
 
 def test_query_index_missing_view_returns_empty(store):
