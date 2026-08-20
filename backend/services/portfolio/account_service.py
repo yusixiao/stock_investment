@@ -21,12 +21,18 @@ class AccountService:
         self.target_materializer = target_materializer or materialize_strategy_targets
 
     def create_account(self, name: str, market: str, base_currency: str, strategy_task_id: str | None) -> Account:
-        account = self.repository.create_account(name, market, base_currency)
-        if strategy_task_id is not None:
-            account = self.bind_strategy(account.id, strategy_task_id)
-        else:
-            self.repository.conn.commit()
-        return account
+        try:
+            # Lock before INSERT so binding and materialization share one write transaction.
+            self._begin_transaction()
+            account = self.repository.create_account(name, market, base_currency)
+            if strategy_task_id is not None:
+                account = self.bind_strategy(account.id, strategy_task_id)
+            else:
+                self.repository.conn.commit()
+            return account
+        except Exception:
+            self.repository.conn.rollback()
+            raise
 
     def bind_strategy(self, account_id: int, task_id: str) -> Account:
         try:

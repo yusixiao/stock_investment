@@ -273,7 +273,12 @@ const PortfolioPage: React.FC = () => {
   const refreshContextRef = useRef<FxRefreshContext>({ viewKey: refreshViewKey, requestId: 0 });
   const hasAccounts = accounts.length > 0;
   const writableAccount = selectedAccount === 'all' ? undefined : accounts.find((item) => item.id === selectedAccount);
-  const strategyBound = Boolean(writableAccount?.strategyTaskId);
+  const hasStrategyAccounts = accounts.some((item) => Boolean(item.strategyTaskId));
+  const strategyBound = selectedAccount === 'all'
+    ? hasStrategyAccounts
+    : Boolean(writableAccount?.strategyTaskId);
+  const strategyTaskLabel = writableAccount?.strategyTaskId
+    || (selectedAccount === 'all' && hasStrategyAccounts ? '部分账户已绑定策略' : '');
   const writableAccountId = writableAccount?.id;
   const writeBlocked = !writableAccountId;
   const totalEventPages = Math.max(1, Math.ceil(eventTotal / DEFAULT_PAGE_SIZE));
@@ -778,7 +783,7 @@ const PortfolioPage: React.FC = () => {
                 >
                   {isLoading ? '刷新中...' : '刷新数据'}
                 </button>
-                {strategyBound ? (
+                {writableAccount?.strategyTaskId ? (
                   <button
                     type="button"
                     onClick={() => void handleUnbindStrategy()}
@@ -819,7 +824,7 @@ const PortfolioPage: React.FC = () => {
         <InlineAlert
           variant="info"
           title="策略账户"
-          message={`已绑定回测任务 ${writableAccount?.strategyTaskId}。买入范围由当前策略目标约束，卖出和数量不受限制。`}
+           message={`已绑定回测任务 ${strategyTaskLabel}。买入范围由当前策略目标约束，卖出和数量不受限制。`}
         />
       ) : null}
 

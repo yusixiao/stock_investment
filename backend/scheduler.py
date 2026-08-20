@@ -83,19 +83,24 @@ def _post_market_update_refresh():
 
 
 def _evaluate_buy_opportunities_after_refresh(record, markets):
-    """提醒失败只记录日志，不阻塞已成功的市场刷新。"""
+    """按市场隔离提醒评估，单个市场失败不影响其它市场。"""
     import logging
     from datetime import date
-    try:
-        from services.portfolio.buy_opportunity import evaluate_buy_opportunities
+    from services.portfolio.buy_opportunity import evaluate_buy_opportunities
 
-        class _NullSink:
-            def emit(self, alert):
-                logging.getLogger(__name__).info("buy opportunity emitted: %s", alert)
+    class _NullSink:
+        def emit(self, alert):
+            logging.getLogger(__name__).info("buy opportunity emitted: %s", alert)
 
-        evaluate_buy_opportunities(date.today().isoformat(), _NullSink(), markets=markets)
-    except Exception as exc:  # noqa: BLE001
-        logging.getLogger(__name__).error("buy opportunity evaluation failed: %s", exc)
+    for market in sorted(markets):
+        try:
+            evaluate_buy_opportunities(
+                date.today().isoformat(), _NullSink(), markets={market}
+            )
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "buy opportunity evaluation failed for market=%s: %s", market, exc
+            )
 
 
 def _on_market_refresh_complete(record):

@@ -152,7 +152,15 @@ def _raw_trade_revisions(result: dict, task_id: str) -> list[StrategyTargetRevis
             if direction == "buy":
                 state[symbol] = _target(symbol, quantity, price, "active", effective_date, task_id)
             else:
-                reference_price = previous.reference_price if previous else price
+                if previous is None:
+                    raise TargetRecommendationUnavailable(
+                        "sell has no prior buy for target symbol"
+                    )
+                if quantity > previous.target_quantity:
+                    raise TargetRecommendationUnavailable(
+                        "sell quantity exceeds current target quantity"
+                    )
+                reference_price = previous.reference_price
                 state[symbol] = StrategyTarget(
                     symbol=symbol, target_quantity=0, reference_price=reference_price,
                     status="exited", effective_date=effective_date, source_task_id=task_id,

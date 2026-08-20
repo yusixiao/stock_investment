@@ -181,6 +181,22 @@ def test_create_account_can_bind_successful_task(service):
     assert tm.set_calls == [("success-2", account.id)]
 
 
+def test_create_account_begins_immediate_before_insert_and_rolls_back_bind(service):
+    svc, repo, _ = service
+    statements = []
+    repo.conn.set_trace_callback(statements.append)
+    svc.target_materializer = lambda **kwargs: (_ for _ in ()).throw(
+        RuntimeError("materialization failed")
+    )
+
+    with pytest.raises(RuntimeError, match="materialization failed"):
+        svc.create_account("原子创建", "A", "CNY", "success")
+
+    insert_index = next(i for i, sql in enumerate(statements) if "INSERT INTO portfolio_accounts" in sql)
+    assert any("BEGIN IMMEDIATE" in sql.upper() for sql in statements[:insert_index])
+    assert repo.conn.execute("SELECT COUNT(*) FROM portfolio_accounts").fetchone()[0] == 0
+
+
 def test_default_materializer_fails_closed(service):
     svc, _, _ = service
     account = svc.create_account("无物化器", "A", "CNY", None)

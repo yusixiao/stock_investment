@@ -86,3 +86,25 @@ def test_snapshot_job_continues_other_markets_when_one_view_fails(monkeypatch):
         connection=connection,
     )
     connection.close.assert_called_once_with()
+
+
+def test_evaluator_isolates_market_failures(monkeypatch, caplog):
+    calls = []
+
+    def evaluate(_as_of_date, _sink, *, markets):
+        calls.append(markets)
+        if markets == {"A"}:
+            raise RuntimeError("A evaluator failed")
+
+    monkeypatch.setattr(
+        "services.portfolio.buy_opportunity.evaluate_buy_opportunities", evaluate
+    )
+
+    scheduler._evaluate_buy_opportunities_after_refresh(
+        MagicMock(), {"A", "HK", "US"}
+    )
+
+    assert {frozenset(markets) for markets in calls} == {
+        frozenset({"A"}), frozenset({"HK"}), frozenset({"US"})
+    }
+    assert "market=A" in caplog.text

@@ -143,3 +143,32 @@ def test_raw_trade_contract_orders_same_day_trades_and_zeroes_partial_sell(targe
         ("2026-06-02", 12, 11.0),
         ("2026-06-03", 0, 11.0),
     ]
+
+
+@pytest.mark.parametrize(
+    ("trades", "message"),
+    [
+        (
+            [{"date": "2026-06-02", "symbol": "A", "direction": "sell", "shares": 1, "price": 9}],
+            "sell has no prior buy",
+        ),
+        (
+            [
+                {"date": "2026-06-02", "symbol": "A", "direction": "buy", "shares": 2, "price": 10},
+                {"date": "2026-06-03", "symbol": "A", "direction": "sell", "shares": 3, "price": 9},
+            ],
+            "sell quantity exceeds current target",
+        ),
+    ],
+)
+def test_raw_trade_contract_rejects_invalid_sell_sequences(target_context, trades, message):
+    conn, account = target_context
+    from services.portfolio import strategy_targets
+
+    strategy_targets.task_manager.get_result = lambda task_id, connection=None: {
+        "task_id": task_id, "status": "success", "result": {"raw_trades": trades}
+    }
+
+    with pytest.raises(TargetRecommendationUnavailable, match=message):
+        materialize_targets(account.id, TASK_ID, connection=conn)
+

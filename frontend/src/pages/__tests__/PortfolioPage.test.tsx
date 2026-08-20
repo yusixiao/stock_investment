@@ -305,6 +305,26 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.getByText('2.00')).toBeInTheDocument();
   });
 
+  it('keeps strategy overlay visible for all accounts when any account is bound', async () => {
+    getAccounts.mockResolvedValue(makeAccounts([
+      { id: 1, name: '普通账户' },
+      { id: 2, name: '策略账户', strategyTaskId: 'task-1' },
+    ]));
+    getSnapshot.mockResolvedValue(makeSnapshot({ positions: [{
+      symbol: 'TARGET.SZ', quantity: 0, avgCost: 0, totalCost: 0, lastPrice: 12,
+      marketValueBase: 0, unrealizedPnlBase: 0, unrealizedPnlPct: null, valuationCurrency: 'CNY',
+      targetQuantity: 10, referencePrice: 15, remainingQuantity: 10, overTargetQuantity: 0,
+      targetStatus: 'active', alertStatus: 'armed', accountId: 2,
+    }] }));
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+
+    expect(screen.getByText('目标持仓')).toBeInTheDocument();
+    expect(screen.getByText('TARGET.SZ')).toBeInTheDocument();
+    expect(screen.getAllByText('10.00').length).toBeGreaterThanOrEqual(1);
+  });
+
   it('shows exited targets with actual holdings but no buy alert', async () => {
     getAccounts.mockResolvedValue(makeAccounts([{ id: 2, name: '策略账户', strategyTaskId: 'task-1' }]));
     getSnapshot.mockResolvedValue(makeSnapshot({ accountId: 2, positions: [{
