@@ -1,5 +1,5 @@
 import sqlite3
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -177,3 +177,16 @@ def test_v1_request_scope_closes_connection_on_success_and_error():
         connection.close()
 
     assert closed == [connection, connection]
+
+
+def test_get_connection_closes_when_init_db_fails():
+    from routers import portfolio_v1
+
+    connection = MagicMock()
+    with patch("routers.portfolio_v1.get_connection", return_value=connection), patch(
+        "routers.portfolio_v1.init_db", side_effect=RuntimeError("schema init failed")
+    ):
+        with pytest.raises(RuntimeError, match="schema init failed"):
+            portfolio_v1._get_connection()
+
+    connection.close.assert_called_once_with()

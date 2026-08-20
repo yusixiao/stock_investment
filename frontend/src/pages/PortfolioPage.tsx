@@ -62,6 +62,10 @@ const PORTFOLIO_INPUT_CLASS =
 const PORTFOLIO_SELECT_CLASS = `${PORTFOLIO_INPUT_CLASS} appearance-none pr-10`;
 const PORTFOLIO_FILE_PICKER_CLASS =
   'input-surface input-focus-glow flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border bg-transparent px-4 text-sm transition-all focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
+const PORTFOLIO_DISABLED_FILE_PICKER_CLASS = PORTFOLIO_FILE_PICKER_CLASS.replace(
+  'cursor-pointer',
+  'cursor-not-allowed',
+);
 
 function getTodayIso(): string {
   return toDateInputValue(new Date());
@@ -1187,7 +1191,7 @@ const PortfolioPage: React.FC = () => {
                   <option value="huatai">huatai（华泰）</option>
                 )}
               </select>
-              <label className={PORTFOLIO_FILE_PICKER_CLASS}>
+              <label className={PORTFOLIO_DISABLED_FILE_PICKER_CLASS}>
                 选择 CSV
                 <input disabled type="file" accept=".csv" className="hidden"
                   onChange={(e) => setCsvFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} />

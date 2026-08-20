@@ -42,8 +42,12 @@ class TradeCreateRequest(BaseModel):
 
 def _get_connection():
     conn = get_connection()
-    init_db(conn)
-    return conn
+    try:
+        init_db(conn)
+        return conn
+    except Exception:
+        conn.close()
+        raise
 
 
 def _close_connection(conn):
