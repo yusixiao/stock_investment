@@ -141,16 +141,16 @@ def test_sink_failure_in_middle_does_not_repeat_prior_success_on_retry():
     assert retry.alerts == []
 
 
-def test_sink_failure_does_not_rollback_external_transaction():
+def test_active_external_transaction_is_rejected_before_emit():
     conn, account = setup_account()
     conn.execute("BEGIN")
     failed = FailingSink({"A"})
 
-    assert evaluate_buy_opportunities("2026-08-20", failed, connection=conn, store=Store({"A": 90, "B": 101})) == 0
-    assert conn.in_transaction is True
-    conn.commit()
-    retry = Sink()
-    assert evaluate_buy_opportunities("2026-08-20", retry, connection=conn, store=Store({"A": 90, "B": 101})) == 0
+    with pytest.raises(RuntimeError, match="active transaction"):
+        evaluate_buy_opportunities("2026-08-20", failed, connection=conn, store=Store({"A": 90, "B": 101}))
+
+    assert failed.alerts == []
+    conn.rollback()
 
 
 def test_concurrent_evaluators_emit_once_for_same_valuation_date(tmp_path):

@@ -37,11 +37,13 @@ class BuyOpportunityAlert:
 
 def evaluate_buy_opportunities(as_of_date: str, sink: BuyOpportunitySink, *, connection: sqlite3.Connection | None = None, store=None, markets: set[str] | None = None) -> int:
     date.fromisoformat(as_of_date)
+    owns = connection is None
+    conn = connection or get_connection()
+    if conn.in_transaction:
+        raise RuntimeError("evaluate_buy_opportunities requires a connection without an active transaction")
     if store is None:
         from services.market_data.duckdb_store import get_store
         store = get_store()
-    owns = connection is None
-    conn = connection or get_connection()
     try:
         repo = AccountRepository(conn)
         emitted = 0
