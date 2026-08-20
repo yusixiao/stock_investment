@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+import pandas as pd
+
 import scheduler
 
 
@@ -38,3 +40,26 @@ def test_completed_record_with_derived_failure_does_not_evaluate_failed_market(m
     scheduler._on_market_refresh_complete(record)
 
     seam.assert_called_once_with(record, {"HK"})
+
+
+def test_snapshot_job_closes_connection_when_init_db_fails(monkeypatch):
+    store = MagicMock()
+    store.query.side_effect = [
+        pd.DataFrame([{"_symbol": "600519.SH", "date": "2026-08-19", "close": 1500.0}]),
+        pd.DataFrame(),
+        pd.DataFrame(),
+    ]
+    connection = MagicMock()
+    init_db = MagicMock(side_effect=RuntimeError("schema init failed"))
+    monkeypatch.setattr("services.market_data.duckdb_store.get_store", lambda: store)
+    monkeypatch.setattr("services.portfolio.db.get_connection", lambda: connection)
+    monkeypatch.setattr("services.portfolio.db.init_db", init_db)
+
+    try:
+        scheduler._snapshot_job()
+    except RuntimeError as exc:
+        assert str(exc) == "schema init failed"
+    else:
+        raise AssertionError("snapshot job should propagate init_db failure")
+
+    connection.close.assert_called_once_with()

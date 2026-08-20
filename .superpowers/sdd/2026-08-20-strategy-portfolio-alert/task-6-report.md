@@ -188,6 +188,47 @@ rtk git diff --check
 - 前端仍保留 11 个旧 FX 交互测试为 skipped，因为对应功能已明确禁用并由新的不可用 contract 测试替代；基线原有 2 个 skip 仍在。
 - 非核心 v1 endpoint 继续返回 501，只有核心账户/交易/holdings/snapshot 可用。
 
+## 第 4 轮 Fix
+
+### 修复内容
+
+- scheduler `_snapshot_job()` 将 `init_db(conn)` 纳入已有 `try/finally`，确保连接创建成功后，无论 schema 初始化、快照写入还是其他异常都会关闭连接。
+- 新增 scheduler 专项测试，模拟 `init_db` 失败并断言 connection close exactly once。
+- 保留 v1 connection-init 保护、前端不可用能力禁用、snapshot quote metadata 和已 skip 的旧 FX 测试状态。
+
+### 第 4 轮验证输出
+
+```text
+RED:
+rtk pytest backend/tests/test_scheduler.py::test_snapshot_job_closes_connection_when_init_db_fails -q
+Pytest: 0 passed, 1 failed
+失败：scheduler init_db 异常路径未关闭 connection。
+
+GREEN:
+rtk pytest backend/tests/test_portfolio_migration.py backend/tests/test_portfolio_v1_api.py backend/tests/test_portfolio_account_service.py backend/tests/test_portfolio_holdings_service.py backend/tests/test_buy_opportunity.py backend/tests/test_scheduler.py backend/tests/test_scheduler_market_retry.py -q
+Pytest: 63 passed
+
+npm test -- src/pages/__tests__/PortfolioPage.test.tsx
+Test Files  1 passed
+Tests       6 passed | 11 skipped (17)
+
+npm test
+Test Files  40 passed (40)
+Tests       383 passed | 13 skipped (396)
+
+npx tsc --noEmit
+TypeScript: No errors found
+
+npm run lint
+ESLint: No issues found
+
+python -m compileall -q backend/routers/portfolio_v1.py backend/services/market_data/duckdb_store.py backend/services/portfolio/holdings_service.py backend/scheduler.py
+无输出，退出码 0
+
+rtk git diff --check
+无输出，退出码 0
+```
+
 ## 第 3 轮 Fix
 
 ### 修复内容

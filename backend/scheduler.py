@@ -41,8 +41,8 @@ def _snapshot_job():
         return
 
     conn = get_connection()
-    init_db(conn)
     try:
+        init_db(conn)
         take_all_snapshots(market_quotes, connection=conn)
     finally:
         conn.close()
