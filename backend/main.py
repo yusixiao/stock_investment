@@ -5,6 +5,10 @@ from pathlib import Path
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+# 确保 backend/ 目录也在 sys.path 中，避免 from config 冲突 site-packages
+_backend_dir = str(Path(__file__).resolve().parent)
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
 
 import logging
 import logging.handlers
