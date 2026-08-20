@@ -83,6 +83,36 @@ class AccountRepository:
         else:
             self.conn.execute("INSERT INTO portfolio_strategy_alerts (account_id, symbol, state, payload, updated_at) VALUES (?, ?, ?, ?, ?)", (account_id, symbol, state, payload, updated_at))
 
+    def claim_alert(self, account_id: int, symbol: str, revision: str, valuation_date: str, payload: str, updated_at: str) -> bool:
+        """Atomically claim a new trigger; only armed/new revisions can win."""
+        current = self.current_alert(account_id, symbol)
+        if current is None:
+            try:
+                self.conn.execute(
+                    "INSERT INTO portfolio_strategy_alerts (account_id, symbol, state, payload, updated_at) VALUES (?, ?, 'triggered', ?, ?)",
+                    (account_id, symbol, payload, updated_at),
+                )
+                return True
+            except sqlite3.IntegrityError:
+                return False
+        cursor = self.conn.execute(
+            """
+            UPDATE portfolio_strategy_alerts
+            SET state = 'triggered', payload = ?, updated_at = ?
+            WHERE id = ? AND archived_at IS NULL
+              AND (
+                  json_extract(COALESCE(payload, '{}'), '$.revision') IS NULL
+                  OR json_extract(COALESCE(payload, '{}'), '$.revision') <> ?
+                  OR (
+                      state = 'armed'
+                      AND COALESCE(json_extract(COALESCE(payload, '{}'), '$.valuation_date'), '') <> ?
+                  )
+              )
+            """,
+            (payload, updated_at, current["id"], revision, valuation_date),
+        )
+        return cursor.rowcount == 1
+
     def strategy_target_history(self, account_id: int) -> list[sqlite3.Row]:
         return self.conn.execute(
             "SELECT effective_date, targets FROM portfolio_strategy_target_history "

@@ -46,7 +46,11 @@ def evaluate_buy_opportunities(as_of_date: str, sink: BuyOpportunitySink, *, con
         repo = AccountRepository(conn)
         emitted = 0
         for account in (a for a in repo.list_accounts() if a.strategy_task_id):
+            if not isinstance(account.market, str):
+                raise ValueError(f"unsupported market: {account.market}")
             market = account.market.upper()
+            if market not in {"A", "HK", "US"}:
+                raise ValueError(f"unsupported market: {account.market}")
             if markets is not None and market not in markets:
                 continue
             valuation_date = store.previous_trading_date(market, as_of_date)
@@ -77,9 +81,12 @@ def evaluate_buy_opportunities(as_of_date: str, sink: BuyOpportunitySink, *, con
                 if close >= target.reference_price:
                     state = "armed"
                 elif remaining > 0 and state == "armed":
-                    alert = BuyOpportunityAlert(account.id, account.strategy_task_id or "", target.symbol, target.reference_price, float(close), target.target_quantity, actual_shares, remaining, valuation_date, valuation_date)
+                    trigger_payload = json.dumps({"revision": revision, "valuation_date": valuation_date, "processed": True})
+                    if repo.claim_alert(account.id, target.symbol, revision, valuation_date, trigger_payload, datetime.now().isoformat()):
+                        alert = BuyOpportunityAlert(account.id, account.strategy_task_id or "", target.symbol, target.reference_price, float(close), target.target_quantity, actual_shares, remaining, valuation_date, valuation_date)
                     state = "triggered"
-                repo.save_alert(account.id, target.symbol, state, json.dumps({"revision": revision, "valuation_date": valuation_date, "processed": state == "triggered"}), datetime.now().isoformat())
+                if alert is None or state != "triggered":
+                    repo.save_alert(account.id, target.symbol, state, json.dumps({"revision": revision, "valuation_date": valuation_date, "processed": state == "triggered"}), datetime.now().isoformat())
                 if alert is not None:
                     sink.emit(alert)
                     emitted += 1

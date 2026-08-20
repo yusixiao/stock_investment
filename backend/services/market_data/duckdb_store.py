@@ -539,6 +539,7 @@ class DuckDBStore:
         return self._conn.execute(sql).fetchdf()
 
     def query_previous_close(self, market: str, symbols: tuple[str, ...], valuation_date: str) -> dict[str, float]:
+        market = self._validate_market(market)
         if not symbols:
             return {}
         placeholders = ",".join("?" for _ in symbols)
@@ -551,10 +552,20 @@ class DuckDBStore:
         return {row["_symbol"]: float(row["close"]) for _, row in frame.iterrows()}
 
     def previous_trading_date(self, market: str, before_date: str) -> str | None:
+        market = self._validate_market(market)
         frame = self.query(f"SELECT MAX(CAST(date AS DATE)) AS valuation_date FROM v_{market.lower()}_daily WHERE CAST(date AS DATE) < CAST(? AS DATE)", [before_date])
         if frame.empty or frame.iloc[0]["valuation_date"] is None:
             return None
         return str(frame.iloc[0]["valuation_date"])
+
+    @staticmethod
+    def _validate_market(market: str) -> str:
+        if not isinstance(market, str):
+            raise ValueError(f"unsupported market: {market}")
+        normalized = market.upper()
+        if normalized not in {"A", "HK", "US"}:
+            raise ValueError(f"unsupported market: {market}")
+        return normalized
 
     def query_kline(
         self,

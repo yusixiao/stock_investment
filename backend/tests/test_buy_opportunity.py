@@ -2,11 +2,14 @@ import sqlite3
 from datetime import date, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from services.portfolio.buy_opportunity import BuyOpportunityAlert, evaluate_buy_opportunities
 from services.portfolio.db import init_db
 from services.portfolio.db import get_connection
 from services.portfolio.holdings_service import record_trade
 from services.portfolio.repository import AccountRepository
+from services.market_data.duckdb_store import DuckDBStore
 
 
 class Sink:
@@ -45,14 +48,14 @@ def setup_account():
     return conn, account
 
 
-def setup_market_account(market):
+def setup_market_account(market, symbol):
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     init_db(conn)
     repo = AccountRepository(conn)
     account = repo.create_account(f"{market}策略账户", market, "CNY")
     repo.set_strategy(account.id, "task-1", "2026-08-19")
-    repo.add_target_history(account.id, "2026-08-19", '{"task_id":"task-1","targets":[{"symbol":"00001.HK","target_quantity":10,"reference_price":100,"status":"active"}]}', "2026-08-19T00:00:00")
+    repo.add_target_history(account.id, "2026-08-19", '{"task_id":"task-1","targets":[{"symbol":"' + symbol + '","target_quantity":10,"reference_price":100,"status":"active"}]}', "2026-08-19T00:00:00")
     conn.commit()
     return conn, account
 
@@ -138,8 +141,39 @@ def test_concurrent_evaluators_emit_once_for_same_valuation_date(tmp_path):
     assert len(sink.alerts) == 1
 
 
+def test_repository_claim_is_false_for_same_revision_and_valuation_date():
+    conn, account = setup_account()
+    repo = AccountRepository(conn)
+    payload = '{"revision":"rev-1","valuation_date":"2026-08-19","processed":true}'
+
+    assert repo.claim_alert(account.id, "A", "rev-1", "2026-08-19", payload, "2026-08-19T00:00:00") is True
+    assert repo.claim_alert(account.id, "A", "rev-1", "2026-08-19", payload, "2026-08-19T00:01:00") is False
+
+
+@pytest.mark.parametrize("market,symbol", [("A", "000001.SZ"), ("HK", "00001.HK"), ("US", "AAPL.US")])
+def test_evaluator_routes_all_supported_markets(market, symbol):
+    conn, account = setup_market_account(market, symbol)
+    sink = Sink()
+    store = Store({symbol: 90})
+
+    assert evaluate_buy_opportunities("2026-08-20", sink, connection=conn, store=store) == 1
+    assert ("date", market, "2026-08-20", "2026-08-19") in store.calls
+    assert ("close", market, (symbol,), "2026-08-19") in store.calls
+
+
+def test_duckdb_store_rejects_unknown_market_before_building_sql():
+    store = object.__new__(DuckDBStore)
+
+    with pytest.raises(ValueError, match="market"):
+        store.previous_trading_date("CN", "2026-08-20")
+    with pytest.raises(ValueError, match="market"):
+        store.query_previous_close("CN", ("A",), "2026-08-19")
+    with pytest.raises(ValueError, match="market"):
+        store.previous_trading_date(None, "2026-08-20")
+
+
 def test_hk_account_routes_both_date_and_close_queries_to_hk_view():
-    conn, account = setup_market_account("HK")
+    conn, account = setup_market_account("HK", "00001.HK")
     sink = Sink()
     store = Store({"00001.HK": 90})
 
