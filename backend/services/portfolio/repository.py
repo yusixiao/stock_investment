@@ -77,41 +77,65 @@ class AccountRepository:
         return self.conn.execute("SELECT * FROM portfolio_strategy_alerts WHERE account_id = ? AND symbol = ? AND archived_at IS NULL", (account_id, symbol)).fetchone()
 
     def save_alert(self, account_id: int, symbol: str, state: str, payload: str, updated_at: str) -> None:
-        current = self.current_alert(account_id, symbol)
-        if current:
-            self.conn.execute("UPDATE portfolio_strategy_alerts SET state = ?, payload = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL", (state, payload, updated_at, current["id"]))
-        else:
-            self.conn.execute("INSERT INTO portfolio_strategy_alerts (account_id, symbol, state, payload, updated_at) VALUES (?, ?, ?, ?, ?)", (account_id, symbol, state, payload, updated_at))
+        started = not self.conn.in_transaction
+        try:
+            if started:
+                self.conn.execute("BEGIN IMMEDIATE")
+            current = self.current_alert(account_id, symbol)
+            if current:
+                self.conn.execute("UPDATE portfolio_strategy_alerts SET state = ?, payload = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL", (state, payload, updated_at, current["id"]))
+            else:
+                self.conn.execute("INSERT INTO portfolio_strategy_alerts (account_id, symbol, state, payload, updated_at) VALUES (?, ?, ?, ?, ?)", (account_id, symbol, state, payload, updated_at))
+            if started:
+                self.conn.commit()
+        except Exception:
+            if started:
+                self.conn.rollback()
+            raise
 
     def claim_alert(self, account_id: int, symbol: str, revision: str, valuation_date: str, payload: str, updated_at: str) -> bool:
         """Atomically claim a new trigger; only armed/new revisions can win."""
-        current = self.current_alert(account_id, symbol)
-        if current is None:
-            try:
+        started = not self.conn.in_transaction
+        try:
+            if started:
+                self.conn.execute("BEGIN IMMEDIATE")
+            current = self.current_alert(account_id, symbol)
+            if current is None:
                 self.conn.execute(
                     "INSERT INTO portfolio_strategy_alerts (account_id, symbol, state, payload, updated_at) VALUES (?, ?, 'triggered', ?, ?)",
                     (account_id, symbol, payload, updated_at),
                 )
+                if started:
+                    self.conn.commit()
                 return True
-            except sqlite3.IntegrityError:
-                return False
-        cursor = self.conn.execute(
-            """
-            UPDATE portfolio_strategy_alerts
-            SET state = 'triggered', payload = ?, updated_at = ?
-            WHERE id = ? AND archived_at IS NULL
-              AND (
-                  json_extract(COALESCE(payload, '{}'), '$.revision') IS NULL
-                  OR json_extract(COALESCE(payload, '{}'), '$.revision') <> ?
-                  OR (
-                      state = 'armed'
-                      AND COALESCE(json_extract(COALESCE(payload, '{}'), '$.valuation_date'), '') <> ?
+            cursor = self.conn.execute(
+                """
+                UPDATE portfolio_strategy_alerts
+                SET state = 'triggered', payload = ?, updated_at = ?
+                WHERE id = ? AND archived_at IS NULL
+                  AND (
+                      json_extract(COALESCE(payload, '{}'), '$.revision') IS NULL
+                      OR json_extract(COALESCE(payload, '{}'), '$.revision') <> ?
+                      OR (
+                          state = 'armed'
+                          AND COALESCE(json_extract(COALESCE(payload, '{}'), '$.valuation_date'), '') <> ?
+                      )
                   )
-              )
-            """,
-            (payload, updated_at, current["id"], revision, valuation_date),
-        )
-        return cursor.rowcount == 1
+                """,
+                (payload, updated_at, current["id"], revision, valuation_date),
+            )
+            claimed = cursor.rowcount == 1
+            if started:
+                self.conn.commit()
+            return claimed
+        except sqlite3.IntegrityError:
+            if started:
+                self.conn.rollback()
+            return False
+        except Exception:
+            if started:
+                self.conn.rollback()
+            raise
 
     def strategy_target_history(self, account_id: int) -> list[sqlite3.Row]:
         return self.conn.execute(

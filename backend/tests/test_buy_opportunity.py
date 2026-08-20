@@ -20,6 +20,17 @@ class Sink:
         self.alerts.append(alert)
 
 
+class FailingSink(Sink):
+    def __init__(self, failed_symbols):
+        super().__init__()
+        self.failed_symbols = set(failed_symbols)
+
+    def emit(self, alert: BuyOpportunityAlert):
+        if alert.symbol in self.failed_symbols:
+            raise RuntimeError(f"sink failed for {alert.symbol}")
+        super().emit(alert)
+
+
 class Store:
     def __init__(self, rows):
         self.rows = rows
@@ -107,6 +118,39 @@ def test_same_valuation_date_is_idempotent():
 
     assert len(first.alerts) == 1
     assert second.alerts == []
+
+
+def test_sink_failure_does_not_reemit_claimed_alert_on_retry():
+    conn, account = setup_account()
+    failed = FailingSink({"A"})
+
+    assert evaluate_buy_opportunities("2026-08-20", failed, connection=conn, store=Store({"A": 90, "B": 101})) == 0
+    retry = Sink()
+    assert evaluate_buy_opportunities("2026-08-20", retry, connection=conn, store=Store({"A": 90, "B": 101})) == 0
+    assert retry.alerts == []
+
+
+def test_sink_failure_in_middle_does_not_repeat_prior_success_on_retry():
+    conn, account = setup_account()
+    failed = FailingSink({"B"})
+
+    assert evaluate_buy_opportunities("2026-08-20", failed, connection=conn, store=Store({"A": 90, "B": 90})) == 1
+    assert [alert.symbol for alert in failed.alerts] == ["A"]
+    retry = Sink()
+    assert evaluate_buy_opportunities("2026-08-20", retry, connection=conn, store=Store({"A": 90, "B": 90})) == 0
+    assert retry.alerts == []
+
+
+def test_sink_failure_does_not_rollback_external_transaction():
+    conn, account = setup_account()
+    conn.execute("BEGIN")
+    failed = FailingSink({"A"})
+
+    assert evaluate_buy_opportunities("2026-08-20", failed, connection=conn, store=Store({"A": 90, "B": 101})) == 0
+    assert conn.in_transaction is True
+    conn.commit()
+    retry = Sink()
+    assert evaluate_buy_opportunities("2026-08-20", retry, connection=conn, store=Store({"A": 90, "B": 101})) == 0
 
 
 def test_concurrent_evaluators_emit_once_for_same_valuation_date(tmp_path):
