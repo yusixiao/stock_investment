@@ -241,12 +241,16 @@ class TaskManager:
             resp["log_dir"] = row["log_dir"]
         return resp
 
-    def set_execution_account(self, task_id: str, account_id: int) -> dict:
+    def set_execution_account(
+        self, task_id: str, account_id: int, connection: sqlite3.Connection | None = None
+    ) -> dict:
         """将任务标记为某账户的唯一活动策略关联。"""
-        conn = self._get_conn()
+        owns_connection = connection is None
+        conn = connection or self._get_conn()
         try:
             try:
-                conn.execute("BEGIN IMMEDIATE")
+                if owns_connection:
+                    conn.execute("BEGIN IMMEDIATE")
                 conflict = conn.execute(
                     "SELECT task_id FROM backtest_tasks "
                     "WHERE execution_account_id = ? AND execution_status = 'active' "
@@ -264,20 +268,26 @@ class TaskManager:
                 )
                 if updated.rowcount == 0:
                     raise ValueError(f"task {task_id} not found")
-                conn.commit()
+                if owns_connection:
+                    conn.commit()
             except Exception:
-                conn.rollback()
+                if owns_connection:
+                    conn.rollback()
                 raise
         finally:
-            conn.close()
+            if owns_connection:
+                conn.close()
         return {
             "task_id": task_id,
             "execution_status": "active",
             "execution_account_id": account_id,
         }
 
-    def clear_execution_account(self, task_id: str) -> dict:
-        conn = self._get_conn()
+    def clear_execution_account(
+        self, task_id: str, connection: sqlite3.Connection | None = None
+    ) -> dict:
+        owns_connection = connection is None
+        conn = connection or self._get_conn()
         try:
             updated = conn.execute(
                 "UPDATE backtest_tasks SET execution_status = 'inactive', "
@@ -286,9 +296,11 @@ class TaskManager:
             )
             if updated.rowcount == 0:
                 raise ValueError(f"task {task_id} not found")
-            conn.commit()
+            if owns_connection:
+                conn.commit()
         finally:
-            conn.close()
+            if owns_connection:
+                conn.close()
         return {
             "task_id": task_id,
             "execution_status": "inactive",

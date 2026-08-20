@@ -30,5 +30,34 @@
 ## 已知风险/疑问
 
 - 当前工作树中旧 `backend/tests/test_portfolio_api.py::TestHoldings::test_holdings` 单独运行会因 DuckDB 测试环境缺少 `v_a_daily` 失败；失败发生在既有旧 holdings 路由查询，不涉及本任务新增代码。
-- Task 3 尚未实现，当前 materializer 默认为空实现；后续应注入目标解析与物化实现，并在同一 service 编排边界内接入。
-- Task 1 的 `TaskManager` 当前自行打开 SQLite connection；生产环境若 materializer 在绑定事务中写大量目标数据，后续应评估跨 connection 锁与原子性，并由后续任务决定是否扩展 TaskManager connection seam。
+- Task 3 尚未实现；Fix Round 1 已将默认 materializer 改为 fail-closed，后续必须注入目标解析与物化实现。
+- Fix Round 1 已为 TaskManager 增加外部 connection seam，并由 AccountService 统一管理绑定/解绑事务。
+
+## Fix Round 1
+
+### 处理内容
+
+- `TaskManager.set_execution_account` / `clear_execution_account` 增加可选外部 SQLite connection；传入时不自行 commit/close，由 `AccountService` 通过同一 connection 和 `BEGIN IMMEDIATE` 管理绑定/解绑事务，保留原有无参公共调用行为。
+- 默认目标物化器改为 fail-closed，Task 3 未接入时抛出明确 `RuntimeError`；生产 router 通过 `_get_materializer()` 明确装配 seam，绑定 API 返回 503，不再返回无目标的成功状态。
+- `portfolio_strategy_targets` 与 `portfolio_strategy_alerts` 增加 `(account_id, symbol)` 的未归档 partial unique index，历史归档记录仍可保留。
+- v1 请求改用 Pydantic `AccountCreateRequest` / `StrategyBindingRequest`，缺字段或空字符串由 FastAPI 返回 422。
+- 新增真实 TaskManager 同 SQLite connection 的绑定/解绑失败回滚测试、fail-closed 测试、materializer connection 断言、current 状态唯一性测试，以及重复 schema 初始化和既有表列结构保持测试。
+
+### Fix 测试命令及完整结果
+
+- `python -m pytest backend/tests/test_portfolio_account_service.py backend/tests/test_portfolio_v1_api.py -q`
+
+  ```text
+  Pytest: 18 passed
+  ```
+
+- `python -m pytest backend/tests/test_portfolio_db.py backend/tests/test_portfolio_manager.py backend/tests/test_backtest_task_manager.py backend/tests/test_backtest_api.py -q`
+
+  ```text
+  Pytest: 59 passed
+  ```
+
+### Fix 剩余 concerns
+
+- Task 3 仍需在 `_get_materializer()` seam 接入真实目标物化实现；当前生产绑定会明确返回 503，这是预期的 fail-closed 行为。
+- 当前目标/提醒 partial unique index 假设既有未归档数据没有重复值；若部署到已有重复数据的数据库，schema 初始化前需要单独数据清理迁移。

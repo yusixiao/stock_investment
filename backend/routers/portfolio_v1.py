@@ -1,13 +1,26 @@
 from dataclasses import asdict
 
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from services.backtest.task_manager import task_manager
 from services.portfolio.account_service import AccountService
+from services.portfolio.account_service import materialize_strategy_targets
 from services.portfolio.db import get_connection, init_db
 from services.portfolio.repository import AccountRepository
 
 router = APIRouter(prefix="/api/v1/portfolio", tags=["portfolio-v1"])
+
+
+class AccountCreateRequest(BaseModel):
+    name: str = Field(min_length=1)
+    market: str = Field(min_length=1)
+    base_currency: str = Field(min_length=1)
+    strategy_task_id: str | None = None
+
+
+class StrategyBindingRequest(BaseModel):
+    task_id: str = Field(min_length=1)
 
 
 def _get_connection():
@@ -20,8 +33,16 @@ def _get_task_manager():
     return task_manager
 
 
+def _get_materializer():
+    return materialize_strategy_targets
+
+
 def _get_service() -> AccountService:
-    return AccountService(AccountRepository(_get_connection()), _get_task_manager())
+    return AccountService(
+        AccountRepository(_get_connection()),
+        _get_task_manager(),
+        target_materializer=_get_materializer(),
+    )
 
 
 def _error(exc: ValueError):
@@ -29,14 +50,20 @@ def _error(exc: ValueError):
     raise HTTPException(status_code=status, detail=str(exc))
 
 
+def _materializer_error(exc: RuntimeError):
+    raise HTTPException(status_code=503, detail=str(exc))
+
+
 @router.post("/accounts", status_code=201)
-def create_account(body: dict = Body(...)):
+def create_account(body: AccountCreateRequest):
     try:
-        return asdict(AccountService(AccountRepository(_get_connection()), _get_task_manager()).create_account(
-            body["name"], body["market"], body["base_currency"], body.get("strategy_task_id")
+        return asdict(_get_service().create_account(
+            body.name, body.market, body.base_currency, body.strategy_task_id
         ))
     except ValueError as exc:
         _error(exc)
+    except RuntimeError as exc:
+        _materializer_error(exc)
 
 
 @router.get("/accounts")
@@ -50,14 +77,18 @@ def get_account(account_id: int):
         return asdict(_get_service().get_account(account_id))
     except ValueError as exc:
         _error(exc)
+    except RuntimeError as exc:
+        _materializer_error(exc)
 
 
 @router.post("/accounts/{account_id}/strategy")
-def bind_strategy(account_id: int, body: dict = Body(...)):
+def bind_strategy(account_id: int, body: StrategyBindingRequest):
     try:
-        return asdict(_get_service().bind_strategy(account_id, body["task_id"]))
+        return asdict(_get_service().bind_strategy(account_id, body.task_id))
     except ValueError as exc:
         _error(exc)
+    except RuntimeError as exc:
+        _materializer_error(exc)
 
 
 @router.delete("/accounts/{account_id}/strategy")

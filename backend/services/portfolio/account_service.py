@@ -6,7 +6,8 @@ from services.portfolio.repository import AccountRepository
 
 
 def materialize_strategy_targets(*, account_id: int, task_id: str, connection):
-    """Task 3 seam. Target parsing/materialization is intentionally not implemented here."""
+    """Task 3 seam; never report a successful bind before materialization exists."""
+    raise RuntimeError("Task 3 target materializer is not available")
 
 
 class AccountService:
@@ -42,8 +43,9 @@ class AccountService:
             raise ValueError("account is already linked")
         now = datetime.now().isoformat()
         try:
+            self._begin_transaction()
             self.target_materializer(account_id=account_id, task_id=task_id, connection=self.repository.conn)
-            self.task_manager.set_execution_account(task_id, account_id)
+            self.task_manager.set_execution_account(task_id, account_id, connection=self.repository.conn)
             result = self.repository.set_strategy(account_id, task_id, now)
             self.repository.conn.commit()
             return result
@@ -57,8 +59,11 @@ class AccountService:
             return account
         now = datetime.now().isoformat()
         try:
+            self._begin_transaction()
             self.repository.archive_strategy_state(account_id, now)
-            self.task_manager.clear_execution_account(account.strategy_task_id)
+            self.task_manager.clear_execution_account(
+                account.strategy_task_id, connection=self.repository.conn
+            )
             result = self.repository.clear_strategy(account_id, now)
             self.repository.conn.commit()
             return result
@@ -77,3 +82,7 @@ class AccountService:
         if account is None:
             raise ValueError("account not found")
         return account
+
+    def _begin_transaction(self):
+        if not self.repository.conn.in_transaction:
+            self.repository.conn.execute("BEGIN IMMEDIATE")

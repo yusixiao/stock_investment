@@ -267,6 +267,12 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             ON portfolio_account_trades(account_id, trade_date, id);
         CREATE INDEX IF NOT EXISTS idx_portfolio_targets_account
             ON portfolio_strategy_targets(account_id, symbol);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_portfolio_current_target
+            ON portfolio_strategy_targets(account_id, symbol)
+            WHERE archived_at IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_portfolio_current_alert
+            ON portfolio_strategy_alerts(account_id, symbol)
+            WHERE archived_at IS NULL;
         """
     )
     conn.commit()

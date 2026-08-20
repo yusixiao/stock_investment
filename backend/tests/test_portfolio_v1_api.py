@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from services.portfolio.db import init_db
+from services.portfolio.account_service import materialize_strategy_targets
 
 
 @pytest.fixture
@@ -16,7 +17,7 @@ def client():
     init_db(conn)
     with patch("routers.portfolio_v1._get_connection", return_value=conn), patch(
         "routers.portfolio_v1._get_task_manager"
-    ) as task_manager:
+    ) as task_manager, patch("routers.portfolio_v1._get_materializer", return_value=lambda **kwargs: None):
         task_manager.return_value.get_result.return_value = {
             "task_id": "task-1", "status": "success", "execution_status": "inactive"
         }
@@ -51,3 +52,25 @@ def test_v1_bind_maps_domain_errors(client):
     )
 
     assert response.status_code == 409
+
+
+def test_v1_rejects_missing_required_fields(client):
+    http, _ = client
+
+    assert http.post("/api/v1/portfolio/accounts", json={"name": "缺字段"}).status_code == 422
+    assert http.post("/api/v1/portfolio/accounts/1/strategy", json={}).status_code == 422
+
+
+def test_v1_fails_closed_when_task3_materializer_is_unavailable(client):
+    http, _ = client
+    with patch("routers.portfolio_v1._get_materializer", return_value=materialize_strategy_targets):
+        account = http.post(
+            "/api/v1/portfolio/accounts",
+            json={"name": "待接入", "market": "A", "base_currency": "CNY"},
+        ).json()
+        response = http.post(
+            f"/api/v1/portfolio/accounts/{account['id']}/strategy",
+            json={"task_id": "task-1"},
+        )
+
+    assert response.status_code == 503
