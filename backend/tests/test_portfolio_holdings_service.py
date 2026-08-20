@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 
 from services.portfolio.db import init_db
-from services.portfolio.holdings_service import get_holdings, record_trade
+from services.portfolio.holdings_service import delete_trade, get_holdings, record_trade
 from services.portfolio.repository import AccountRepository
 
 
@@ -83,3 +83,28 @@ def test_zero_target_with_actual_shares_is_visible_as_exited(portfolio):
     assert holding.target_quantity == 0
     assert holding.target_status == "exited"
     assert holding.remaining_quantity == 0
+
+
+def test_projection_never_creates_negative_holdings_or_realized_pnl_after_delete(portfolio):
+    conn, repo, account = portfolio
+    first = record_trade(account.id, "600519.SH", "buy", 10, 100.0, "2026-08-18", connection=conn)
+    record_trade(account.id, "600519.SH", "sell", 4, 110.0, "2026-08-19", connection=conn)
+    conn.execute("DELETE FROM portfolio_account_trades WHERE id = ? AND account_id = ?", (first.id, account.id))
+    conn.commit()
+
+    assert get_holdings(account.id, "2026-08-19", connection=conn) == []
+    assert all(item["realized_pnl"] >= 0 for item in repo.list_trades(account.id))
+
+
+def test_delete_trade_rejects_reprojection_that_would_break_sell_history(portfolio):
+    conn, repo, account = portfolio
+    buy = record_trade(account.id, "600519.SH", "buy", 10, 100.0, "2026-08-18", connection=conn)
+    sell = record_trade(account.id, "600519.SH", "sell", 4, 110.0, "2026-08-19", connection=conn)
+
+    with pytest.raises(ValueError, match="negative holdings"):
+        delete_trade(account.id, buy.id, connection=conn)
+    assert get_holdings(account.id, "2026-08-19", connection=conn)[0].actual_shares == 6
+
+    delete_trade(account.id, sell.id, connection=conn)
+    assert get_holdings(account.id, "2026-08-19", connection=conn)[0].actual_shares == 10
+    assert repo.list_trades(account.id)[0]["realized_pnl"] == 0

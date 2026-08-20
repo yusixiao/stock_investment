@@ -190,3 +190,20 @@ def test_get_connection_closes_when_init_db_fails():
             portfolio_v1._get_connection()
 
     connection.close.assert_called_once_with()
+
+
+def test_delete_trade_requires_owning_account_and_reprojects(client):
+    http, _ = client
+    first = http.post("/api/v1/portfolio/accounts", json={"name": "一", "market": "A", "base_currency": "CNY"}).json()
+    second = http.post("/api/v1/portfolio/accounts", json={"name": "二", "market": "A", "base_currency": "CNY"}).json()
+    trade = http.post("/api/v1/portfolio/trades", json={
+        "account_id": first["id"], "symbol": "600519", "side": "buy", "quantity": 10,
+        "price": 100, "trade_date": "2026-08-18",
+    }).json()
+    response = http.delete(f"/api/v1/portfolio/trades/{trade['id']}", params={"account_id": second["id"]})
+    assert response.status_code == 409
+    assert http.get(f"/api/v1/portfolio/accounts/{first['id']}/holdings").json()[0]["actual_shares"] == 10
+
+    response = http.delete(f"/api/v1/portfolio/trades/{trade['id']}", params={"account_id": first["id"]})
+    assert response.status_code == 200
+    assert http.get(f"/api/v1/portfolio/accounts/{first['id']}/holdings").json() == []

@@ -8,6 +8,7 @@ from scheduler import _snapshot_job, start_scheduler
 from services.portfolio.db import get_connection, init_db
 from services.portfolio.holdings_service import record_trade
 from services.portfolio.repository import AccountRepository
+from services.db_schema import run_merge_strategies_migration
 
 
 def test_production_app_only_exposes_portfolio_v1():
@@ -102,3 +103,28 @@ def test_snapshot_schedule_remains_at_1530():
     snapshot_call = next(call for call in add_job.call_args_list if call.kwargs.get("id") == "daily_snapshot")
     assert snapshot_call.kwargs["hour"] == 15
     assert snapshot_call.kwargs["minute"] == 30
+
+
+def test_populated_duplicate_active_execution_is_archived_deterministically():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE backtest_tasks (task_id TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL, pipeline_info TEXT, execution_account_id INTEGER, execution_status TEXT NOT NULL DEFAULT 'inactive')")
+    conn.executemany(
+        "INSERT INTO backtest_tasks(task_id, status, created_at, execution_account_id, execution_status) VALUES (?, 'success', ?, 7, 'active')",
+        [("task-b", "2026-08-20T00:00:00"), ("task-a", "2026-08-19T00:00:00")],
+    )
+    conn.commit()
+
+    run_merge_strategies_migration(conn)
+
+    rows = conn.execute("SELECT task_id, execution_status, execution_account_id FROM backtest_tasks ORDER BY task_id").fetchall()
+    assert [tuple(row) for row in rows] == [
+        ("task-a", "active", 7),
+        ("task-b", "inactive", None),
+    ]
+    run_merge_strategies_migration(conn)
+    assert [tuple(row) for row in conn.execute("SELECT task_id, execution_status, execution_account_id FROM backtest_tasks ORDER BY task_id")] == [
+        ("task-a", "active", 7),
+        ("task-b", "inactive", None),
+    ]
+    conn.close()

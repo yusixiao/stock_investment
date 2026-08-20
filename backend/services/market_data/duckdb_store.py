@@ -542,12 +542,22 @@ class DuckDBStore:
         market = self._validate_market(market)
         if not symbols:
             return {}
-        placeholders = ",".join("?" for _ in symbols)
+        candidates = []
+        for symbol in symbols:
+            if "." in symbol:
+                candidates.append(symbol)
+            elif market == "A":
+                candidates.extend((f"{symbol}.SH", f"{symbol}.SZ"))
+            elif market == "HK":
+                candidates.append(f"{symbol}.HK")
+            else:
+                candidates.extend((f"{symbol}.US", symbol))
+        placeholders = ",".join("?" for _ in candidates)
         frame = self.query(
             f"SELECT _symbol, close FROM v_{market.lower()}_daily WHERE _symbol IN ({placeholders}) "
             "AND CAST(date AS DATE) <= CAST(? AS DATE) "
             "QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1",
-            [*symbols, valuation_date],
+            [*candidates, valuation_date],
         )
         return {row["_symbol"]: float(row["close"]) for _, row in frame.iterrows()}
 

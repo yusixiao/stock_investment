@@ -65,3 +65,20 @@ class TestExecutionMetadata:
             inactive_new,
             inactive_old,
         ]
+
+    @pytest.mark.parametrize("descending", [True, False])
+    def test_list_tasks_keeps_created_order_inside_each_execution_group(self, isolated_task_manager, descending):
+        older = isolated_task_manager.create_task(strategy_class="Older", params={})
+        newer = isolated_task_manager.create_task(strategy_class="Newer", params={})
+        isolated_task_manager.set_execution_account(older, 9)
+        isolated_task_manager.set_execution_account(newer, 10)
+        conn = sqlite3.connect(isolated_task_manager._db_path)
+        if descending:
+            conn.execute("UPDATE backtest_tasks SET created_at = CASE task_id WHEN ? THEN '2026-08-19' ELSE '2026-08-20' END", (older,))
+        else:
+            conn.execute("UPDATE backtest_tasks SET created_at = CASE task_id WHEN ? THEN '2026-08-20' ELSE '2026-08-19' END", (older,))
+        conn.commit()
+        conn.close()
+
+        ordered = isolated_task_manager.list_tasks()
+        assert [task["task_id"] for task in ordered] == ([newer, older] if descending else [older, newer])

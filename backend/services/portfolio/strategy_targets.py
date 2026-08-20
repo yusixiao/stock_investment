@@ -1,8 +1,13 @@
 """Portfolio-owned strategy target history.
 
-The backtest result is an immutable source document. This module parses its
-explicit target recommendation section once at binding time and then serves
-only the account-owned SQLite materialization.
+The backtest result is an immutable source document. The production contract
+is its ``raw_trades`` list, processed by ``(date, original index)``: a buy
+establishes or replaces a symbol target with its latest quantity/price, while
+any sell, including a partial sell, zeroes that symbol and preserves its prior
+reference price. Every revision inherits other symbols. Explicit target
+history remains supported for older producers; malformed or target-less
+results fail closed. Reads after binding use only the account-owned SQLite
+materialization.
 """
 
 from __future__ import annotations
@@ -118,8 +123,8 @@ def _result_revisions(result: Any, task_id: str) -> list[StrategyTargetRevision]
     return sorted(revisions, key=lambda revision: revision.effective_date)
 
 
-def _load_task_result(task_id: str) -> dict:
-    task = task_manager.get_result(task_id)
+def _load_task_result(task_id: str, connection: sqlite3.Connection | None = None) -> dict:
+    task = task_manager.get_result(task_id, connection=connection)
     if not task or not task.get("result"):
         raise TargetRecommendationUnavailable("backtest task result is unavailable")
     return task["result"]
@@ -132,6 +137,8 @@ def _raw_trade_revisions(result: dict, task_id: str) -> list[StrategyTargetRevis
     state: dict[str, StrategyTarget] = {}
     revisions: list[StrategyTargetRevision] = []
     try:
+        # Same-day ties use raw result order; partial sells mean strategy exit,
+        # not an account-trade quantity adjustment.
         ordered = sorted(enumerate(raw_trades), key=lambda pair: (_iso_date(pair[1]["date"]), pair[0]))
         for _, trade in ordered:
             effective_date = _iso_date(trade["date"])
@@ -165,7 +172,7 @@ def materialize_targets(
     conn = connection or get_connection()
     try:
         repository = AccountRepository(conn)
-        result = _load_task_result(task_id)
+        result = _load_task_result(task_id, connection=conn)
         revisions = _result_revisions(result, task_id) if (
             result.get("strategy_targets") or result.get("target_history")
             or result.get("strategy_target_history") or (result.get("execution") or {}).get("strategy_targets")

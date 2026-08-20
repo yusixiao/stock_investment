@@ -97,7 +97,8 @@ def run_merge_strategies_migration(conn: sqlite3.Connection):
     if not _column_exists(conn, "backtest_tasks", "log_dir"):
         conn.execute("ALTER TABLE backtest_tasks ADD COLUMN log_dir TEXT")
 
-    # 执行关联元数据；活动账户通过部分唯一索引保证一对一。
+    # 先修复历史脏数据再建唯一索引。保留全部行，仅把确定性胜出的
+    # 最小 task_id 保持 active，其余行降为 inactive，迁移可重复执行。
     if not _column_exists(conn, "backtest_tasks", "execution_account_id"):
         conn.execute(
             "ALTER TABLE backtest_tasks ADD COLUMN execution_account_id INTEGER"
@@ -106,6 +107,25 @@ def run_merge_strategies_migration(conn: sqlite3.Connection):
         conn.execute(
             "ALTER TABLE backtest_tasks ADD COLUMN execution_status TEXT NOT NULL DEFAULT 'inactive'"
         )
+    conn.execute(
+        """
+        UPDATE backtest_tasks
+        SET execution_status = 'inactive', execution_account_id = NULL
+        WHERE rowid IN (
+            SELECT rowid FROM (
+                SELECT rowid,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY execution_account_id
+                           ORDER BY task_id
+                       ) AS row_number
+                FROM backtest_tasks
+                WHERE execution_status = 'active'
+                  AND execution_account_id IS NOT NULL
+            )
+            WHERE row_number > 1
+        )
+        """
+    )
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_backtest_active_execution_account "
         "ON backtest_tasks(execution_account_id) "

@@ -1,4 +1,5 @@
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -16,7 +17,7 @@ class FakeTaskManager:
         self.set_calls = []
         self.clear_calls = []
 
-    def get_result(self, task_id):
+    def get_result(self, task_id, connection=None):
         return self.tasks.get(task_id)
 
     def set_execution_account(self, task_id, account_id, connection=None):
@@ -278,3 +279,49 @@ def test_real_task_manager_rolls_back_unbind_on_account_failure(tmp_path):
     assert repo.get_account(account.id).strategy_task_id == "real-task"
     assert task_manager.get_result("real-task")["execution_status"] == "active"
     conn.close()
+
+
+def test_concurrent_bindings_leave_one_account_and_one_task(tmp_path):
+    db_path = tmp_path / "concurrent-bind.db"
+    seed = sqlite3.connect(db_path)
+    seed.row_factory = sqlite3.Row
+    init_db(seed)
+    init_backtest_tables(seed)
+    seed.execute(
+        "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, created_at) VALUES (?, 'success', 'screener', '{}', ?)",
+        ("race-task", "2026-08-20T00:00:00"),
+    )
+    repo = AccountRepository(seed)
+    first = repo.create_account("一", "A", "CNY")
+    second = repo.create_account("二", "A", "CNY")
+    seed.commit()
+    seed.close()
+
+    class RealTaskManager(TaskManager):
+        pass
+
+    def bind(account_id):
+        conn = sqlite3.connect(db_path, timeout=2)
+        conn.row_factory = sqlite3.Row
+        service = AccountService(
+            AccountRepository(conn),
+            RealTaskManager(db_path=str(db_path)),
+            target_materializer=lambda **kwargs: None,
+        )
+        try:
+            service.bind_strategy(account_id, "race-task")
+            return "bound"
+        except (ValueError, sqlite3.IntegrityError):
+            return "rejected"
+        finally:
+            conn.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(bind, (first.id, second.id)))
+
+    assert sorted(outcomes) == ["bound", "rejected"]
+    check = sqlite3.connect(db_path)
+    check.row_factory = sqlite3.Row
+    assert check.execute("SELECT COUNT(*) FROM portfolio_accounts WHERE strategy_task_id = 'race-task'").fetchone()[0] == 1
+    assert check.execute("SELECT COUNT(*) FROM backtest_tasks WHERE execution_status = 'active' AND execution_account_id IS NOT NULL").fetchone()[0] == 1
+    check.close()

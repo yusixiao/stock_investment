@@ -341,6 +341,25 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.getByText('ACTIVE.SZ')).toBeInTheDocument();
   });
 
+  it('keeps a strategy target-only row visible when actual quantity is zero', async () => {
+    getAccounts.mockResolvedValue(makeAccounts([{ id: 2, name: '策略账户', strategyTaskId: 'task-1' }]));
+    getSnapshot.mockResolvedValue(makeSnapshot({ accountId: 2, positions: [{
+      symbol: 'TARGET.SZ', quantity: 0, avgCost: 0, totalCost: 0, lastPrice: 12,
+      marketValueBase: 0, unrealizedPnlBase: 0, unrealizedPnlPct: null, valuationCurrency: 'CNY',
+      priceSource: 'history_close', priceAvailable: true, targetQuantity: 10, referencePrice: 15,
+      remainingQuantity: 10, overTargetQuantity: 0, targetStatus: 'active', alertStatus: 'armed',
+    }] }));
+    listTrades.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '2' } });
+
+    expect(await screen.findByText('TARGET.SZ')).toBeInTheDocument();
+    expect(screen.getByText('armed')).toBeInTheDocument();
+    expect(screen.getAllByText('10.00').length).toBeGreaterThanOrEqual(1);
+  });
+
   it.skip('refreshes FX for a single selected account and only reloads snapshot/risk', async () => {
     getSnapshot
       .mockResolvedValueOnce(makeSnapshot({ fxStale: true }))

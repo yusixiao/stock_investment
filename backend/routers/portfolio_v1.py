@@ -12,7 +12,7 @@ from services.portfolio.account_service import (
 )
 from services.portfolio.strategy_targets import materialize_targets
 from services.portfolio.db import get_connection, init_db
-from services.portfolio.holdings_service import build_snapshot, get_holdings, record_trade
+from services.portfolio.holdings_service import build_snapshot, delete_trade as delete_trade_service, get_holdings, record_trade
 from services.portfolio.repository import AccountRepository
 
 router = APIRouter(prefix="/api/v1/portfolio", tags=["portfolio-v1"])
@@ -208,11 +208,13 @@ def list_trades(
 
 
 @router.delete("/trades/{trade_id}")
-def delete_trade(trade_id: int):
+def delete_trade(trade_id: int, account_id: int = Query(...)):
     with _connection_scope() as conn:
-        deleted = conn.execute("DELETE FROM portfolio_account_trades WHERE id = ?", (trade_id,)).rowcount
-        conn.commit()
-        return {"deleted": deleted}
+        try:
+            delete_trade_service(account_id, trade_id, conn)
+        except ValueError as exc:
+            _error(exc)
+        return {"deleted": 1}
 
 
 @router.get("/accounts/{account_id}/holdings")

@@ -66,6 +66,56 @@ def record_trade(account_id: int, symbol: str, side: str, quantity: int, price: 
             conn.close()
 
 
+def delete_trade(account_id: int, trade_id: int, connection: sqlite3.Connection | None = None) -> None:
+    """删除交易后完整重放账户流水，拒绝跨账户和会产生负持仓的删除。"""
+    owns = connection is None
+    conn = connection or get_connection()
+    started = False
+    try:
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+            started = True
+        repo = AccountRepository(conn)
+        trade = repo.get_trade(trade_id)
+        if trade is None or trade["account_id"] != account_id:
+            raise ValueError("trade does not belong to account")
+        shares_by_symbol: dict[str, int] = {}
+        costs_by_symbol: dict[str, float] = {}
+        projected_realized: list[tuple[float, int]] = []
+        for row in repo.list_trades(account_id):
+            if row["id"] == trade_id:
+                continue
+            symbol = row["symbol"]
+            shares = shares_by_symbol.get(symbol, 0)
+            cost = costs_by_symbol.get(symbol, 0.0)
+            if row["direction"] == "buy":
+                shares += row["shares"]
+                cost += row["shares"] * row["price"] + row["fee"]
+                realized = 0.0
+            else:
+                if row["shares"] > shares:
+                    raise ValueError("deleting trade would create negative holdings")
+                average = cost / shares if shares else 0.0
+                shares -= row["shares"]
+                cost -= average * row["shares"]
+                realized = row["price"] * row["shares"] - average * row["shares"] - row["fee"] - row["tax"]
+            projected_realized.append((realized, row["id"]))
+            shares_by_symbol[symbol] = shares
+            costs_by_symbol[symbol] = cost
+        conn.execute("DELETE FROM portfolio_account_trades WHERE id = ? AND account_id = ?", (trade_id, account_id))
+        for realized, row_id in projected_realized:
+            conn.execute("UPDATE portfolio_account_trades SET realized_pnl = ? WHERE id = ?", (realized, row_id))
+        if started:
+            conn.commit()
+    except Exception:
+        if started:
+            conn.rollback()
+        raise
+    finally:
+        if owns:
+            conn.close()
+
+
 def _project(trades: list[dict], as_of_date: str) -> dict[str, tuple[int, float]]:
     state: dict[str, tuple[int, float]] = {}
     for trade in trades:
@@ -105,7 +155,8 @@ def get_holdings(account_id: int, as_of_date: str | None = None, connection: sql
                 continue
             actual = max(shares, 0)
             target_quantity = target.target_quantity if target else 0
-            result.append(Holding(account_id, symbol, actual, cost / actual if actual else 0.0, realized.get(symbol, 0.0), target_quantity, target.reference_price if target else None, target.status if target else None, max(target_quantity - actual, 0)))
+            alert = repo.current_alert(account_id, symbol) if target else None
+            result.append(Holding(account_id, symbol, actual, cost / actual if actual else 0.0, realized.get(symbol, 0.0), target_quantity, target.reference_price if target else None, target.status if target else None, max(target_quantity - actual, 0), alert["state"] if alert else None))
         return result
     finally:
         if owns:
@@ -246,7 +297,7 @@ def build_snapshot(
                 "remaining_quantity": holding.remaining_quantity,
                 "over_target_quantity": max(holding.actual_shares - holding.target_quantity, 0),
                 "target_status": holding.target_status,
-                "alert_status": None,
+                "alert_status": holding.alert_status,
             })
         account_items.append({
             "account_id": account.id,

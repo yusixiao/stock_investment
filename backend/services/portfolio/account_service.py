@@ -29,25 +29,25 @@ class AccountService:
         return account
 
     def bind_strategy(self, account_id: int, task_id: str) -> Account:
-        account = self._require_account(account_id)
-        if self.repository.current_holdings(account_id):
-            raise ValueError("account has current holdings")
-        task = self.task_manager.get_result(task_id)
-        if not task or task.get("status") != "success":
-            raise ValueError("task must be successful")
-        if task.get("execution_status") == "active":
-            raise ValueError("task is already active")
-        linked = self.repository.conn.execute(
-            "SELECT id FROM portfolio_accounts WHERE strategy_task_id = ? AND id != ? AND is_active = 1",
-            (task_id, account_id),
-        ).fetchone()
-        if linked:
-            raise ValueError("task is already linked to another account")
-        if account.strategy_task_id is not None and account.strategy_task_id != task_id:
-            raise ValueError("account is already linked")
-        now = datetime.now().isoformat()
         try:
             self._begin_transaction()
+            account = self._require_account(account_id)
+            if self.repository.current_holdings(account_id):
+                raise ValueError("account has current holdings")
+            task = self.task_manager.get_result(task_id, connection=self.repository.conn)
+            if not task or task.get("status") != "success":
+                raise ValueError("task must be successful")
+            if task.get("execution_status") == "active":
+                raise ValueError("task is already active")
+            linked = self.repository.conn.execute(
+                "SELECT id FROM portfolio_accounts WHERE strategy_task_id = ? AND id != ? AND is_active = 1",
+                (task_id, account_id),
+            ).fetchone()
+            if linked:
+                raise ValueError("task is already linked to another account")
+            if account.strategy_task_id is not None and account.strategy_task_id != task_id:
+                raise ValueError("account is already linked")
+            now = datetime.now().isoformat()
             self.target_materializer(account_id=account_id, task_id=task_id, connection=self.repository.conn)
             self.task_manager.set_execution_account(task_id, account_id, connection=self.repository.conn)
             result = self.repository.set_strategy(account_id, task_id, now)

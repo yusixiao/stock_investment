@@ -444,7 +444,7 @@ const PortfolioPage: React.FC = () => {
     const rows: FlatPosition[] = [];
     for (const account of snapshot.accounts || []) {
       for (const position of account.positions || []) {
-        if (position.quantity <= 0) continue;
+        if (position.quantity <= 0 && !(position.targetQuantity != null && position.targetQuantity > 0)) continue;
         rows.push({
           ...position,
           accountId: account.accountId,
@@ -579,7 +579,7 @@ const PortfolioPage: React.FC = () => {
       setDeleteLoading(true);
       setWriteWarning(null);
       if (pendingDelete.eventType === 'trade') {
-        await portfolioApi.deleteTrade(pendingDelete.id);
+          await portfolioApi.deleteTrade(pendingDelete.id, writableAccountId);
       } else if (pendingDelete.eventType === 'cash') {
         await portfolioApi.deleteCashLedger(pendingDelete.id);
       } else {

@@ -40,3 +40,4 @@ class Holding:
     reference_price: float | None = None
     target_status: str | None = None
     remaining_quantity: int = 0
+    alert_status: str | None = None

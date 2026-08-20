@@ -14,6 +14,18 @@ from services.portfolio.repository import AccountRepository
 from services.portfolio.strategy_targets import get_current_targets
 
 
+def _close_for_symbol(market: str, symbol: str, closes: dict[str, float]) -> float | None:
+    candidates = (symbol,) if "." in symbol else (
+        (f"{symbol}.SH", f"{symbol}.SZ", symbol) if market == "A" else
+        (f"{symbol}.HK", symbol) if market == "HK" else
+        (f"{symbol}.US", symbol)
+    )
+    for candidate in candidates:
+        if candidate in closes:
+            return float(closes[candidate])
+    return None
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,7 +75,7 @@ def evaluate_buy_opportunities(as_of_date: str, sink: BuyOpportunitySink, *, con
             closes = store.query_previous_close(market, tuple(t.symbol for t in targets), valuation_date)
             actual = {h.symbol: h.actual_shares for h in get_holdings(account.id, valuation_date, conn)}
             for target in targets:
-                close = closes.get(target.symbol)
+                close = _close_for_symbol(market, target.symbol, closes)
                 if close is None:
                     continue
                 actual_shares = actual.get(target.symbol, 0)

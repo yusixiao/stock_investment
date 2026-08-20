@@ -206,15 +206,17 @@ class TaskManager:
                 resp["progress"] = prog
         return resp
 
-    def get_result(self, task_id: str) -> dict | None:
-        conn = self._get_conn()
+    def get_result(self, task_id: str, connection: sqlite3.Connection | None = None) -> dict | None:
+        owns_connection = connection is None
+        conn = connection or self._get_conn()
         try:
             row = conn.execute(
                 "SELECT status, result, error, pipeline_info, start_date, end_date, source_task_id, log_dir, execution_status, execution_account_id FROM backtest_tasks WHERE task_id = ?",
                 (task_id,),
             ).fetchone()
         finally:
-            conn.close()
+            if owns_connection:
+                conn.close()
         if row is None:
             return None
         result = json.loads(row["result"]) if row["result"] else None

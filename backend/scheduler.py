@@ -25,18 +25,22 @@ def _snapshot_job():
     store = get_store()
     market_quotes = {}
     for market in ("A", "HK", "US"):
-        df = store.query(
-            f"""
-            SELECT _symbol, date, close
-            FROM v_{market.lower()}_daily
-            QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1
-            """
-        )
-        if not df.empty:
-            market_quotes[market] = (
-                str(df["date"].max()),
-                {row["_symbol"]: float(row["close"]) for _, row in df.iterrows()},
+        try:
+            df = store.query(
+                f"""
+                SELECT _symbol, date, close
+                FROM v_{market.lower()}_daily
+                QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1
+                """
             )
+            if not df.empty:
+                market_quotes[market] = (
+                    str(df["date"].max()),
+                    {row["_symbol"]: float(row["close"]) for _, row in df.iterrows()},
+                )
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning("snapshot quote query failed for market=%s: %s", market, exc)
     if not market_quotes:
         return
 

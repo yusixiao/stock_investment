@@ -10,6 +10,7 @@ from services.portfolio.db import get_connection
 from services.portfolio.holdings_service import record_trade
 from services.portfolio.repository import AccountRepository
 from services.market_data.duckdb_store import DuckDBStore
+from services.portfolio.holdings_service import build_snapshot
 
 
 class Sink:
@@ -216,6 +217,18 @@ def test_duckdb_store_rejects_unknown_market_before_building_sql():
         store.previous_trading_date(None, "2026-08-20")
 
 
+@pytest.mark.parametrize("market,raw_symbol,canonical", [
+    ("A", "600519", "600519.SH"),
+    ("HK", "00005", "00005.HK"),
+    ("US", "AAPL", "AAPL.US"),
+])
+def test_duckdb_previous_close_maps_raw_symbol_to_canonical(monkeypatch, market, raw_symbol, canonical):
+    store = object.__new__(DuckDBStore)
+    monkeypatch.setattr(store, "query", lambda sql, params: __import__("pandas").DataFrame([{"_symbol": canonical, "close": 99.0}]))
+
+    assert store.query_previous_close(market, (raw_symbol,), "2026-08-19") == {canonical: 99.0}
+
+
 def test_hk_account_routes_both_date_and_close_queries_to_hk_view():
     conn, account = setup_market_account("HK", "00001.HK")
     sink = Sink()
@@ -252,3 +265,14 @@ def test_over_target_and_zero_target_never_emit():
     sink = Sink()
     assert evaluate_buy_opportunities("2026-08-21", sink, connection=conn, store=Store({"A": 90, "B": 80})) == 0
     assert sink.alerts == []
+
+
+def test_snapshot_exposes_persisted_alert_state():
+    conn, account = setup_account()
+    repo = AccountRepository(conn)
+    repo.save_alert(account.id, "A", "triggered", '{"revision":"r"}', "2026-08-20T00:00:00")
+    store = type("SnapshotStore", (), {"query_latest_closes": lambda self, market, symbols, as_of: {"A": (90.0, "2026-08-19")}})()
+
+    snapshot = build_snapshot(as_of_date="2026-08-20", account_id=account.id, cost_method="fifo", store=store, connection=conn)
+
+    assert snapshot["accounts"][0]["positions"][0]["alert_status"] == "triggered"

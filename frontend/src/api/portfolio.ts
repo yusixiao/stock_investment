@@ -174,8 +174,8 @@ export const portfolioApi = {
     return toCamelCase<PortfolioEventCreatedResponse>(response.data);
   },
 
-  async deleteTrade(tradeId: number): Promise<PortfolioDeleteResponse> {
-    const response = await apiClient.delete<Record<string, unknown>>(`/api/v1/portfolio/trades/${tradeId}`);
+  async deleteTrade(tradeId: number, accountId: number): Promise<PortfolioDeleteResponse> {
+    const response = await apiClient.delete<Record<string, unknown>>(`/api/v1/portfolio/trades/${tradeId}`, { params: { account_id: accountId } });
     return toCamelCase<PortfolioDeleteResponse>(response.data);
   },
 

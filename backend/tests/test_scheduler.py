@@ -63,3 +63,26 @@ def test_snapshot_job_closes_connection_when_init_db_fails(monkeypatch):
         raise AssertionError("snapshot job should propagate init_db failure")
 
     connection.close.assert_called_once_with()
+
+
+def test_snapshot_job_continues_other_markets_when_one_view_fails(monkeypatch):
+    store = MagicMock()
+    store.query.side_effect = [
+        RuntimeError("A view missing"),
+        pd.DataFrame([{"_symbol": "00005.HK", "date": "2026-08-19", "close": 300.0}]),
+        pd.DataFrame([{"_symbol": "AAPL.US", "date": "2026-08-18", "close": 200.0}]),
+    ]
+    connection = MagicMock()
+    monkeypatch.setattr("services.market_data.duckdb_store.get_store", lambda: store)
+    monkeypatch.setattr("services.portfolio.db.get_connection", lambda: connection)
+    monkeypatch.setattr("services.portfolio.db.init_db", MagicMock())
+    snapshot = MagicMock()
+    monkeypatch.setattr("services.portfolio.holdings_service.take_all_snapshots", snapshot)
+
+    scheduler._snapshot_job()
+
+    snapshot.assert_called_once_with(
+        {"HK": ("2026-08-19", {"00005.HK": 300.0}), "US": ("2026-08-18", {"AAPL.US": 200.0})},
+        connection=connection,
+    )
+    connection.close.assert_called_once_with()

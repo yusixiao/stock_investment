@@ -66,6 +66,9 @@ class AccountRepository:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def get_trade(self, trade_id: int) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM portfolio_account_trades WHERE id = ?", (trade_id,)).fetchone()
+
     def current_holdings(self, account_id: int) -> dict[str, int]:
         holdings: dict[str, int] = {}
         for trade in self.list_trades(account_id):

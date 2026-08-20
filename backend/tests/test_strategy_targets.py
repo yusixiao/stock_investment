@@ -40,7 +40,7 @@ def target_context(monkeypatch):
     monkeypatch.setattr(
         strategy_targets,
         "task_manager",
-        type("TaskManager", (), {"get_result": lambda self, task_id: {
+         type("TaskManager", (), {"get_result": lambda self, task_id, connection=None: {
             "task_id": task_id, "status": "success", "result": {"raw_trades": TARGET_TRADES}
         }})(),
     )
@@ -81,7 +81,7 @@ def test_current_targets_ignore_future_revision_and_zero_quantity_disallows_buy(
 def test_materializer_rejects_result_without_explicit_recommendations(target_context):
     conn, account = target_context
     from services.portfolio import strategy_targets
-    strategy_targets.task_manager.get_result = lambda task_id: {
+    strategy_targets.task_manager.get_result = lambda task_id, connection=None: {
         "task_id": task_id, "status": "success", "result": {"trades": []}
     }
 
@@ -96,7 +96,7 @@ def test_materializer_rejects_result_without_explicit_recommendations(target_con
 ])
 def test_raw_trade_contract_rejects_invalid_values(target_context, bad_trade):
     from services.portfolio import strategy_targets
-    strategy_targets.task_manager.get_result = lambda task_id: {
+    strategy_targets.task_manager.get_result = lambda task_id, connection=None: {
         "task_id": task_id, "status": "success", "result": {"raw_trades": [bad_trade]}
     }
 
@@ -108,7 +108,7 @@ def test_account_binding_uses_production_materializer(target_context):
     conn, account = target_context
 
     class TaskManager:
-        def get_result(self, task_id):
+        def get_result(self, task_id, connection=None):
             return {"task_id": task_id, "status": "success", "execution_status": "inactive"}
 
         def set_execution_account(self, task_id, account_id, connection=None):
@@ -121,3 +121,25 @@ def test_account_binding_uses_production_materializer(target_context):
 
     assert bound.strategy_task_id == TASK_ID
     assert len(get_current_targets(account.id, "2026-08-20", connection=conn)) == 5
+
+
+def test_raw_trade_contract_orders_same_day_trades_and_zeroes_partial_sell(target_context):
+    conn, account = target_context
+    from services.portfolio import strategy_targets
+    strategy_targets.task_manager.get_result = lambda task_id, connection=None: {
+        "task_id": task_id,
+        "status": "success",
+        "result": {"raw_trades": [
+            {"date": "2026-06-02", "symbol": "A", "direction": "buy", "shares": 10, "price": 10},
+            {"date": "2026-06-02", "symbol": "A", "direction": "buy", "shares": 12, "price": 11},
+            {"date": "2026-06-03", "symbol": "A", "direction": "sell", "shares": 1, "price": 12},
+        ]},
+    }
+
+    materialize_targets(account.id, TASK_ID, connection=conn)
+    revisions = get_target_history(account.id, connection=conn)
+    assert [(revision.effective_date, revision.targets[0].target_quantity, revision.targets[0].reference_price) for revision in revisions] == [
+        ("2026-06-02", 10, 10.0),
+        ("2026-06-02", 12, 11.0),
+        ("2026-06-03", 0, 11.0),
+    ]
