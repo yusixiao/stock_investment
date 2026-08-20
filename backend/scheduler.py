@@ -74,30 +74,33 @@ def _post_market_update_refresh():
         logger.error(f"data_cache rebuild kickoff failed: {e}")
 
 
-def _evaluate_buy_opportunities_after_refresh(record):
+def _evaluate_buy_opportunities_after_refresh(record, markets):
     """提醒失败只记录日志，不阻塞已成功的市场刷新。"""
     import logging
     from datetime import date
     try:
         from services.portfolio.buy_opportunity import evaluate_buy_opportunities
-        from services.market_data.duckdb_store import get_store
-
-        valuation_date = get_store().previous_trading_date(date.today().isoformat())
-        if valuation_date is None:
-            return
 
         class _NullSink:
             def emit(self, alert):
                 logging.getLogger(__name__).info("buy opportunity emitted: %s", alert)
 
-        evaluate_buy_opportunities(valuation_date, _NullSink())
+        evaluate_buy_opportunities(date.today().isoformat(), _NullSink(), markets=markets)
     except Exception as exc:  # noqa: BLE001
         logging.getLogger(__name__).error("buy opportunity evaluation failed: %s", exc)
 
 
 def _on_market_refresh_complete(record):
     if getattr(record, "status", None) == "completed":
-        _evaluate_buy_opportunities_after_refresh(record)
+        markets = {
+            market for market, stages in record.market_states.items()
+            if stages.get("update", {}).get("status") == "success"
+            and stages.get("view", {}).get("status") == "success"
+            and stages.get("cache", {}).get("status") == "success"
+            and stages.get("result", {}).get("status", "ready") == "ready"
+        }
+        if markets:
+            _evaluate_buy_opportunities_after_refresh(record, markets)
 
 
 def _refresh_circulating_shares(_markets):

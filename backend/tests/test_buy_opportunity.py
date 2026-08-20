@@ -1,7 +1,10 @@
 import sqlite3
+from datetime import date, timedelta
+from concurrent.futures import ThreadPoolExecutor
 
 from services.portfolio.buy_opportunity import BuyOpportunityAlert, evaluate_buy_opportunities
 from services.portfolio.db import init_db
+from services.portfolio.db import get_connection
 from services.portfolio.holdings_service import record_trade
 from services.portfolio.repository import AccountRepository
 
@@ -19,8 +22,13 @@ class Store:
         self.rows = rows
         self.calls = []
 
-    def query_previous_close(self, symbols, as_of_date):
-        self.calls.append((symbols, as_of_date))
+    def previous_trading_date(self, market, before_date):
+        valuation_date = (date.fromisoformat(before_date) - timedelta(days=1)).isoformat()
+        self.calls.append(("date", market, before_date, valuation_date))
+        return valuation_date
+
+    def query_previous_close(self, market, symbols, valuation_date):
+        self.calls.append(("close", market, symbols, valuation_date))
         return {symbol: close for symbol, close in self.rows.items() if symbol in symbols}
 
 
@@ -37,6 +45,18 @@ def setup_account():
     return conn, account
 
 
+def setup_market_account(market):
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_db(conn)
+    repo = AccountRepository(conn)
+    account = repo.create_account(f"{market}策略账户", market, "CNY")
+    repo.set_strategy(account.id, "task-1", "2026-08-19")
+    repo.add_target_history(account.id, "2026-08-19", '{"task_id":"task-1","targets":[{"symbol":"00001.HK","target_quantity":10,"reference_price":100,"status":"active"}]}', "2026-08-19T00:00:00")
+    conn.commit()
+    return conn, account
+
+
 def test_previous_completed_close_emits_only_for_remaining_target():
     conn, account = setup_account()
     sink = Sink()
@@ -44,8 +64,11 @@ def test_previous_completed_close_emits_only_for_remaining_target():
 
     assert evaluate_buy_opportunities("2026-08-20", sink, connection=conn, store=store) == 1
     assert sink.alerts[0].symbol == "A"
-    assert sink.alerts[0].valuation_date == "2026-08-20"
-    assert store.calls == [(("A", "B"), "2026-08-20")]
+    assert sink.alerts[0].valuation_date == "2026-08-19"
+    assert store.calls == [
+        ("date", "A", "2026-08-20", "2026-08-19"),
+        ("close", "A", ("A", "B"), "2026-08-19"),
+    ]
 
 
 def test_below_threshold_is_not_repeated_and_rearms_above_threshold():
@@ -58,7 +81,7 @@ def test_below_threshold_is_not_repeated_and_rearms_above_threshold():
     evaluate_buy_opportunities("2026-08-22", sink, connection=conn, store=Store({"A": 100, "B": 101}))
     evaluate_buy_opportunities("2026-08-23", sink, connection=conn, store=Store({"A": 99, "B": 101}))
 
-    assert [alert.valuation_date for alert in sink.alerts] == ["2026-08-20", "2026-08-23"]
+    assert [alert.valuation_date for alert in sink.alerts] == ["2026-08-19", "2026-08-22"]
 
 
 def test_new_target_already_below_threshold_emits_once_after_restart():
@@ -70,6 +93,75 @@ def test_new_target_already_below_threshold_emits_once_after_restart():
 
     assert len(first.alerts) == 1
     assert restarted.alerts == []
+
+
+def test_same_valuation_date_is_idempotent():
+    conn, account = setup_account()
+    first = Sink()
+    second = Sink()
+    evaluate_buy_opportunities("2026-08-20", first, connection=conn, store=Store({"A": 90, "B": 101}))
+    evaluate_buy_opportunities("2026-08-20", second, connection=conn, store=Store({"A": 90, "B": 101}))
+
+    assert len(first.alerts) == 1
+    assert second.alerts == []
+
+
+def test_concurrent_evaluators_emit_once_for_same_valuation_date(tmp_path):
+    db_path = tmp_path / "portfolio.db"
+    conn, account = setup_account()
+    conn.close()
+
+    # Recreate the setup in a file-backed database so separate evaluator
+    # connections exercise SQLite's transaction lock rather than sharing state.
+    conn = get_connection(db_path)
+    init_db(conn)
+    repo = AccountRepository(conn)
+    account = repo.create_account("并发策略账户", "A", "CNY")
+    repo.set_strategy(account.id, "task-1", "2026-08-19")
+    repo.add_target_history(account.id, "2026-08-19", '{"task_id":"task-1","targets":[{"symbol":"A","target_quantity":10,"reference_price":100,"status":"active"}]}', "2026-08-19T00:00:00")
+    conn.commit()
+    conn.close()
+
+    sink = Sink()
+
+    def evaluate_once():
+        connection = get_connection(db_path)
+        try:
+            return evaluate_buy_opportunities("2026-08-20", sink, connection=connection, store=Store({"A": 90}))
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: evaluate_once(), range(2)))
+
+    assert sorted(results) == [0, 1]
+    assert len(sink.alerts) == 1
+
+
+def test_hk_account_routes_both_date_and_close_queries_to_hk_view():
+    conn, account = setup_market_account("HK")
+    sink = Sink()
+    store = Store({"00001.HK": 90})
+
+    assert evaluate_buy_opportunities("2026-08-20", sink, connection=conn, store=store) == 1
+    assert ("date", "HK", "2026-08-20", "2026-08-19") in store.calls
+    assert ("close", "HK", ("00001.HK",), "2026-08-19") in store.calls
+
+
+def test_changed_target_content_rearms_even_with_same_task_and_effective_date():
+    conn, account = setup_account()
+    repo = AccountRepository(conn)
+    first = Sink()
+    evaluate_buy_opportunities("2026-08-20", first, connection=conn, store=Store({"A": 90, "B": 101}))
+
+    repo.add_target_history(account.id, "2026-08-19", '{"task_id":"task-1","targets":[{"symbol":"A","target_quantity":20,"reference_price":110,"status":"active"},{"symbol":"B","target_quantity":10,"reference_price":100,"status":"active"}]}', "2026-08-20T00:00:00")
+    conn.commit()
+    second = Sink()
+    evaluate_buy_opportunities("2026-08-21", second, connection=conn, store=Store({"A": 105, "B": 101}))
+
+    assert len(first.alerts) == 1
+    assert len(second.alerts) == 1
+    assert second.alerts[0].reference_price == 110
 
 
 def test_over_target_and_zero_target_never_emit():

@@ -59,7 +59,6 @@ class AccountRepository:
             "INSERT INTO portfolio_account_trades (account_id, symbol, direction, price, shares, fee, tax, realized_pnl, trade_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (account_id, symbol, direction, price, shares, fee, tax, realized_pnl, trade_date, now),
         )
-        self.conn.commit()
 
     def list_trades(self, account_id: int) -> list[dict]:
         rows = self.conn.execute(
@@ -80,7 +79,7 @@ class AccountRepository:
     def save_alert(self, account_id: int, symbol: str, state: str, payload: str, updated_at: str) -> None:
         current = self.current_alert(account_id, symbol)
         if current:
-            self.conn.execute("UPDATE portfolio_strategy_alerts SET state = ?, payload = ?, updated_at = ? WHERE id = ?", (state, payload, updated_at, current["id"]))
+            self.conn.execute("UPDATE portfolio_strategy_alerts SET state = ?, payload = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL", (state, payload, updated_at, current["id"]))
         else:
             self.conn.execute("INSERT INTO portfolio_strategy_alerts (account_id, symbol, state, payload, updated_at) VALUES (?, ?, ?, ?, ?)", (account_id, symbol, state, payload, updated_at))
 

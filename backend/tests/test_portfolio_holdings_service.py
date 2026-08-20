@@ -42,6 +42,25 @@ def test_bound_account_rejects_non_target_but_allows_any_size_and_price(portfoli
     assert get_holdings(account.id, "2026-08-19", connection=conn)[0].remaining_quantity == 0
 
 
+def test_bound_account_can_sell_existing_non_target_position(portfolio):
+    conn, repo, account = portfolio
+    repo.add_trade(account.id, "000001.SZ", "buy", 10, 10, "2026-08-18")
+    repo.set_strategy(account.id, "task-1", "2026-08-19")
+    repo.add_target_history(account.id, "2026-08-19", '{"task_id":"task-1","targets":[{"symbol":"600519.SH","target_quantity":5,"reference_price":200,"status":"active"}]}', "2026-08-19T00:00:00")
+    conn.commit()
+
+    record_trade(account.id, "000001.SZ", "sell", 10, 11, "2026-08-19", connection=conn)
+    assert all(holding.symbol != "000001.SZ" for holding in get_holdings(account.id, "2026-08-19", connection=conn))
+
+
+@pytest.mark.parametrize("field", ["fee", "tax"])
+def test_trade_costs_must_be_non_negative(portfolio, field):
+    conn, _, account = portfolio
+
+    with pytest.raises(ValueError, match="non-negative"):
+        record_trade(account.id, "600519.SH", "buy", 1, 10, "2026-08-19", **{field: -1}, connection=conn)
+
+
 def test_sell_hides_fully_sold_position_but_preserves_realized_pnl(portfolio):
     conn, _, account = portfolio
     record_trade(account.id, "600519.SH", "buy", 10, 100.0, "2026-08-18", connection=conn)

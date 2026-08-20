@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -30,39 +31,65 @@ class BuyOpportunityAlert:
     valuation_date: str
 
 
-def evaluate_buy_opportunities(as_of_date: str, sink: BuyOpportunitySink, *, connection: sqlite3.Connection | None = None, store=None) -> int:
+def evaluate_buy_opportunities(as_of_date: str, sink: BuyOpportunitySink, *, connection: sqlite3.Connection | None = None, store=None, markets: set[str] | None = None) -> int:
     date.fromisoformat(as_of_date)
     if store is None:
         from services.market_data.duckdb_store import get_store
         store = get_store()
     owns = connection is None
     conn = connection or get_connection()
+    started = False
     try:
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+            started = True
         repo = AccountRepository(conn)
         emitted = 0
         for account in (a for a in repo.list_accounts() if a.strategy_task_id):
-            targets = [t for t in get_current_targets(account.id, as_of_date, conn) if t.target_quantity > 0]
-            closes = store.query_previous_close(tuple(t.symbol for t in targets), as_of_date)
-            actual = {h.symbol: h.actual_shares for h in get_holdings(account.id, as_of_date, conn)}
+            market = account.market.upper()
+            if markets is not None and market not in markets:
+                continue
+            valuation_date = store.previous_trading_date(market, as_of_date)
+            if valuation_date is None:
+                continue
+            targets = [t for t in get_current_targets(account.id, valuation_date, conn) if t.target_quantity > 0]
+            closes = store.query_previous_close(market, tuple(t.symbol for t in targets), valuation_date)
+            actual = {h.symbol: h.actual_shares for h in get_holdings(account.id, valuation_date, conn)}
             for target in targets:
                 close = closes.get(target.symbol)
                 if close is None:
                     continue
                 actual_shares = actual.get(target.symbol, 0)
                 remaining = max(target.target_quantity - actual_shares, 0)
-                revision = f"{account.strategy_task_id}:{target.effective_date}"
+                revision_source = json.dumps({
+                    "task_id": account.strategy_task_id,
+                    "effective_date": target.effective_date,
+                    "symbol": target.symbol,
+                    "target_quantity": target.target_quantity,
+                    "reference_price": target.reference_price,
+                    "status": target.status,
+                }, sort_keys=True, separators=(",", ":"))
+                revision = hashlib.sha256(revision_source.encode()).hexdigest()
                 current = repo.current_alert(account.id, target.symbol)
                 payload = json.loads(current["payload"] or "{}") if current else {}
                 state = current["state"] if current and payload.get("revision") == revision else "armed"
+                alert = None
                 if close >= target.reference_price:
                     state = "armed"
                 elif remaining > 0 and state == "armed":
-                    sink.emit(BuyOpportunityAlert(account.id, account.strategy_task_id or "", target.symbol, target.reference_price, float(close), target.target_quantity, actual_shares, remaining, as_of_date, as_of_date))
-                    emitted += 1
+                    alert = BuyOpportunityAlert(account.id, account.strategy_task_id or "", target.symbol, target.reference_price, float(close), target.target_quantity, actual_shares, remaining, valuation_date, valuation_date)
                     state = "triggered"
-                repo.save_alert(account.id, target.symbol, state, json.dumps({"revision": revision}), datetime.now().isoformat())
-        conn.commit()
+                repo.save_alert(account.id, target.symbol, state, json.dumps({"revision": revision, "valuation_date": valuation_date, "processed": state == "triggered"}), datetime.now().isoformat())
+                if alert is not None:
+                    sink.emit(alert)
+                    emitted += 1
+        if started:
+            conn.commit()
         return emitted
+    except Exception:
+        if started:
+            conn.rollback()
+        raise
     finally:
         if owns:
             conn.close()

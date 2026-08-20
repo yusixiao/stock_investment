@@ -14,30 +14,36 @@ def record_trade(account_id: int, symbol: str, side: str, quantity: int, price: 
         raise ValueError("side must be buy or sell")
     if quantity <= 0 or price <= 0:
         raise ValueError("quantity and price must be positive")
+    if fee < 0 or tax < 0:
+        raise ValueError("fee and tax must be non-negative")
     date.fromisoformat(trade_date)
     owns = connection is None
     conn = connection or get_connection()
+    started = False
     try:
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+            started = True
         repo = AccountRepository(conn)
         account = repo.get_account(account_id)
         if account is None:
             raise ValueError("account not found")
         if side == "buy" and account.strategy_task_id and not is_buy_allowed(account_id, symbol, trade_date, conn):
             raise ValueError("buy symbol is not a current strategy target")
-        if side == "sell" and quantity > repo.current_holdings(account_id).get(symbol, 0):
+        holdings = _project(repo.list_trades(account_id), trade_date)
+        if side == "sell" and quantity > holdings.get(symbol, (0, 0.0))[0]:
             raise ValueError("sell quantity exceeds holding")
         realized = 0.0
         if side == "sell":
-            state = _project(repo.list_trades(account_id), trade_date)
-            shares, cost = state.get(symbol, (0, 0.0))
+            shares, cost = holdings.get(symbol, (0, 0.0))
             realized = price * quantity - (cost / shares if shares else 0.0) * quantity - fee - tax
         repo.add_trade(account_id, symbol, side, price, quantity, trade_date, fee, tax, realized)
         row = conn.execute("SELECT * FROM portfolio_account_trades WHERE rowid = last_insert_rowid()").fetchone()
-        if owns:
+        if started:
             conn.commit()
         return Trade(row["id"], account_id, symbol, side, quantity, price, trade_date, fee, tax, realized)
     except Exception:
-        if owns:
+        if started:
             conn.rollback()
         raise
     finally:
