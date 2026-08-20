@@ -20,7 +20,7 @@ def _snapshot_job():
     """每日收盘快照:从 DuckDB 取 A 股最新收盘价 → 持仓估值。"""
     from services.market_data.duckdb_store import get_store
     from services.portfolio.db import get_connection, init_db
-    from services.portfolio.manager import PortfolioManager
+    from services.portfolio.holdings_service import take_all_snapshots
 
     store = get_store()
     # 单条 SQL 取每只 A 股的最新 (date, close)
@@ -39,9 +39,10 @@ def _snapshot_job():
 
     conn = get_connection()
     init_db(conn)
-    mgr = PortfolioManager(conn)
-    mgr.take_all_snapshots(latest_date, current_prices)
-    conn.close()
+    try:
+        take_all_snapshots(latest_date, current_prices, connection=conn)
+    finally:
+        conn.close()
 
 
 def _post_market_update_refresh():
@@ -353,7 +354,7 @@ def start_scheduler():
         "cron",
         day_of_week="mon-fri",
         hour=SCHEDULER_HOUR,
-        minute=SCHEDULER_MINUTE + 10,
+        minute=SCHEDULER_MINUTE,
         id="daily_snapshot",
         replace_existing=True,
         misfire_grace_time=3600,

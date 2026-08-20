@@ -266,6 +266,16 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             updated_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS portfolio_account_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL REFERENCES portfolio_accounts(id) ON DELETE CASCADE,
+            date TEXT NOT NULL,
+            total_value REAL NOT NULL,
+            cash REAL NOT NULL,
+            market_value REAL NOT NULL,
+            UNIQUE(account_id, date)
+        );
+
         """
     )
     columns = {row[1] for row in conn.execute("PRAGMA table_info(portfolio_account_trades)")}

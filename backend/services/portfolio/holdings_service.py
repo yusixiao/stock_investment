@@ -95,3 +95,33 @@ def get_holdings(account_id: int, as_of_date: str | None = None, connection: sql
     finally:
         if owns:
             conn.close()
+
+
+def take_all_snapshots(
+    snapshot_date: str,
+    current_prices: dict[str, float],
+    *,
+    connection: sqlite3.Connection | None = None,
+) -> None:
+    """Persist one valuation snapshot for every active v1 account."""
+    date.fromisoformat(snapshot_date)
+    owns = connection is None
+    conn = connection or get_connection()
+    try:
+        repo = AccountRepository(conn)
+        rows = []
+        for account in repo.list_accounts():
+            market_value = sum(
+                holding.actual_shares * current_prices.get(holding.symbol, holding.average_cost)
+                for holding in get_holdings(account.id, snapshot_date, conn)
+            )
+            rows.append((account.id, snapshot_date, market_value, 0.0, market_value))
+        conn.executemany(
+            "INSERT OR REPLACE INTO portfolio_account_snapshots "
+            "(account_id, date, total_value, cash, market_value) VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
+        conn.commit()
+    finally:
+        if owns:
+            conn.close()

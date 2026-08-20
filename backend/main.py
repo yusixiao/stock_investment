@@ -47,7 +47,6 @@ from routers.stock import router as stock_router
 from routers.backtest import router as backtest_router
 from routers.backtest_cache import router as backtest_cache_router
 from routers.screener import router as screener_router
-from routers.portfolio import router as portfolio_router
 from routers.portfolio_v1 import router as portfolio_v1_router
 from routers.meta import router as meta_router
 from routers.market_update import router as market_update_router
@@ -102,7 +101,6 @@ app.include_router(stock_router)
 app.include_router(backtest_router)
 app.include_router(backtest_cache_router)
 app.include_router(screener_router)
-app.include_router(portfolio_router)
 app.include_router(portfolio_v1_router)
 app.include_router(meta_router)
 app.include_router(market_update_router)

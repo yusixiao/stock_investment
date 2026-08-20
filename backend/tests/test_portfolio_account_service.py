@@ -58,25 +58,21 @@ def test_new_account_defaults_to_unbound(service):
     assert account.strategy_unbound_at is None
 
 
-def test_account_schema_is_idempotent_and_separate_from_legacy_tables(service):
+def test_account_schema_is_idempotent_and_shared_tables_are_preserved(service):
     _, repo, _ = service
 
     from services.db_schema import init_portfolio_v1_tables
 
-    repo.conn.execute("CREATE TABLE backtest_tasks (task_id TEXT PRIMARY KEY)")
-    repo.conn.execute("CREATE TABLE chat_sessions (session_id TEXT PRIMARY KEY)")
-    legacy_columns = [row[1:] for row in repo.conn.execute("PRAGMA table_info(portfolios)")]
     init_portfolio_v1_tables(repo.conn)
     init_portfolio_v1_tables(repo.conn)
     tables = {
         row[0]
         for row in repo.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
     }
-    assert "portfolios" in tables
     assert "backtest_tasks" in tables
     assert "chat_sessions" in tables
     assert "portfolio_accounts" in tables
-    assert legacy_columns == [row[1:] for row in repo.conn.execute("PRAGMA table_info(portfolios)")]
+    assert "portfolios" not in tables
 
 
 def test_schema_migration_archives_duplicate_current_states_and_is_rerunnable(service):
