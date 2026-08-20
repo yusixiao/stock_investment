@@ -53,11 +53,11 @@ class AccountRepository:
         )
         return cast(Account, self.get_account(account_id))
 
-    def add_trade(self, account_id: int, symbol: str, direction: str, price: float, shares: int, trade_date: str):
+    def add_trade(self, account_id: int, symbol: str, direction: str, price: float, shares: int, trade_date: str, fee: float = 0, tax: float = 0, realized_pnl: float = 0):
         now = datetime.now().isoformat()
         self.conn.execute(
-            "INSERT INTO portfolio_account_trades (account_id, symbol, direction, price, shares, trade_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (account_id, symbol, direction, price, shares, trade_date, now),
+            "INSERT INTO portfolio_account_trades (account_id, symbol, direction, price, shares, fee, tax, realized_pnl, trade_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (account_id, symbol, direction, price, shares, fee, tax, realized_pnl, trade_date, now),
         )
         self.conn.commit()
 
@@ -73,6 +73,16 @@ class AccountRepository:
             delta = trade["shares"] if trade["direction"] == "buy" else -trade["shares"]
             holdings[trade["symbol"]] = holdings.get(trade["symbol"], 0) + delta
         return {symbol: shares for symbol, shares in holdings.items() if shares > 0}
+
+    def current_alert(self, account_id: int, symbol: str) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM portfolio_strategy_alerts WHERE account_id = ? AND symbol = ? AND archived_at IS NULL", (account_id, symbol)).fetchone()
+
+    def save_alert(self, account_id: int, symbol: str, state: str, payload: str, updated_at: str) -> None:
+        current = self.current_alert(account_id, symbol)
+        if current:
+            self.conn.execute("UPDATE portfolio_strategy_alerts SET state = ?, payload = ?, updated_at = ? WHERE id = ?", (state, payload, updated_at, current["id"]))
+        else:
+            self.conn.execute("INSERT INTO portfolio_strategy_alerts (account_id, symbol, state, payload, updated_at) VALUES (?, ?, ?, ?, ?)", (account_id, symbol, state, payload, updated_at))
 
     def strategy_target_history(self, account_id: int) -> list[sqlite3.Row]:
         return self.conn.execute(

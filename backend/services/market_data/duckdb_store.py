@@ -538,6 +538,24 @@ class DuckDBStore:
             return self._conn.execute(sql, params).fetchdf()
         return self._conn.execute(sql).fetchdf()
 
+    def query_previous_close(self, symbols: tuple[str, ...], as_of_date: str) -> dict[str, float]:
+        if not symbols:
+            return {}
+        placeholders = ",".join("?" for _ in symbols)
+        frame = self.query(
+            f"SELECT _symbol, close FROM v_a_daily WHERE _symbol IN ({placeholders}) "
+            "AND CAST(date AS DATE) <= CAST(? AS DATE) "
+            "QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1",
+            [*symbols, as_of_date],
+        )
+        return {row["_symbol"]: float(row["close"]) for _, row in frame.iterrows()}
+
+    def previous_trading_date(self, before_date: str) -> str | None:
+        frame = self.query("SELECT MAX(CAST(date AS DATE)) AS valuation_date FROM v_a_daily WHERE CAST(date AS DATE) < CAST(? AS DATE)", [before_date])
+        if frame.empty or frame.iloc[0]["valuation_date"] is None:
+            return None
+        return str(frame.iloc[0]["valuation_date"])
+
     def query_kline(
         self,
         market: str,

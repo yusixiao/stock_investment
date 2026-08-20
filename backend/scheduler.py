@@ -74,6 +74,32 @@ def _post_market_update_refresh():
         logger.error(f"data_cache rebuild kickoff failed: {e}")
 
 
+def _evaluate_buy_opportunities_after_refresh(record):
+    """提醒失败只记录日志，不阻塞已成功的市场刷新。"""
+    import logging
+    from datetime import date
+    try:
+        from services.portfolio.buy_opportunity import evaluate_buy_opportunities
+        from services.market_data.duckdb_store import get_store
+
+        valuation_date = get_store().previous_trading_date(date.today().isoformat())
+        if valuation_date is None:
+            return
+
+        class _NullSink:
+            def emit(self, alert):
+                logging.getLogger(__name__).info("buy opportunity emitted: %s", alert)
+
+        evaluate_buy_opportunities(valuation_date, _NullSink())
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).error("buy opportunity evaluation failed: %s", exc)
+
+
+def _on_market_refresh_complete(record):
+    if getattr(record, "status", None) == "completed":
+        _evaluate_buy_opportunities_after_refresh(record)
+
+
 def _refresh_circulating_shares(_markets):
     """在新 market data 进入 cache 前刷新流通股快照。"""
     from services.market_data.updaters.circulating_shares import (
@@ -133,6 +159,7 @@ def _market_retry_job(markets, attempt):
                 f"Market update still aborted after {MARKET_RETRY_MAX_ATTEMPTS} "
                 f"retries: {still_aborted} — manual intervention needed"
             )
+        _on_market_refresh_complete(record)
 
     try:
         runner = _make_refresh_runner(
@@ -172,6 +199,7 @@ def _market_update_job():
         ]
         if aborted:
             _schedule_market_retry(aborted, attempt=1)
+        _on_market_refresh_complete(record)
 
     try:
         runner = _make_refresh_runner(

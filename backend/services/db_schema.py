@@ -228,6 +228,9 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             direction TEXT NOT NULL,
             price REAL NOT NULL,
             shares INTEGER NOT NULL,
+            fee REAL NOT NULL DEFAULT 0,
+            tax REAL NOT NULL DEFAULT 0,
+            realized_pnl REAL NOT NULL DEFAULT 0,
             trade_date TEXT NOT NULL,
             created_at TEXT NOT NULL
         );
@@ -265,6 +268,10 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
 
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(portfolio_account_trades)")}
+    for name, definition in (("fee", "REAL NOT NULL DEFAULT 0"), ("tax", "REAL NOT NULL DEFAULT 0"), ("realized_pnl", "REAL NOT NULL DEFAULT 0")):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE portfolio_account_trades ADD COLUMN {name} {definition}")
     _archive_duplicate_current_states(conn, "portfolio_strategy_targets")
     _archive_duplicate_current_states(conn, "portfolio_strategy_alerts")
     conn.executescript(
