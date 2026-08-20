@@ -38,7 +38,7 @@ export interface PortfolioPositionItem {
   quantity: number;
   avgCost: number;
   totalCost: number;
-  lastPrice: number;
+  lastPrice: number | null;
   marketValueBase: number;
   unrealizedPnlBase: number;
   unrealizedPnlPct?: number | null;

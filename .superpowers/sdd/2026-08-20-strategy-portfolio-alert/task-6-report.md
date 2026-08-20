@@ -89,3 +89,54 @@ nohup python -m pytest backend/tests/ -x -q --ignore=backend/tests/test_adapters
 - v1 account schema 没有现金/初始资金字段，scheduler 快照按当前 v1 契约将现金记为 `0.0`；若后续账户模型加入现金，应同步扩展快照服务。
 - 旧数据库中历史旧表不会被自动删除，代码已移除其生产读写路径；如需物理清理，应另行执行明确的数据迁移并先备份。
 - 未修改回测逻辑、result、status 或执行状态语义；共享 `backtest_tasks` 初始化和现有 `TaskManager` 行为保持不变。
+
+## 第 1 轮 Fix
+
+### 修复内容
+
+- 补齐 v1 核心 contract：`/trades`、`/accounts/{id}/holdings`、`/snapshot`，以及交易删除接口。
+- v1 非核心能力 `risk`、`fx/refresh`、cash ledger、corporate actions、CSV imports 均注册明确的 HTTP 501，不再返回 404 或伪造成功。
+- PortfolioPage 不再初始自动请求 risk 和 broker 列表；风险区显示明确降级信息，CSV 使用内置券商列表并提示接口未实现。
+- DuckDBStore 新增 `query_latest_closes()`，支持 A/HK/US 和裸代码候选映射。
+- scheduler 按 A/HK/US 分组查询最新收盘价，再传给 holdings service；不再只查询 A 股。
+- 持仓快照通过 canonical/raw candidate 匹配报价；缺失报价记录 warning、价格返回 `null`/`price_available=false`，市值不再回退到 `average_cost`。
+- v1 边界把前端 `cn/hk/us` 规范化为内部 `A/HK/US`。
+
+### 第 1 轮验证输出
+
+```text
+RED:
+rtk pytest backend/tests/test_portfolio_migration.py backend/tests/test_portfolio_v1_api.py -q
+Pytest: 8 passed, 4 failed
+失败：scheduler grouped quotes、快照新签名、核心 v1 路由缺失、非核心路由 404。
+
+RED:
+npm test -- src/pages/__tests__/PortfolioPage.test.tsx
+1 failed，确认初始加载仍调用 getRisk。
+
+GREEN:
+rtk pytest backend/tests/test_portfolio_migration.py backend/tests/test_portfolio_v1_api.py backend/tests/test_portfolio_account_service.py backend/tests/test_portfolio_holdings_service.py backend/tests/test_buy_opportunity.py backend/tests/test_scheduler.py backend/tests/test_scheduler_market_retry.py -q
+Pytest: 60 passed
+
+npm test -- src/pages/__tests__/PortfolioPage.test.tsx
+Test Files  1 passed
+Tests       16 passed
+
+npm test
+Test Files  40 passed (40)
+Tests       393 passed | 2 skipped (395)
+
+npx tsc --noEmit
+TypeScript: No errors found
+
+npm run lint
+ESLint: No issues found
+
+rtk git diff --check
+无输出，退出码 0
+```
+
+第 1 轮新增 concerns：
+
+- risk、FX、资金流水、公司行为和 CSV 仍是明确 501；前端不再自动调用，但用户主动操作这些功能会看到可见错误，后续实现应补充真实 service 后再解除 501。
+- 完整 backend suite 的 `baostock`/`yfinance` 环境阻断仍未解决。

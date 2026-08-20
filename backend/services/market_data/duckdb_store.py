@@ -551,6 +551,40 @@ class DuckDBStore:
         )
         return {row["_symbol"]: float(row["close"]) for _, row in frame.iterrows()}
 
+    def query_latest_closes(
+        self,
+        market: str,
+        symbols: tuple[str, ...],
+        as_of_date: str | None = None,
+    ) -> dict[str, float]:
+        """查询指定标的截至日期的最新收盘价，返回 DuckDB 中的 canonical symbol。"""
+        market = self._validate_market(market)
+        if not symbols:
+            return {}
+        candidates: list[str] = []
+        for symbol in symbols:
+            if "." in symbol:
+                candidates.append(symbol)
+            elif market == "A":
+                candidates.extend((f"{symbol}.SH", f"{symbol}.SZ"))
+            elif market == "HK":
+                candidates.append(f"{symbol}.HK")
+            else:
+                candidates.extend((f"{symbol}.US", symbol))
+        placeholders = ",".join("?" for _ in candidates)
+        conditions = [f"_symbol IN ({placeholders})"]
+        params: list = list(candidates)
+        if as_of_date:
+            conditions.append("CAST(date AS DATE) <= CAST(? AS DATE)")
+            params.append(as_of_date)
+        frame = self.query(
+            f"SELECT _symbol, close FROM v_{market.lower()}_daily "
+            f"WHERE {' AND '.join(conditions)} "
+            "QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1",
+            params,
+        )
+        return {row["_symbol"]: float(row["close"]) for _, row in frame.iterrows()}
+
     def previous_trading_date(self, market: str, before_date: str) -> str | None:
         market = self._validate_market(market)
         frame = self.query(f"SELECT MAX(CAST(date AS DATE)) AS valuation_date FROM v_{market.lower()}_daily WHERE CAST(date AS DATE) < CAST(? AS DATE)", [before_date])

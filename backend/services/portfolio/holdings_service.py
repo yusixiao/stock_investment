@@ -1,12 +1,27 @@
 from __future__ import annotations
 
 import sqlite3
+import logging
 from datetime import date
 
 from services.portfolio.db import get_connection
 from services.portfolio.models import Holding, Trade
 from services.portfolio.repository import AccountRepository
 from services.portfolio.strategy_targets import get_current_targets, is_buy_allowed
+
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_market(market: str) -> str:
+    normalized = market.upper()
+    if normalized in {"A", "CN"}:
+        return "A"
+    if normalized == "HK":
+        return "HK"
+    if normalized == "US":
+        return "US"
+    raise ValueError(f"unsupported market: {market}")
 
 
 def record_trade(account_id: int, symbol: str, side: str, quantity: int, price: float, trade_date: str, fee: float = 0, tax: float = 0, connection: sqlite3.Connection | None = None) -> Trade:
@@ -98,23 +113,33 @@ def get_holdings(account_id: int, as_of_date: str | None = None, connection: sql
 
 
 def take_all_snapshots(
-    snapshot_date: str,
-    current_prices: dict[str, float],
+    market_quotes: dict[str, tuple[str, dict[str, float]]],
     *,
     connection: sqlite3.Connection | None = None,
 ) -> None:
-    """Persist one valuation snapshot for every active v1 account."""
-    date.fromisoformat(snapshot_date)
+    """Persist market-specific valuation snapshots without inventing prices."""
     owns = connection is None
     conn = connection or get_connection()
     try:
         repo = AccountRepository(conn)
         rows = []
         for account in repo.list_accounts():
+            market = _normalize_market(account.market)
+            quote = market_quotes.get(market)
+            if quote is None:
+                logger.warning("snapshot skipped: no market quotes for account=%s market=%s", account.id, account.market)
+                continue
+            snapshot_date, current_prices = quote
+            date.fromisoformat(snapshot_date)
+            holdings = get_holdings(account.id, snapshot_date, conn)
             market_value = sum(
-                holding.actual_shares * current_prices.get(holding.symbol, holding.average_cost)
-                for holding in get_holdings(account.id, snapshot_date, conn)
+                holding.actual_shares * price
+                for holding in holdings
+                if (price := _resolve_quote(market, holding.symbol, current_prices)) is not None
             )
+            for holding in holdings:
+                if _resolve_quote(market, holding.symbol, current_prices) is None:
+                    logger.warning("snapshot quote unavailable: account=%s market=%s symbol=%s", account.id, account.market, holding.symbol)
             rows.append((account.id, snapshot_date, market_value, 0.0, market_value))
         conn.executemany(
             "INSERT OR REPLACE INTO portfolio_account_snapshots "
@@ -125,3 +150,128 @@ def take_all_snapshots(
     finally:
         if owns:
             conn.close()
+
+
+def _symbol_candidates(market: str, symbol: str) -> tuple[str, ...]:
+    normalized = _normalize_market(market)
+    if "." in symbol:
+        return (symbol,)
+    if normalized == "A":
+        return (f"{symbol}.SH", f"{symbol}.SZ", symbol)
+    if normalized == "HK":
+        return (f"{symbol}.HK", symbol)
+    return (f"{symbol}.US", symbol)
+
+
+def _resolve_quote(market: str, symbol: str, quotes: dict[str, float]) -> float | None:
+    for candidate in _symbol_candidates(market, symbol):
+        if candidate in quotes:
+            return float(quotes[candidate])
+    return None
+
+
+def build_snapshot(
+    *,
+    as_of_date: str,
+    account_id: int | None,
+    cost_method: str,
+    store,
+    connection: sqlite3.Connection,
+) -> dict:
+    """Build the v1 snapshot contract with explicit missing-price state."""
+    if cost_method not in {"fifo", "avg"}:
+        raise ValueError("unsupported cost method")
+    date.fromisoformat(as_of_date)
+    repo = AccountRepository(connection)
+    accounts = repo.list_accounts()
+    if account_id is not None:
+        accounts = [account for account in accounts if account.id == account_id]
+        if not accounts:
+            raise ValueError("account not found")
+
+    account_items = []
+    total_market_value = 0.0
+    realized_pnl = 0.0
+    unrealized_pnl = 0.0
+    fee_total = 0.0
+    tax_total = 0.0
+    for account in accounts:
+        holdings = get_holdings(account.id, as_of_date, connection)
+        quotes = store.query_latest_closes(
+            _normalize_market(account.market),
+            tuple(holding.symbol for holding in holdings),
+            as_of_date,
+        )
+        positions = []
+        account_market_value = 0.0
+        account_unrealized = 0.0
+        for holding in holdings:
+            last_price = _resolve_quote(account.market, holding.symbol, quotes)
+            available = last_price is not None
+            market_value = holding.actual_shares * last_price if available else 0.0
+            pnl = market_value - holding.actual_shares * holding.average_cost if available else None
+            pnl_pct = (pnl / (holding.actual_shares * holding.average_cost) * 100) if pnl is not None and holding.average_cost else None
+            if pnl is not None:
+                account_unrealized += pnl
+            account_market_value += market_value
+            positions.append({
+                "symbol": holding.symbol,
+                "market": "cn" if _normalize_market(account.market) == "A" else _normalize_market(account.market).lower(),
+                "currency": account.base_currency,
+                "quantity": holding.actual_shares,
+                "avg_cost": holding.average_cost,
+                "total_cost": holding.actual_shares * holding.average_cost,
+                "last_price": last_price,
+                "market_value_base": market_value,
+                "unrealized_pnl_base": pnl,
+                "unrealized_pnl_pct": pnl_pct,
+                "valuation_currency": account.base_currency,
+                "price_source": "history_close" if available else "missing",
+                "price_provider": "DuckDBStore" if available else None,
+                "price_date": as_of_date if available else None,
+                "price_stale": False,
+                "price_available": available,
+                "target_quantity": holding.target_quantity,
+                "reference_price": holding.reference_price,
+                "remaining_quantity": holding.remaining_quantity,
+                "over_target_quantity": max(holding.actual_shares - holding.target_quantity, 0),
+                "target_status": holding.target_status,
+                "alert_status": None,
+            })
+        account_items.append({
+            "account_id": account.id,
+            "account_name": account.name,
+            "broker": None,
+            "market": "cn" if _normalize_market(account.market) == "A" else _normalize_market(account.market).lower(),
+            "base_currency": account.base_currency,
+            "as_of": as_of_date,
+            "cost_method": cost_method,
+            "total_cash": 0.0,
+            "total_market_value": account_market_value,
+            "total_equity": account_market_value,
+            "realized_pnl": sum(item.realized_pnl for item in holdings),
+            "unrealized_pnl": account_unrealized,
+            "fee_total": 0.0,
+            "tax_total": 0.0,
+            "fx_stale": False,
+            "positions": positions,
+        })
+        total_market_value += account_market_value
+        realized_pnl += account_items[-1]["realized_pnl"]
+        unrealized_pnl += account_unrealized
+    currencies = {account.base_currency for account in accounts}
+    return {
+        "as_of": as_of_date,
+        "cost_method": cost_method,
+        "currency": next(iter(currencies)) if len(currencies) == 1 else "MIXED",
+        "account_count": len(accounts),
+        "total_cash": 0.0,
+        "total_market_value": total_market_value,
+        "total_equity": total_market_value,
+        "realized_pnl": realized_pnl,
+        "unrealized_pnl": unrealized_pnl,
+        "fee_total": fee_total,
+        "tax_total": tax_total,
+        "fx_stale": False,
+        "accounts": account_items,
+    }

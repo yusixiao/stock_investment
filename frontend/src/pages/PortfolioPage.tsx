@@ -91,7 +91,7 @@ function hasPositionPrice(row: PortfolioPositionItem): boolean {
 }
 
 function formatPositionPrice(row: PortfolioPositionItem): string {
-  if (!hasPositionPrice(row)) return '--';
+  if (!hasPositionPrice(row) || row.lastPrice == null) return '--';
   return row.lastPrice.toFixed(4);
 }
 
@@ -211,7 +211,7 @@ const PortfolioPage: React.FC = () => {
   const [writeWarning, setWriteWarning] = useState<string | null>(null);
   const [strategyActionLoading, setStrategyActionLoading] = useState(false);
 
-  const [brokers, setBrokers] = useState<PortfolioImportBrokerItem[]>([]);
+  const [brokers] = useState<PortfolioImportBrokerItem[]>(FALLBACK_BROKERS);
   const [selectedBroker, setSelectedBroker] = useState('huatai');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvDryRun, setCsvDryRun] = useState(true);
@@ -219,7 +219,7 @@ const PortfolioPage: React.FC = () => {
   const [csvCommitting, setCsvCommitting] = useState(false);
   const [csvParseResult, setCsvParseResult] = useState<PortfolioImportParseResponse | null>(null);
   const [csvCommitResult, setCsvCommitResult] = useState<PortfolioImportCommitResponse | null>(null);
-  const [brokerLoadWarning, setBrokerLoadWarning] = useState<string | null>(null);
+  const [brokerLoadWarning] = useState<string | null>('CSV 券商接口暂未实现，当前使用内置券商列表。');
 
   const [eventType, setEventType] = useState<EventType>('trade');
   const [eventDateFrom, setEventDateFrom] = useState('');
@@ -302,32 +302,6 @@ const PortfolioPage: React.FC = () => {
     }
   }, []);
 
-  const loadBrokers = useCallback(async () => {
-    try {
-      const response = await portfolioApi.listImportBrokers();
-      const brokerItems = response.brokers || [];
-      if (brokerItems.length === 0) {
-        setBrokers(FALLBACK_BROKERS);
-        setBrokerLoadWarning('券商列表接口返回为空，已回退为内置券商列表（华泰/中信/招商）。');
-        if (!FALLBACK_BROKERS.some((item) => item.broker === selectedBroker)) {
-          setSelectedBroker(FALLBACK_BROKERS[0].broker);
-        }
-        return;
-      }
-      setBrokers(brokerItems);
-      setBrokerLoadWarning(null);
-      if (!brokerItems.some((item) => item.broker === selectedBroker)) {
-        setSelectedBroker(brokerItems[0].broker);
-      }
-    } catch {
-      setBrokers(FALLBACK_BROKERS);
-      setBrokerLoadWarning('券商列表接口不可用，已回退为内置券商列表（华泰/中信/招商）。');
-      if (!FALLBACK_BROKERS.some((item) => item.broker === selectedBroker)) {
-        setSelectedBroker(FALLBACK_BROKERS[0].broker);
-      }
-    }
-  }, [selectedBroker]);
-
   const loadSnapshotAndRisk = useCallback(async () => {
     setIsLoading(true);
     setRiskWarning(null);
@@ -338,18 +312,8 @@ const PortfolioPage: React.FC = () => {
       });
       setSnapshot(snapshotData);
       setError(null);
-
-      try {
-        const riskData = await portfolioApi.getRisk({
-          accountId: queryAccountId,
-          costMethod,
-        });
-        setRisk(riskData);
-      } catch (riskErr) {
-        setRisk(null);
-        const parsed = getParsedApiError(riskErr);
-        setRiskWarning(parsed.message || '风险数据获取失败，已降级为仅展示快照数据。');
-      }
+      setRisk(null);
+      setRiskWarning('风险分析接口暂未实现，当前仅展示持仓快照。');
     } catch (err) {
       setSnapshot(null);
       setRisk(null);
@@ -427,8 +391,7 @@ const PortfolioPage: React.FC = () => {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     void loadAccounts();
-    void loadBrokers();
-  }, [loadAccounts, loadBrokers]);
+  }, [loadAccounts]);
 
   useEffect(() => {
     void loadSnapshotAndRisk();
@@ -716,7 +679,7 @@ const PortfolioPage: React.FC = () => {
   };
 
   const handleRefresh = async () => {
-    await Promise.all([loadAccounts(), loadSnapshotAndRisk(), loadEvents(), loadBrokers()]);
+    await Promise.all([loadAccounts(), loadSnapshotAndRisk(), loadEvents()]);
   };
 
   const reloadSnapshotAndRiskForScope = useCallback(async (
@@ -741,25 +704,8 @@ const PortfolioPage: React.FC = () => {
       }
       setSnapshot(snapshotData);
       setError(null);
-
-      try {
-        const riskData = await portfolioApi.getRisk({
-          accountId: requestedAccountId,
-          costMethod: requestedCostMethod,
-        });
-        if (!isActiveRefreshContext(requestedViewKey, requestedRequestId)) {
-          return false;
-        }
-        setRisk(riskData);
-        setRiskWarning(null);
-      } catch (riskErr) {
-        if (!isActiveRefreshContext(requestedViewKey, requestedRequestId)) {
-          return false;
-        }
-        setRisk(null);
-        const parsed = getParsedApiError(riskErr);
-        setRiskWarning(parsed.message || '风险数据获取失败，已降级为仅展示快照数据。');
-      }
+      setRisk(null);
+      setRiskWarning('风险分析接口暂未实现，当前仅展示持仓快照。');
       return true;
     } catch (err) {
       if (!isActiveRefreshContext(requestedViewKey, requestedRequestId)) {

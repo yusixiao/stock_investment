@@ -92,3 +92,59 @@ def test_v1_does_not_expose_unexpected_runtime_errors(client):
                 f"/api/v1/portfolio/accounts/{account['id']}/strategy",
                 json={"task_id": "task-1"},
             )
+
+
+def test_v1_core_trade_holdings_and_snapshot_contract(client):
+    http, _ = client
+    account = http.post(
+        "/api/v1/portfolio/accounts",
+        json={"name": "核心接口", "market": "A", "base_currency": "CNY"},
+    ).json()
+    account_id = account["id"]
+
+    with patch("routers.portfolio_v1._get_store") as get_store:
+        get_store.return_value.query_latest_closes.return_value = {"600519.SH": 120.0}
+        created = http.post(
+            "/api/v1/portfolio/trades",
+            json={
+                "account_id": account_id,
+                "symbol": "600519",
+                "side": "buy",
+                "quantity": 2,
+                "price": 100,
+                "trade_date": "2026-08-19",
+            },
+        )
+        assert created.status_code == 201
+
+        trades = http.get("/api/v1/portfolio/trades", params={"account_id": account_id})
+        assert trades.status_code == 200
+        assert trades.json()["total"] == 1
+
+        holdings = http.get(f"/api/v1/portfolio/accounts/{account_id}/holdings")
+        assert holdings.status_code == 200
+        assert holdings.json()[0]["symbol"] == "600519"
+
+        snapshot = http.get("/api/v1/portfolio/snapshot", params={"account_id": account_id})
+        assert snapshot.status_code == 200
+        assert snapshot.json()["accounts"][0]["positions"][0]["last_price"] == 120.0
+
+
+def test_v1_normalizes_frontend_market_values(client):
+    http, _ = client
+    response = http.post(
+        "/api/v1/portfolio/accounts",
+        json={"name": "前端市场", "market": "cn", "base_currency": "CNY"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["market"] == "A"
+
+
+def test_v1_non_core_endpoints_are_explicitly_unavailable(client):
+    http, _ = client
+    assert http.get("/api/v1/portfolio/risk").status_code == 501
+    assert http.post("/api/v1/portfolio/fx/refresh").status_code == 501
+    assert http.get("/api/v1/portfolio/cash-ledger").status_code == 501
+    assert http.get("/api/v1/portfolio/corporate-actions").status_code == 501
+    assert http.get("/api/v1/portfolio/imports/csv/brokers").status_code == 501

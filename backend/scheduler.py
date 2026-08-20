@@ -17,30 +17,33 @@ def _make_refresh_runner(**kwargs):
 
 
 def _snapshot_job():
-    """每日收盘快照:从 DuckDB 取 A 股最新收盘价 → 持仓估值。"""
+    """每日收盘快照:从 DuckDB 按市场取最新收盘价 → 持仓估值。"""
     from services.market_data.duckdb_store import get_store
     from services.portfolio.db import get_connection, init_db
     from services.portfolio.holdings_service import take_all_snapshots
 
     store = get_store()
-    # 单条 SQL 取每只 A 股的最新 (date, close)
-    df = store.query(
-        """
-        SELECT _symbol, date, close
-        FROM v_a_daily
-        QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1
-        """
-    )
-    if df.empty:
+    market_quotes = {}
+    for market in ("A", "HK", "US"):
+        df = store.query(
+            f"""
+            SELECT _symbol, date, close
+            FROM v_{market.lower()}_daily
+            QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1
+            """
+        )
+        if not df.empty:
+            market_quotes[market] = (
+                str(df["date"].max()),
+                {row["_symbol"]: float(row["close"]) for _, row in df.iterrows()},
+            )
+    if not market_quotes:
         return
-
-    current_prices = {row["_symbol"]: float(row["close"]) for _, row in df.iterrows()}
-    latest_date = str(df["date"].max())
 
     conn = get_connection()
     init_db(conn)
     try:
-        take_all_snapshots(latest_date, current_prices, connection=conn)
+        take_all_snapshots(market_quotes, connection=conn)
     finally:
         conn.close()
 
