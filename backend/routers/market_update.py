@@ -18,37 +18,39 @@ class UpdateRequest(BaseModel):
 @router.post("/trigger")
 def trigger_update(req: UpdateRequest = UpdateRequest()):
     """手动触发增量更新（后台线程执行）"""
-    from services.market_data.updaters.market_updater import (
-        get_update_progress,
-        update_all_markets,
-        update_single_market,
-    )
+    from services.market_data.refresh_runner import RefreshRunner
+    from services.market_data.refresh_state import RefreshAlreadyRunning
 
-    progress = get_update_progress()
-    if progress["status"] == "running":
-        raise HTTPException(status_code=409, detail="Update already in progress")
-
-    if req.market:
-        if req.market not in ("A", "HK", "US"):
-            raise HTTPException(status_code=400, detail=f"Invalid market: {req.market}")
-        thread = threading.Thread(
-            target=update_single_market, args=(req.market,), daemon=True
+    if req.market and req.market not in ("A", "HK", "US"):
+        raise HTTPException(status_code=400, detail=f"Invalid market: {req.market}")
+    try:
+        record = RefreshRunner().start(
+            "manual", [req.market] if req.market else None
         )
-    else:
-        thread = threading.Thread(
-            target=update_all_markets, kwargs={"parallel": True}, daemon=True
-        )
-
-    thread.start()
-    return {"message": "Update started", "market": req.market or "ALL"}
+    except RefreshAlreadyRunning as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Market refresh already in progress", "refresh_id": exc.refresh_id},
+        ) from exc
+    return {
+        "message": "Market refresh started",
+        "market": req.market or "ALL",
+        "refresh_id": record.refresh_id,
+    }
 
 
 @router.get("/progress")
+@router.get("/refresh")
 def get_progress():
     """查看当前更新进度"""
-    from services.market_data.updaters.market_updater import get_update_progress
+    from services.market_data.refresh_state import RefreshStateStore
 
-    return get_update_progress()
+    store = RefreshStateStore()
+    active = store.get_active()
+    return {
+        "active": active.to_dict() if active else None,
+        "recent": [record.to_dict() for record in store.get_recent()],
+    }
 
 
 @router.post("/adjust-factor")

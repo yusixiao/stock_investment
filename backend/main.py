@@ -66,6 +66,9 @@ async def lifespan(app: FastAPI):
     from services.market_data.stock_index import init_stock_index
 
     init_db()
+    from services.market_data.refresh_state import RefreshStateStore
+
+    RefreshStateStore().recover_interrupted()
     init_duckdb_with_health_check()
     init_stock_index()
 

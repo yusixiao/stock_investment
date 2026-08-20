@@ -108,10 +108,15 @@ class LoadProgress:
     error: str | None = None
     started_at: float = 0.0
     finished_at: float = 0.0
+    generation: int = 0
+    refresh_id: str | None = None
+    market_version: int | None = None
+    stale: bool = False
 
 
 _cache: dict[str, MarketBundle] = {}
 _progress: dict[str, LoadProgress] = {m: LoadProgress() for m in SUPPORTED_MARKETS}
+_generation: dict[str, int] = {m: 0 for m in SUPPORTED_MARKETS}
 _lock = threading.Lock()
 
 
@@ -259,10 +264,22 @@ def _aggregate_and_compute(
     return daily_with_indicators, weekly, monthly
 
 
-def _load_market_blocking(market: str) -> MarketBundle:
+def _load_market_blocking(
+    market: str,
+    generation: int | None = None,
+    refresh_id: str | None = None,
+    progress: LoadProgress | None = None,
+) -> MarketBundle:
     """同步加载指定市场全量数据,期间更新 _progress[market]。"""
-    p = _progress[market]
+    with _lock:
+        generation = _generation[market] if generation is None else generation
+        if _generation[market] != generation:
+            return _cache.get(market)
+        p = progress or _progress[market]
     p.status = "loading"
+    p.generation = generation
+    p.refresh_id = refresh_id
+    p.stale = _cache.get(market) is not None
     p.started_at = time.time()
     p.finished_at = 0.0
     p.error = None
@@ -335,9 +352,15 @@ def _load_market_blocking(market: str) -> MarketBundle:
             income_data=income_data,
             loaded_at=time.time(),
         )
-        with _lock:
-            _cache[market] = bundle
+        if not _publish_bundle_if_current(market, generation, bundle):
+            logger.info(
+                "data_cache: discard stale bundle market=%s generation=%s",
+                market,
+                generation,
+            )
+            return bundle
         p.status = "loaded"
+        p.stale = False
         p.phase = (
             f"完成:K 线 {len(stock_data)} / 周 {len(weekly_data)} / "
             f"月 {len(monthly_data)} / 估值 {len(valuation_data)} / "
@@ -355,9 +378,11 @@ def _load_market_blocking(market: str) -> MarketBundle:
         )
         return bundle
     except Exception as e:
-        p.status = "failed"
-        p.error = str(e)
-        p.finished_at = time.time()
+        if _generation.get(market) == generation:
+            p.status = "failed"
+            p.error = str(e)
+            p.stale = _cache.get(market) is not None
+            p.finished_at = time.time()
         logger.exception("data_cache load failed: market=%s", market)
         raise
 
@@ -365,29 +390,39 @@ def _load_market_blocking(market: str) -> MarketBundle:
 # ---------- 公开 API ----------
 
 
-def load_market_async(market: str) -> dict:
+def load_market_async(
+    market: str, generation: int | None = None, refresh_id: str | None = None
+) -> dict:
     """异步触发加载。已在加载中或已加载会原地返回当前状态(不重入)。"""
     market = market.upper()
     if market not in SUPPORTED_MARKETS:
         raise ValueError(f"Unsupported market: {market}")
 
-    p = _progress[market]
-    if p.status == "loading":
-        return _status_dict(market)
+    with _lock:
+        p = _progress[market]
+        if p.status == "loading":
+            return _status_dict(market)
+        current_generation = _generation[market]
+        if generation is not None and generation != current_generation:
+            return _status_dict(market)
+        generation = current_generation
+        p = _progress[market]
+        p.status = "loading"
+        p.phase = "排队中..."
+        p.started_at = time.time()
+        p.finished_at = 0.0
+        p.error = None
+        p.generation = generation
+        p.refresh_id = refresh_id
+        p.stale = _cache.get(market) is not None
 
     def _run():
         try:
-            _load_market_blocking(market)
+            _load_market_blocking(market, generation, refresh_id, p)
         except Exception:
             pass  # 错误已记录到 _progress
 
     threading.Thread(target=_run, daemon=True, name=f"data_cache_load_{market}").start()
-    # 立即标记 loading 状态(避免前端轮询窗口期看到 idle)
-    p.status = "loading"
-    p.phase = "排队中..."
-    p.started_at = time.time()
-    p.finished_at = 0.0
-    p.error = None
     return _status_dict(market)
 
 
@@ -396,16 +431,49 @@ def get_market(market: str) -> MarketBundle | None:
 
 
 def invalidate(market: str | None = None) -> None:
-    """清除缓存。market=None 清全部。"""
+    """递增 generation 并标记缓存待重建，保留旧 bundle 作为 stale fallback。"""
     with _lock:
         if market is None:
-            _cache.clear()
             for m in SUPPORTED_MARKETS:
-                _progress[m] = LoadProgress()
+                _generation[m] += 1
+                _progress[m] = LoadProgress(
+                    status="stale" if m in _cache else "idle",
+                    generation=_generation[m],
+                    stale=m in _cache,
+                )
         else:
             m = market.upper()
-            _cache.pop(m, None)
-            _progress[m] = LoadProgress()
+            _generation[m] += 1
+            _progress[m] = LoadProgress(
+                status="stale" if m in _cache else "idle",
+                generation=_generation[m],
+                stale=m in _cache,
+            )
+
+
+def get_generation(market: str) -> int:
+    with _lock:
+        return _generation[market.upper()]
+
+
+def _publish_bundle_if_current(market: str, generation: int, bundle) -> bool:
+    """只允许最新 generation 的 loader 发布 bundle，防止旧线程回写。"""
+    with _lock:
+        if _generation.get(market) != generation:
+            return False
+        _cache[market] = bundle
+        return True
+
+
+def set_market_metadata(
+    market: str, refresh_id: str | None, market_version: int | None, stale: bool
+) -> None:
+    """写入当前市场 cache 对应的 refresh 元数据。"""
+    with _lock:
+        p = _progress[market.upper()]
+        p.refresh_id = refresh_id
+        p.market_version = market_version
+        p.stale = stale
 
 
 def _status_dict(market: str) -> dict:
@@ -430,6 +498,10 @@ def _status_dict(market: str) -> dict:
             "phase": p.phase,
         },
         "error": p.error,
+        "generation": p.generation,
+        "refresh_id": p.refresh_id,
+        "market_version": p.market_version,
+        "stale": p.stale,
         "elapsed": (
             (p.finished_at or time.time()) - p.started_at if p.started_at else 0.0
         ),
@@ -438,6 +510,10 @@ def _status_dict(market: str) -> dict:
 
 def get_status_all() -> dict:
     return {m: _status_dict(m) for m in SUPPORTED_MARKETS}
+
+
+def get_status(market: str) -> dict:
+    return _status_dict(market.upper())
 
 
 def slice_bundle(

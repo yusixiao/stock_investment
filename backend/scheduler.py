@@ -9,6 +9,13 @@ MARKET_RETRY_DELAY_MIN = 30
 MARKET_RETRY_MAX_ATTEMPTS = 3
 
 
+def _make_refresh_runner(**kwargs):
+    """集中装配 refresh runner，测试可替换而不触发真实数据加载。"""
+    from services.market_data.refresh_runner import RefreshRunner
+
+    return RefreshRunner(**kwargs)
+
+
 def _snapshot_job():
     """每日收盘快照:从 DuckDB 取 A 股最新收盘价 → 持仓估值。"""
     from services.market_data.duckdb_store import get_store
@@ -67,6 +74,18 @@ def _post_market_update_refresh():
         logger.error(f"data_cache rebuild kickoff failed: {e}")
 
 
+def _refresh_circulating_shares(_markets):
+    """在新 market data 进入 cache 前刷新流通股快照。"""
+    from services.market_data.updaters.circulating_shares import (
+        update_circulating_shares,
+    )
+
+    result = update_circulating_shares()
+    import logging
+
+    logging.getLogger(__name__).info("circulating_shares refreshed: %s", result)
+
+
 def _schedule_market_retry(markets, attempt):
     """为熔断早停的市场安排一次性延迟重跑(APScheduler date 触发)。"""
     import logging
@@ -95,30 +114,39 @@ def _market_retry_job(markets, attempt):
 
     logger = logging.getLogger(__name__)
     logger.info(f"Market update retry attempt {attempt} for {markets}")
-    from services.market_data.updaters.market_updater import update_single_market
+    from services.market_data.refresh_state import RefreshAlreadyRunning
+    from services.market_data.updaters import market_updater as mu
 
-    still_aborted = []
-    for market in markets:
-        try:
-            r = update_single_market(market)
-            if getattr(r, "aborted", False):
-                still_aborted.append(market)
-        except Exception as e:
-            logger.error(f"Market retry {market} failed: {e}")
-            still_aborted.append(market)
-
-    # 有市场这次成功了 → 用新数据重建衍生缓存
-    if len(still_aborted) < len(markets):
-        _post_market_update_refresh()
-
-    if still_aborted:
-        if attempt < MARKET_RETRY_MAX_ATTEMPTS:
+    def _complete(record):
+        still_aborted = [
+            market
+            for market in markets
+            if record.market_states.get(market, {})
+            .get("update", {})
+            .get("detail", {})
+            .get("aborted", False)
+        ]
+        if still_aborted and attempt < MARKET_RETRY_MAX_ATTEMPTS:
             _schedule_market_retry(still_aborted, attempt + 1)
-        else:
+        elif still_aborted:
             logger.error(
                 f"Market update still aborted after {MARKET_RETRY_MAX_ATTEMPTS} "
                 f"retries: {still_aborted} — manual intervention needed"
             )
+
+    try:
+        runner = _make_refresh_runner(
+            update_market=mu.update_single_market,
+            refresh_before_cache=_refresh_circulating_shares,
+            auto_start=False,
+            on_complete=_complete,
+        )
+        record = runner.start(f"scheduler_retry_{attempt}", markets)
+        runner.run(record.refresh_id, markets)
+    except RefreshAlreadyRunning as exc:
+        logger.warning(
+            "Market retry skipped because refresh %s is still running", exc.refresh_id
+        )
 
 
 def _market_update_job():
@@ -130,19 +158,34 @@ def _market_update_job():
 
     logger = logging.getLogger(__name__)
     logger.info("Scheduled market update started")
+    from services.market_data.refresh_state import RefreshAlreadyRunning
+    from services.market_data.updaters import market_updater as mu
+
+    def _complete(record):
+        aborted = [
+            market
+            for market in record.market_states
+            if record.market_states[market]
+            .get("update", {})
+            .get("detail", {})
+            .get("aborted", False)
+        ]
+        if aborted:
+            _schedule_market_retry(aborted, attempt=1)
+
     try:
-        from services.market_data.updaters.market_updater import update_all_markets
-
-        results = update_all_markets(parallel=True)
-    except Exception as e:
-        logger.error(f"Scheduled market update failed: {e}")
-        return
-
-    _post_market_update_refresh()
-
-    aborted = [r.market for r in results if getattr(r, "aborted", False)]
-    if aborted:
-        _schedule_market_retry(aborted, attempt=1)
+        runner = _make_refresh_runner(
+            update_markets=lambda: mu.update_all_markets(parallel=True),
+            refresh_before_cache=_refresh_circulating_shares,
+            auto_start=False,
+            on_complete=_complete,
+        )
+        record = runner.start("scheduler")
+        runner.run(record.refresh_id, ["A", "HK", "US"])
+    except RefreshAlreadyRunning as exc:
+        logger.warning(
+            "Scheduled market refresh skipped; active refresh=%s", exc.refresh_id
+        )
 
 
 def _financial_sync_job():

@@ -3,6 +3,34 @@
 import sqlite3
 
 
+def init_market_refresh_tables(conn: sqlite3.Connection):
+    """创建市场数据 refresh 生命周期表。"""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS market_refreshes (
+            refresh_id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            error TEXT,
+            market_states TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_market_refreshes_status
+            ON market_refreshes(status);
+        CREATE INDEX IF NOT EXISTS idx_market_refreshes_created_at
+            ON market_refreshes(created_at DESC);
+        CREATE TABLE IF NOT EXISTS market_refresh_versions (
+            market TEXT PRIMARY KEY,
+            version INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.commit()
+
+
 def init_backtest_tables(conn: sqlite3.Connection):
     """创建回测相关表: backtest_tasks, stock_exclusions。
 

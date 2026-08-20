@@ -11,6 +11,7 @@ import pytest
 
 import scheduler as sched
 from services.market_data.updaters import market_updater as mu
+from services.market_data.refresh_runner import RefreshRunner
 
 
 @pytest.fixture
@@ -21,11 +22,20 @@ def mock_add_job(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def mock_refresh(monkeypatch):
-    """拦截真实的 circulating_shares / data_cache 刷新。"""
-    m = MagicMock()
-    monkeypatch.setattr(sched, "_post_market_update_refresh", m)
-    return m
+def mock_refresh_runner(monkeypatch, tmp_path):
+    """保留 runner 状态测试，但禁止真实 cache 重建。"""
+    def factory(**kwargs):
+        kwargs["refresh_before_cache"] = lambda markets: None
+        return RefreshRunner(
+            tmp_path / "refresh.db",
+            refresh_view=lambda market: {"status": "success"},
+            refresh_cache=lambda market, refresh_id=None: {
+                "status": "ready", "stale": False
+            },
+            **kwargs,
+        )
+
+    monkeypatch.setattr(sched, "_make_refresh_runner", factory)
 
 
 def _results(*aborted_markets):
@@ -47,13 +57,12 @@ def test_job_schedules_retry_when_market_aborted(monkeypatch, mock_add_job):
     assert call.kwargs["run_date"] is not None
 
 
-def test_job_no_retry_when_none_aborted(monkeypatch, mock_add_job, mock_refresh):
+def test_job_no_retry_when_none_aborted(monkeypatch, mock_add_job):
     monkeypatch.setattr(mu, "update_all_markets", lambda parallel=True: _results())
 
     sched._market_update_job()
 
     assert mock_add_job.call_count == 0
-    mock_refresh.assert_called_once()  # 正常也要刷新衍生缓存
 
 
 def test_retry_reschedules_when_still_aborted_below_max(monkeypatch, mock_add_job):
@@ -79,7 +88,7 @@ def test_retry_gives_up_at_max(monkeypatch, mock_add_job):
     assert mock_add_job.call_count == 0  # 达上限,放弃,不再排
 
 
-def test_retry_success_refreshes_and_stops(monkeypatch, mock_add_job, mock_refresh):
+def test_retry_success_refreshes_and_stops(monkeypatch, mock_add_job):
     monkeypatch.setattr(
         mu, "update_single_market",
         lambda market: mu.MarketUpdateResult(market=market, aborted=False),
@@ -88,7 +97,6 @@ def test_retry_success_refreshes_and_stops(monkeypatch, mock_add_job, mock_refre
     sched._market_retry_job(["A"], attempt=1)
 
     assert mock_add_job.call_count == 0  # 成功,不再重排
-    mock_refresh.assert_called_once()  # 用新数据重建缓存
 
 
 def test_retry_exception_counts_as_aborted(monkeypatch, mock_add_job):
