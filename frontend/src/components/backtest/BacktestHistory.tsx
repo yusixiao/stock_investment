@@ -186,6 +186,8 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
       const task: BacktestTask = {
         taskId: item.task_id,
         status,
+        executionStatus: item.execution_status,
+        executionAccountId: item.execution_account_id,
         mode: symbols && symbols.length === 1 ? 'single' : 'market',
         strategyName: extractStrategyName(item),
         symbol: symbols && symbols.length === 1 ? symbols[0] : undefined,

@@ -1,8 +1,18 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from main import app
+from services.market_data import duckdb_store
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def isolated_market_views(mini_market):
+    """让 API 路由测试使用自包含的 DuckDB fixture，而不是本机市场数据。"""
+    duckdb_store.shutdown_duckdb()
+    yield
+    duckdb_store.shutdown_duckdb()
 
 
 class TestStockRoutes:

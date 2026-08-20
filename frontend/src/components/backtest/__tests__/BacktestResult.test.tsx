@@ -38,6 +38,20 @@ function makeTask(status: BacktestTask['status']): BacktestTask {
 }
 
 describe('BacktestResult strategy binding action', () => {
+  it('does not show the bind action for an already execution-bound task', () => {
+    const task = { ...makeTask('completed'), executionStatus: 'active' as const };
+    render(<BacktestResult task={task} />);
+
+    expect(screen.queryByRole('button', { name: '创建并绑定策略账户' })).not.toBeInTheDocument();
+    expect(screen.getByText('已绑定策略账户')).toBeInTheDocument();
+  });
+
+  it('shows the bind action for backend success status', () => {
+    render(<BacktestResult task={makeTask('success' as BacktestTask['status'])} />);
+
+    expect(screen.getByRole('button', { name: '创建并绑定策略账户' })).toBeInTheDocument();
+  });
+
   it.each(['pending', 'running', 'failed'] as const)(
     'does not show the bind action for %s tasks',
     (status) => {

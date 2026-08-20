@@ -42,9 +42,11 @@ const StatItem: React.FC<{ label: string; value: string; tone?: 'success' | 'dan
 const BacktestResult: React.FC<Props> = ({ task }) => {
   const [binding, setBinding] = useState(false);
   const [bindingMessage, setBindingMessage] = useState<string | null>(null);
+  const isCompleted = task?.status === 'completed' || String(task?.status) === 'success';
+  const isExecutionBound = task?.executionStatus === 'active';
 
   const handleCreateStrategyAccount = async () => {
-    if (!task || task.status !== 'completed') return;
+    if (!task || !isCompleted) return;
     try {
       setBinding(true);
       setBindingMessage(null);
@@ -137,7 +139,9 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {task.status === 'completed' ? (
+          {isExecutionBound ? (
+            <span className="text-xs text-secondary-text">已绑定策略账户</span>
+          ) : isCompleted ? (
             <button
               type="button"
               className="btn-secondary text-xs"

@@ -153,19 +153,19 @@ def _raw_trade_revisions(result: dict, task_id: str) -> list[StrategyTargetRevis
                 state[symbol] = _target(symbol, quantity, price, "active", effective_date, task_id)
             else:
                 if previous is None:
-                    raise TargetRecommendationUnavailable(
-                        "sell has no prior buy for target symbol"
-                    )
-                if quantity > previous.target_quantity:
-                    raise TargetRecommendationUnavailable(
-                        "sell quantity exceeds current target quantity"
-                    )
+                    # Raw backtest trades also contain liquidation of the
+                    # portfolio that existed before a rebalance. Those sells
+                    # do not define a strategy target and must not block the
+                    # buy recommendations from the same revision.
+                    continue
                 reference_price = previous.reference_price
                 state[symbol] = StrategyTarget(
                     symbol=symbol, target_quantity=0, reference_price=reference_price,
                     status="exited", effective_date=effective_date, source_task_id=task_id,
                 )
             revisions.append(StrategyTargetRevision(effective_date, tuple(state.values()), task_id))
+        if not revisions or not state:
+            raise TargetRecommendationUnavailable("raw trades contain no buy target recommendations")
     except (KeyError, TypeError, TargetRecommendationUnavailable) as exc:
         if isinstance(exc, TargetRecommendationUnavailable):
             raise
