@@ -127,24 +127,26 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
   const returnTone = result.totalReturn >= 0 ? 'success' : 'danger';
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-6 p-6">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div className="min-w-0">
           <h3 className="text-lg font-semibold text-foreground">{task.strategyName}</h3>
           <p className="mt-0.5 text-xs text-secondary-text">
             {task.symbol || marketLabel(task.market)} · {task.period} · {task.startDate} ~ {task.endDate}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="btn-secondary text-xs"
-            onClick={() => void handleCreateStrategyAccount()}
-            disabled={binding}
-          >
-            {binding ? '创建中...' : '创建并绑定策略账户'}
-          </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {task.status === 'completed' ? (
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => void handleCreateStrategyAccount()}
+              disabled={binding}
+            >
+              {binding ? '创建中...' : '创建并绑定策略账户'}
+            </button>
+          ) : null}
           <Badge variant={returnTone === 'success' ? 'success' : 'danger'} size="md">
             {formatPct(result.totalReturn)}
           </Badge>

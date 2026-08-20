@@ -8,11 +8,12 @@ import {
   RiRefreshLine,
 } from '@remixicon/react';
 import { cn } from '../../utils/cn';
-import { Badge, Tooltip } from '../common';
+import { ApiErrorAlert, Badge, Tooltip } from '../common';
 import { backtestEngineApi, type TaskListItem } from '../../api/backtestEngine';
 import type { BacktestTask } from './BacktestAnalysis';
 import { mapPayloadToResultData } from '../../utils/backtestPayload';
 import { portfolioApi } from '../../api/portfolio';
+import { getParsedApiError } from '../../api/error';
 
 interface Props {
   // 点击行加载详情后回调,父级用 BacktestTask 切换到 BacktestResult 视图
@@ -112,6 +113,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
   // 排序:null = 默认(按 created_at 后端原序);'asc' / 'desc' = 按总收益率
   const [returnSort, setReturnSort] = useState<'asc' | 'desc' | null>(null);
   const [bindingId, setBindingId] = useState<string | null>(null);
+  const [bindingError, setBindingError] = useState<ReturnType<typeof getParsedApiError> | null>(null);
 
   const sortedTasks = useMemo(() => {
     const arr = [...tasks];
@@ -219,11 +221,20 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
   };
 
   const handleBind = async (item: TaskListItem) => {
-    if (item.status !== 'success' || item.deleted) return;
+    if (item.status !== 'success' || item.deleted || item.execution_status === 'active') return;
     setBindingId(item.task_id);
+    setBindingError(null);
     try {
       const accounts = (await portfolioApi.getAccounts(false)).accounts;
-      const account = accounts[0];
+      const candidates = accounts.filter((account) => !account.strategyTaskId);
+      const eligibleAccounts = await Promise.all(candidates.map(async (account) => {
+        const snapshot = await portfolioApi.getSnapshot({ accountId: account.id });
+        const hasHoldings = snapshot.accounts.some((snapshotAccount) =>
+          snapshotAccount.positions.some((position) => position.quantity > 0),
+        );
+        return hasHoldings ? null : account;
+      }));
+      const account = eligibleAccounts.find((candidate) => candidate != null);
       if (account) {
         await portfolioApi.bindStrategy(account.id, item.task_id);
       } else {
@@ -237,7 +248,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
       }
       await refresh();
     } catch (err) {
-      console.error('绑定策略账户失败', err);
+      setBindingError(getParsedApiError(err));
     } finally {
       setBindingId(null);
     }
@@ -272,6 +283,13 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
           </button>
         </div>
       </div>
+      {bindingError ? (
+        <ApiErrorAlert
+          error={bindingError}
+          onDismiss={() => setBindingError(null)}
+          className="mx-4 mt-3"
+        />
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {tasks.length === 0 ? (
@@ -395,7 +413,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                         {formatDateTime(task.created_at)}
                       </td>
                         <td className="px-3 py-2 text-right">
-                        {!isDeleted && task.status === 'success' && (
+                        {!isDeleted && task.status === 'success' && task.execution_status !== 'active' && (
                           <button
                             type="button"
                             onClick={(e) => {

@@ -263,7 +263,7 @@ describe('PortfolioPage FX refresh', () => {
       positions: accountId === 2 ? [{
         symbol: '600519.SH', quantity: 6, avgCost: 1400, totalCost: 8400, lastPrice: 1450,
         marketValueBase: 8700, unrealizedPnlBase: 300, unrealizedPnlPct: 3, valuationCurrency: 'CNY',
-        targetQuantity: 10, referencePrice: 1500, remainingQuantity: 4, overTargetQuantity: 0,
+        targetQuantity: 10, referencePrice: 1500, remainingQuantity: 4, overTargetQuantity: 2,
         targetStatus: 'active', alertStatus: 'buy',
       }] : [],
     }));
@@ -276,6 +276,8 @@ describe('PortfolioPage FX refresh', () => {
     expect(await screen.findByText('目标持仓')).toBeInTheDocument();
     expect(screen.getByText('剩余待买')).toBeInTheDocument();
     expect(screen.getByText('4.00')).toBeInTheDocument();
+    expect(screen.getByText('超出目标')).toBeInTheDocument();
+    expect(screen.getByText('2.00')).toBeInTheDocument();
   });
 
   it('shows exited targets with actual holdings but no buy alert', async () => {
@@ -292,6 +294,26 @@ describe('PortfolioPage FX refresh', () => {
     fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '2' } });
     expect(await screen.findByText('策略已退出')).toBeInTheDocument();
     expect(screen.queryByText('买入提醒')).not.toBeInTheDocument();
+  });
+
+  it('hides fully sold positions from active holdings', async () => {
+    getAccounts.mockResolvedValue(makeAccounts([{ id: 2, name: '策略账户', strategyTaskId: 'task-1' }]));
+    getSnapshot.mockResolvedValue(makeSnapshot({ accountId: 2, positions: [
+      {
+        symbol: 'SOLD.SZ', quantity: 0, avgCost: 10, totalCost: 1000, lastPrice: 10,
+        marketValueBase: 0, unrealizedPnlBase: 0, unrealizedPnlPct: 0, valuationCurrency: 'CNY',
+      },
+      {
+        symbol: 'ACTIVE.SZ', quantity: 1, avgCost: 10, totalCost: 10, lastPrice: 11,
+        marketValueBase: 11, unrealizedPnlBase: 1, unrealizedPnlPct: 10, valuationCurrency: 'CNY',
+      },
+    ] }));
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+
+    expect(screen.queryByText('SOLD.SZ')).not.toBeInTheDocument();
+    expect(screen.getByText('ACTIVE.SZ')).toBeInTheDocument();
   });
 
   it('refreshes FX for a single selected account and only reloads snapshot/risk', async () => {

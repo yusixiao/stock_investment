@@ -1055,6 +1055,7 @@ const PortfolioPage: React.FC = () => {
                       <th className="text-right py-2 pr-2">目标持仓</th>
                       <th className="text-right py-2 pr-2">策略参考价</th>
                       <th className="text-right py-2 pr-2">剩余待买</th>
+                      <th className="text-right py-2 pr-2">超出目标</th>
                       <th className="text-left py-2 pr-2">目标状态</th>
                       <th className="text-left py-2 pr-2">提醒状态</th>
                     </> : null}
@@ -1080,6 +1081,7 @@ const PortfolioPage: React.FC = () => {
                         <td className="py-2 pr-2 text-right">{row.targetQuantity == null ? '--' : row.targetQuantity.toFixed(2)}</td>
                         <td className="py-2 pr-2 text-right">{row.referencePrice == null ? '--' : row.referencePrice.toFixed(4)}</td>
                         <td className="py-2 pr-2 text-right">{row.remainingQuantity == null ? '--' : row.remainingQuantity.toFixed(2)}</td>
+                        <td className="py-2 pr-2 text-right">{row.overTargetQuantity == null ? '--' : row.overTargetQuantity.toFixed(2)}</td>
                         <td className="py-2 pr-2">
                           {row.targetStatus === 'exited' ? <Badge variant="default">策略已退出</Badge> : row.targetStatus === 'completed' ? <Badge variant="success">目标已完成</Badge> : row.targetStatus ? <Badge variant="info">目标执行中</Badge> : '--'}
                         </td>
