@@ -135,10 +135,10 @@ def take_all_snapshots(
             market_value = sum(
                 holding.actual_shares * price
                 for holding in holdings
-                if (price := _resolve_quote(market, holding.symbol, current_prices)) is not None
+                if (price := _resolve_price(market, holding.symbol, current_prices)) is not None
             )
             for holding in holdings:
-                if _resolve_quote(market, holding.symbol, current_prices) is None:
+                if _resolve_price(market, holding.symbol, current_prices) is None:
                     logger.warning("snapshot quote unavailable: account=%s market=%s symbol=%s", account.id, account.market, holding.symbol)
             rows.append((account.id, snapshot_date, market_value, 0.0, market_value))
         conn.executemany(
@@ -163,10 +163,18 @@ def _symbol_candidates(market: str, symbol: str) -> tuple[str, ...]:
     return (f"{symbol}.US", symbol)
 
 
-def _resolve_quote(market: str, symbol: str, quotes: dict[str, float]) -> float | None:
+def _resolve_price(market: str, symbol: str, quotes: dict[str, float]) -> float | None:
     for candidate in _symbol_candidates(market, symbol):
         if candidate in quotes:
             return float(quotes[candidate])
+    return None
+
+
+def _resolve_quote(market: str, symbol: str, quotes: dict[str, tuple[float, str]]) -> tuple[float, str] | None:
+    for candidate in _symbol_candidates(market, symbol):
+        if candidate in quotes:
+            price, quote_date = quotes[candidate]
+            return float(price), quote_date
     return None
 
 
@@ -206,9 +214,11 @@ def build_snapshot(
         account_market_value = 0.0
         account_unrealized = 0.0
         for holding in holdings:
-            last_price = _resolve_quote(account.market, holding.symbol, quotes)
-            available = last_price is not None
-            market_value = holding.actual_shares * last_price if available else 0.0
+            quote = _resolve_quote(account.market, holding.symbol, quotes)
+            available = quote is not None
+            last_price = quote[0] if quote else None
+            quote_date = quote[1] if quote else None
+            market_value = holding.actual_shares * last_price if last_price is not None else 0.0
             pnl = market_value - holding.actual_shares * holding.average_cost if available else None
             pnl_pct = (pnl / (holding.actual_shares * holding.average_cost) * 100) if pnl is not None and holding.average_cost else None
             if pnl is not None:
@@ -228,8 +238,8 @@ def build_snapshot(
                 "valuation_currency": account.base_currency,
                 "price_source": "history_close" if available else "missing",
                 "price_provider": "DuckDBStore" if available else None,
-                "price_date": as_of_date if available else None,
-                "price_stale": False,
+                "price_date": quote_date,
+                "price_stale": bool(quote_date and quote_date < as_of_date),
                 "price_available": available,
                 "target_quantity": holding.target_quantity,
                 "reference_price": holding.reference_price,

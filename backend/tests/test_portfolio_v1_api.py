@@ -16,6 +16,8 @@ def client():
     conn.execute("PRAGMA foreign_keys=ON")
     init_db(conn)
     with patch("routers.portfolio_v1._get_connection", return_value=conn), patch(
+        "routers.portfolio_v1._close_connection"
+    ), patch(
         "routers.portfolio_v1._get_task_manager"
     ) as task_manager, patch("routers.portfolio_v1._get_materializer", return_value=lambda **kwargs: None):
         task_manager.return_value.get_result.return_value = {
@@ -103,7 +105,7 @@ def test_v1_core_trade_holdings_and_snapshot_contract(client):
     account_id = account["id"]
 
     with patch("routers.portfolio_v1._get_store") as get_store:
-        get_store.return_value.query_latest_closes.return_value = {"600519.SH": 120.0}
+        get_store.return_value.query_latest_closes.return_value = {"600519.SH": (120.0, "2026-08-18")}
         created = http.post(
             "/api/v1/portfolio/trades",
             json={
@@ -125,9 +127,11 @@ def test_v1_core_trade_holdings_and_snapshot_contract(client):
         assert holdings.status_code == 200
         assert holdings.json()[0]["symbol"] == "600519"
 
-        snapshot = http.get("/api/v1/portfolio/snapshot", params={"account_id": account_id})
+        snapshot = http.get("/api/v1/portfolio/snapshot", params={"account_id": account_id, "as_of": "2026-08-19"})
         assert snapshot.status_code == 200
         assert snapshot.json()["accounts"][0]["positions"][0]["last_price"] == 120.0
+        assert snapshot.json()["accounts"][0]["positions"][0]["price_date"] == "2026-08-18"
+        assert snapshot.json()["accounts"][0]["positions"][0]["price_stale"] is True
 
 
 def test_v1_normalizes_frontend_market_values(client):
@@ -148,3 +152,28 @@ def test_v1_non_core_endpoints_are_explicitly_unavailable(client):
     assert http.get("/api/v1/portfolio/cash-ledger").status_code == 501
     assert http.get("/api/v1/portfolio/corporate-actions").status_code == 501
     assert http.get("/api/v1/portfolio/imports/csv/brokers").status_code == 501
+
+
+def test_v1_request_scope_closes_connection_on_success_and_error():
+    from routers import portfolio_v1
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    init_db(connection)
+    closed = []
+    original_get = portfolio_v1._get_connection
+    original_close = portfolio_v1._close_connection
+    portfolio_v1._get_connection = lambda: connection
+    portfolio_v1._close_connection = lambda conn: closed.append(conn)
+    try:
+        with portfolio_v1._connection_scope() as scoped:
+            assert scoped is connection
+        with pytest.raises(ValueError):
+            with portfolio_v1._connection_scope():
+                raise ValueError("request failed")
+    finally:
+        portfolio_v1._get_connection = original_get
+        portfolio_v1._close_connection = original_close
+        connection.close()
+
+    assert closed == [connection, connection]

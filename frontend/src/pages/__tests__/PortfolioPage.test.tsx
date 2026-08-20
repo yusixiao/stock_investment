@@ -252,7 +252,24 @@ describe('PortfolioPage FX refresh', () => {
     expect(listImportBrokers).not.toHaveBeenCalled();
   });
 
-  it('renders stale FX status with a manual refresh button', async () => {
+  it('disables unsupported portfolio actions without sending requests', async () => {
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+
+    expect(screen.getByRole('button', { name: '刷新汇率' })).toBeDisabled();
+    expect(screen.getByText('资金流水当前版本未实现。')).toBeInTheDocument();
+    expect(screen.getByText('公司行为当前版本未实现。')).toBeInTheDocument();
+    expect(screen.getByText('CSV 导入当前版本未实现。')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '资金流水（未实现）' })).toBeDisabled();
+    expect(screen.getByRole('option', { name: '公司行为（未实现）' })).toBeDisabled();
+    expect(refreshFx).not.toHaveBeenCalled();
+    expect(listCashLedger).not.toHaveBeenCalled();
+    expect(listCorporateActions).not.toHaveBeenCalled();
+    expect(parseCsvImport).not.toHaveBeenCalled();
+    expect(commitCsvImport).not.toHaveBeenCalled();
+  });
+
+  it.skip('renders stale FX status with a manual refresh button', async () => {
     render(<PortfolioPage />);
 
     await waitForInitialLoad();
@@ -324,7 +341,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.getByText('ACTIVE.SZ')).toBeInTheDocument();
   });
 
-  it('refreshes FX for a single selected account and only reloads snapshot/risk', async () => {
+  it.skip('refreshes FX for a single selected account and only reloads snapshot/risk', async () => {
     getSnapshot
       .mockResolvedValueOnce(makeSnapshot({ fxStale: true }))
       .mockResolvedValueOnce(makeSnapshot({ accountId: 1, fxStale: true }))
@@ -355,7 +372,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.getByText('最新')).toBeInTheDocument();
   });
 
-  it('refreshes FX for the full portfolio without sending accountId and shows neutral feedback when no pair exists', async () => {
+  it.skip('refreshes FX for the full portfolio without sending accountId and shows neutral feedback when no pair exists', async () => {
     refreshFx.mockResolvedValueOnce({
       asOf: '2026-03-19',
       accountCount: 1,
@@ -377,7 +394,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(await screen.findByText('当前范围无可刷新的汇率对。')).toBeInTheDocument();
   });
 
-  it('shows disabled feedback when FX online refresh is disabled even without a disabled reason', async () => {
+  it.skip('shows disabled feedback when FX online refresh is disabled even without a disabled reason', async () => {
     refreshFx.mockResolvedValueOnce({
       asOf: '2026-03-19',
       accountCount: 1,
@@ -426,7 +443,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(aaplRowCells.at(-1)).toHaveClass('text-secondary');
   });
 
-  it('prefers disabled feedback over empty-pair feedback when refresh is disabled', async () => {
+  it.skip('prefers disabled feedback over empty-pair feedback when refresh is disabled', async () => {
     refreshFx.mockResolvedValueOnce({
       asOf: '2026-03-19',
       accountCount: 1,
@@ -448,7 +465,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.queryByText('当前范围无可刷新的汇率对。')).not.toBeInTheDocument();
   });
 
-  it('shows warning feedback when FX refresh still falls back to stale rates', async () => {
+  it.skip('shows warning feedback when FX refresh still falls back to stale rates', async () => {
     refreshFx.mockResolvedValueOnce({
       asOf: '2026-03-19',
       accountCount: 1,
@@ -467,7 +484,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(await screen.findByText(/stale\/fallback 汇率/)).toBeInTheDocument();
   });
 
-  it('shows warning feedback when FX refresh returns online errors without stale pairs', async () => {
+  it.skip('shows warning feedback when FX refresh returns online errors without stale pairs', async () => {
     refreshFx.mockResolvedValueOnce({
       asOf: '2026-03-19',
       accountCount: 1,
@@ -493,7 +510,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(listCorporateActions).not.toHaveBeenCalled();
   });
 
-  it('restores the button state and shows the existing error alert when FX refresh fails', async () => {
+  it.skip('restores the button state and shows the existing error alert when FX refresh fails', async () => {
     refreshFx.mockRejectedValueOnce(
       createApiError(
         createParsedApiError({
@@ -515,7 +532,7 @@ describe('PortfolioPage FX refresh', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '刷新汇率' })).not.toBeDisabled());
   });
 
-  it('does not keep success feedback when snapshot reload fails after FX refresh succeeds', async () => {
+  it.skip('does not keep success feedback when snapshot reload fails after FX refresh succeeds', async () => {
     getSnapshot
       .mockResolvedValueOnce(makeSnapshot({ fxStale: true }))
       .mockRejectedValueOnce(
@@ -539,7 +556,7 @@ describe('PortfolioPage FX refresh', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '刷新汇率' })).not.toBeDisabled());
   });
 
-  it('drops late FX refresh results after switching to another account scope', async () => {
+  it.skip('drops late FX refresh results after switching to another account scope', async () => {
     getAccounts.mockResolvedValueOnce(makeAccounts([{ id: 1, name: 'Main' }, { id: 2, name: 'Alt' }]));
     getSnapshot.mockImplementation(async ({ accountId }: { accountId?: number } = {}) => {
       if (accountId === 2) {
@@ -591,7 +608,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.queryByText('汇率已刷新，共更新 1 对。')).not.toBeInTheDocument();
   });
 
-  it('drops late FX refresh results after switching cost method', async () => {
+  it.skip('drops late FX refresh results after switching cost method', async () => {
     const pendingRefresh = deferredPromise<{
       asOf: string;
       accountCount: number;

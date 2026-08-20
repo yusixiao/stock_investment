@@ -519,53 +519,6 @@ const PortfolioPage: React.FC = () => {
     }
   };
 
-  const handleCashSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!writableAccountId) {
-      setWriteWarning('请先在右上角选择具体账户，再进行录入或导入提交。');
-      return;
-    }
-    try {
-      setWriteWarning(null);
-      await portfolioApi.createCashLedger({
-        accountId: writableAccountId,
-        eventDate: cashForm.eventDate,
-        direction: cashForm.direction,
-        amount: Number(cashForm.amount),
-        currency: cashForm.currency || undefined,
-        note: cashForm.note || undefined,
-      });
-      await refreshPortfolioData();
-      setCashForm((prev) => ({ ...prev, note: '' }));
-    } catch (err) {
-      setError(getParsedApiError(err));
-    }
-  };
-
-  const handleCorporateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!writableAccountId) {
-      setWriteWarning('请先在右上角选择具体账户，再进行录入或导入提交。');
-      return;
-    }
-    try {
-      setWriteWarning(null);
-      await portfolioApi.createCorporateAction({
-        accountId: writableAccountId,
-        symbol: corpForm.symbol,
-        effectiveDate: corpForm.effectiveDate,
-        actionType: corpForm.actionType,
-        cashDividendPerShare: corpForm.cashDividendPerShare ? Number(corpForm.cashDividendPerShare) : undefined,
-        splitRatio: corpForm.splitRatio ? Number(corpForm.splitRatio) : undefined,
-        note: corpForm.note || undefined,
-      });
-      await refreshPortfolioData();
-      setCorpForm((prev) => ({ ...prev, symbol: '', note: '' }));
-    } catch (err) {
-      setError(getParsedApiError(err));
-    }
-  };
-
   const handleParseCsv = async () => {
     if (!csvFile) return;
     try {
@@ -957,12 +910,13 @@ const PortfolioPage: React.FC = () => {
               type="button"
               className="btn-secondary !px-3 !py-1 !text-xs shrink-0"
               onClick={() => void handleRefreshFx()}
-              disabled={!hasAccounts || isLoading || fxRefreshing}
+              disabled
             >
-              {fxRefreshing ? '刷新中...' : '刷新汇率'}
+              刷新汇率
             </button>
           </div>
           <div className="mt-2">{snapshot?.fxStale ? <Badge variant="warning">过期</Badge> : <Badge variant="success">最新</Badge>}</div>
+          <p className="mt-2 text-xs text-secondary">汇率刷新当前版本未实现。</p>
           {fxRefreshFeedback ? (
             <InlineAlert
               variant={getFxRefreshFeedbackVariant(fxRefreshFeedback.tone)}
@@ -1165,48 +1119,50 @@ const PortfolioPage: React.FC = () => {
 
         <Card padding="md">
           <h3 className="text-sm font-semibold text-foreground mb-3">手工录入：资金流水</h3>
-          <form className="space-y-2" onSubmit={handleCashSubmit}>
+          <form className="space-y-2" onSubmit={(event) => event.preventDefault()}>
+            <InlineAlert variant="warning" message="资金流水当前版本未实现。" className="rounded-lg px-3 py-2 text-xs shadow-none" />
             <div className="grid grid-cols-2 gap-2">
-              <input className={PORTFOLIO_INPUT_CLASS} type="date" value={cashForm.eventDate}
+              <input disabled className={PORTFOLIO_INPUT_CLASS} type="date" value={cashForm.eventDate}
                 onChange={(e) => setCashForm((prev) => ({ ...prev, eventDate: e.target.value }))} required />
-              <select className={PORTFOLIO_SELECT_CLASS} value={cashForm.direction}
+              <select disabled className={PORTFOLIO_SELECT_CLASS} value={cashForm.direction}
                 onChange={(e) => setCashForm((prev) => ({ ...prev, direction: e.target.value as PortfolioCashDirection }))}>
                 <option value="in">流入</option>
                 <option value="out">流出</option>
               </select>
             </div>
-            <input className={PORTFOLIO_INPUT_CLASS} type="number" min="0" step="0.0001" placeholder="金额"
+            <input disabled className={PORTFOLIO_INPUT_CLASS} type="number" min="0" step="0.0001" placeholder="金额"
               value={cashForm.amount} onChange={(e) => setCashForm((prev) => ({ ...prev, amount: e.target.value }))} required />
-            <input className={PORTFOLIO_INPUT_CLASS} placeholder={`币种（可选，默认 ${writableAccount?.baseCurrency || '账户基准币'}）`} value={cashForm.currency}
+            <input disabled className={PORTFOLIO_INPUT_CLASS} placeholder={`币种（可选，默认 ${writableAccount?.baseCurrency || '账户基准币'}）`} value={cashForm.currency}
               onChange={(e) => setCashForm((prev) => ({ ...prev, currency: e.target.value }))} />
-            <button type="submit" className="btn-secondary w-full" disabled={!writableAccountId}>提交资金流水</button>
+            <button type="submit" className="btn-secondary w-full" disabled>提交资金流水</button>
           </form>
         </Card>
 
         <Card padding="md">
           <h3 className="text-sm font-semibold text-foreground mb-3">手工录入：公司行为</h3>
-          <form className="space-y-2" onSubmit={handleCorporateSubmit}>
-            <input className={PORTFOLIO_INPUT_CLASS} placeholder="股票代码" value={corpForm.symbol}
+          <form className="space-y-2" onSubmit={(event) => event.preventDefault()}>
+            <InlineAlert variant="warning" message="公司行为当前版本未实现。" className="rounded-lg px-3 py-2 text-xs shadow-none" />
+            <input disabled className={PORTFOLIO_INPUT_CLASS} placeholder="股票代码" value={corpForm.symbol}
               onChange={(e) => setCorpForm((prev) => ({ ...prev, symbol: e.target.value }))} required />
             <div className="grid grid-cols-2 gap-2">
-              <input className={PORTFOLIO_INPUT_CLASS} type="date" value={corpForm.effectiveDate}
+              <input disabled className={PORTFOLIO_INPUT_CLASS} type="date" value={corpForm.effectiveDate}
                 onChange={(e) => setCorpForm((prev) => ({ ...prev, effectiveDate: e.target.value }))} required />
-              <select className={PORTFOLIO_SELECT_CLASS} value={corpForm.actionType}
+              <select disabled className={PORTFOLIO_SELECT_CLASS} value={corpForm.actionType}
                 onChange={(e) => setCorpForm((prev) => ({ ...prev, actionType: e.target.value as PortfolioCorporateActionType }))}>
                 <option value="cash_dividend">现金分红</option>
                 <option value="split_adjustment">拆并股调整</option>
               </select>
             </div>
             {corpForm.actionType === 'cash_dividend' ? (
-              <input className={PORTFOLIO_INPUT_CLASS} type="number" min="0" step="0.000001" placeholder="每股分红"
+                <input disabled className={PORTFOLIO_INPUT_CLASS} type="number" min="0" step="0.000001" placeholder="每股分红"
                 value={corpForm.cashDividendPerShare}
                 onChange={(e) => setCorpForm((prev) => ({ ...prev, cashDividendPerShare: e.target.value, splitRatio: '' }))} required />
             ) : (
-              <input className={PORTFOLIO_INPUT_CLASS} type="number" min="0" step="0.000001" placeholder="拆并股比例"
+                <input disabled className={PORTFOLIO_INPUT_CLASS} type="number" min="0" step="0.000001" placeholder="拆并股比例"
                 value={corpForm.splitRatio}
                 onChange={(e) => setCorpForm((prev) => ({ ...prev, splitRatio: e.target.value, cashDividendPerShare: '' }))} required />
             )}
-            <button type="submit" className="btn-secondary w-full" disabled={!writableAccountId}>提交企业行为</button>
+            <button type="submit" className="btn-secondary w-full" disabled>提交企业行为</button>
           </form>
         </Card>
       </section>
@@ -1215,6 +1171,7 @@ const PortfolioPage: React.FC = () => {
         <Card padding="md">
           <h3 className="text-sm font-semibold text-foreground mb-3">券商 CSV 导入</h3>
           <div className="space-y-2">
+            <InlineAlert variant="warning" message="CSV 导入当前版本未实现。" className="rounded-lg px-2 py-1 text-xs shadow-none" />
             {brokerLoadWarning ? (
               <InlineAlert
                 variant="warning"
@@ -1223,7 +1180,7 @@ const PortfolioPage: React.FC = () => {
               />
             ) : null}
             <div className="grid grid-cols-2 gap-2">
-              <select className={PORTFOLIO_SELECT_CLASS} value={selectedBroker} onChange={(e) => setSelectedBroker(e.target.value)}>
+              <select disabled className={PORTFOLIO_SELECT_CLASS} value={selectedBroker} onChange={(e) => setSelectedBroker(e.target.value)}>
                 {brokers.length > 0 ? (
                   brokers.map((item) => <option key={item.broker} value={item.broker}>{formatBrokerLabel(item.broker, item.displayName)}</option>)
                 ) : (
@@ -1232,20 +1189,20 @@ const PortfolioPage: React.FC = () => {
               </select>
               <label className={PORTFOLIO_FILE_PICKER_CLASS}>
                 选择 CSV
-                <input type="file" accept=".csv" className="hidden"
+                <input disabled type="file" accept=".csv" className="hidden"
                   onChange={(e) => setCsvFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} />
               </label>
             </div>
             <div className="flex items-center gap-2 text-xs text-secondary">
-              <input id="csv-dry-run" type="checkbox" checked={csvDryRun} onChange={(e) => setCsvDryRun(e.target.checked)} />
+              <input disabled id="csv-dry-run" type="checkbox" checked={csvDryRun} onChange={(e) => setCsvDryRun(e.target.checked)} />
               <label htmlFor="csv-dry-run">仅预演（不写入）</label>
             </div>
             <div className="flex gap-2">
-              <button type="button" className="btn-secondary flex-1" disabled={!csvFile || csvParsing} onClick={() => void handleParseCsv()}>
+              <button type="button" className="btn-secondary flex-1" disabled onClick={() => void handleParseCsv()}>
                 {csvParsing ? '解析中...' : '解析文件'}
               </button>
               <button type="button" className="btn-secondary flex-1"
-                disabled={!csvFile || !writableAccountId || csvCommitting} onClick={() => void handleCommitCsv()}>
+                disabled onClick={() => void handleCommitCsv()}>
                 {csvCommitting ? '提交中...' : '提交导入'}
               </button>
             </div>
@@ -1274,8 +1231,8 @@ const PortfolioPage: React.FC = () => {
             <div className="grid grid-cols-2 gap-2">
               <select className={PORTFOLIO_SELECT_CLASS} value={eventType} onChange={(e) => setEventType(e.target.value as EventType)}>
                 <option value="trade">交易流水</option>
-                <option value="cash">资金流水</option>
-                <option value="corporate">公司行为</option>
+                 <option value="cash" disabled>资金流水（未实现）</option>
+                 <option value="corporate" disabled>公司行为（未实现）</option>
               </select>
               <button type="button" className="btn-secondary text-sm" onClick={() => void loadEvents()} disabled={eventLoading}>
                 {eventLoading ? '加载中...' : '刷新流水'}

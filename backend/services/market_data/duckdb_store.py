@@ -556,7 +556,7 @@ class DuckDBStore:
         market: str,
         symbols: tuple[str, ...],
         as_of_date: str | None = None,
-    ) -> dict[str, float]:
+    ) -> dict[str, tuple[float, str]]:
         """查询指定标的截至日期的最新收盘价，返回 DuckDB 中的 canonical symbol。"""
         market = self._validate_market(market)
         if not symbols:
@@ -578,12 +578,15 @@ class DuckDBStore:
             conditions.append("CAST(date AS DATE) <= CAST(? AS DATE)")
             params.append(as_of_date)
         frame = self.query(
-            f"SELECT _symbol, close FROM v_{market.lower()}_daily "
+            f"SELECT _symbol, close, CAST(date AS DATE) AS quote_date FROM v_{market.lower()}_daily "
             f"WHERE {' AND '.join(conditions)} "
             "QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1",
             params,
         )
-        return {row["_symbol"]: float(row["close"]) for _, row in frame.iterrows()}
+        return {
+            row["_symbol"]: (float(row["close"]), str(row["quote_date"]))
+            for _, row in frame.iterrows()
+        }
 
     def previous_trading_date(self, market: str, before_date: str) -> str | None:
         market = self._validate_market(market)
