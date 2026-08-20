@@ -5,9 +5,13 @@ from services.portfolio.models import Account
 from services.portfolio.repository import AccountRepository
 
 
+class TargetMaterializerUnavailable(RuntimeError):
+    """Raised when Task 3 has not yet supplied target materialization."""
+
+
 def materialize_strategy_targets(*, account_id: int, task_id: str, connection):
     """Task 3 seam; never report a successful bind before materialization exists."""
-    raise RuntimeError("Task 3 target materializer is not available")
+    raise TargetMaterializerUnavailable("Task 3 target materializer is not available")
 
 
 class AccountService:

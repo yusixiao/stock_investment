@@ -61,3 +61,33 @@
 
 - Task 3 仍需在 `_get_materializer()` seam 接入真实目标物化实现；当前生产绑定会明确返回 503，这是预期的 fail-closed 行为。
 - 当前目标/提醒 partial unique index 假设既有未归档数据没有重复值；若部署到已有重复数据的数据库，schema 初始化前需要单独数据清理迁移。
+
+## Fix Round 2
+
+### 处理内容
+
+- `init_portfolio_v1_tables()` 调整为先建表、再运行 current 状态数据迁移、最后创建 partial unique index。
+- 新增幂等迁移：按 `(account_id, symbol)` 对未归档目标和提醒状态以 `updated_at DESC, id DESC` 确定最新记录，保留最新记录，其余重复记录写入 `archived_at`，不删除历史；无重复数据和重复执行均安全。
+- 新增 `TargetMaterializerUnavailable` 专用异常；只有 Task 3 materializer 未接入时映射 HTTP 503，其他 `RuntimeError` 不再直接下发异常文本。
+- 新增重复 current 状态迁移、归档保留、重复执行稳定性和异常映射测试。
+
+### Fix Round 2 测试命令及完整结果
+
+- `python -m pytest backend/tests/test_portfolio_account_service.py backend/tests/test_portfolio_v1_api.py -q`
+
+  ```text
+  Pytest: 20 passed
+  ```
+
+- `python -m pytest backend/tests/test_portfolio_db.py backend/tests/test_portfolio_manager.py backend/tests/test_backtest_task_manager.py backend/tests/test_backtest_api.py -q`
+
+  ```text
+  Pytest: 59 passed
+  ```
+
+- `python -m compileall -q backend/services/db_schema.py backend/services/portfolio/account_service.py backend/routers/portfolio_v1.py backend/tests/test_portfolio_account_service.py backend/tests/test_portfolio_v1_api.py`：通过。
+- `git diff --check`：通过。
+
+### Fix Round 2 concerns
+
+- Task 3 仍需接入 `_get_materializer()` seam；未接入时绑定明确返回 503，不创建策略绑定状态。

@@ -4,8 +4,11 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from services.backtest.task_manager import task_manager
-from services.portfolio.account_service import AccountService
-from services.portfolio.account_service import materialize_strategy_targets
+from services.portfolio.account_service import (
+    AccountService,
+    TargetMaterializerUnavailable,
+    materialize_strategy_targets,
+)
 from services.portfolio.db import get_connection, init_db
 from services.portfolio.repository import AccountRepository
 
@@ -50,7 +53,7 @@ def _error(exc: ValueError):
     raise HTTPException(status_code=status, detail=str(exc))
 
 
-def _materializer_error(exc: RuntimeError):
+def _materializer_error(exc: TargetMaterializerUnavailable):
     raise HTTPException(status_code=503, detail=str(exc))
 
 
@@ -62,7 +65,7 @@ def create_account(body: AccountCreateRequest):
         ))
     except ValueError as exc:
         _error(exc)
-    except RuntimeError as exc:
+    except TargetMaterializerUnavailable as exc:
         _materializer_error(exc)
 
 
@@ -77,7 +80,7 @@ def get_account(account_id: int):
         return asdict(_get_service().get_account(account_id))
     except ValueError as exc:
         _error(exc)
-    except RuntimeError as exc:
+    except TargetMaterializerUnavailable as exc:
         _materializer_error(exc)
 
 
@@ -87,7 +90,7 @@ def bind_strategy(account_id: int, body: StrategyBindingRequest):
         return asdict(_get_service().bind_strategy(account_id, body.task_id))
     except ValueError as exc:
         _error(exc)
-    except RuntimeError as exc:
+    except TargetMaterializerUnavailable as exc:
         _materializer_error(exc)
 
 

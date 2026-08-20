@@ -263,6 +263,12 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             updated_at TEXT NOT NULL
         );
 
+        """
+    )
+    _archive_duplicate_current_states(conn, "portfolio_strategy_targets")
+    _archive_duplicate_current_states(conn, "portfolio_strategy_alerts")
+    conn.executescript(
+        """
         CREATE INDEX IF NOT EXISTS idx_portfolio_account_trades_account
             ON portfolio_account_trades(account_id, trade_date, id);
         CREATE INDEX IF NOT EXISTS idx_portfolio_targets_account
@@ -276,3 +282,27 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
         """
     )
     conn.commit()
+
+
+def _archive_duplicate_current_states(conn: sqlite3.Connection, table: str):
+    """保留每个账户/标的最新 current 行，其余行归档而非删除。"""
+    if table not in {"portfolio_strategy_targets", "portfolio_strategy_alerts"}:
+        raise ValueError(f"unsupported portfolio state table: {table}")
+    conn.execute(
+        f"""
+        UPDATE {table}
+        SET archived_at = CURRENT_TIMESTAMP
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY account_id, symbol
+                           ORDER BY updated_at DESC, id DESC
+                       ) AS row_number
+                FROM {table}
+                WHERE archived_at IS NULL
+            )
+            WHERE row_number > 1
+        )
+        """
+    )

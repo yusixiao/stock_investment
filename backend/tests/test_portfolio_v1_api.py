@@ -74,3 +74,21 @@ def test_v1_fails_closed_when_task3_materializer_is_unavailable(client):
         )
 
     assert response.status_code == 503
+
+
+def test_v1_does_not_expose_unexpected_runtime_errors(client):
+    http, _ = client
+    account = http.post(
+        "/api/v1/portfolio/accounts",
+        json={"name": "内部错误", "market": "A", "base_currency": "CNY"},
+    ).json()
+
+    def broken_materializer(**kwargs):
+        raise RuntimeError("database secret details")
+
+    with patch("routers.portfolio_v1._get_materializer", return_value=broken_materializer):
+        with pytest.raises(RuntimeError, match="database secret details"):
+            http.post(
+                f"/api/v1/portfolio/accounts/{account['id']}/strategy",
+                json={"task_id": "task-1"},
+            )

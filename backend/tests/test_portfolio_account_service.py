@@ -79,6 +79,55 @@ def test_account_schema_is_idempotent_and_separate_from_legacy_tables(service):
     assert legacy_columns == [row[1:] for row in repo.conn.execute("PRAGMA table_info(portfolios)")]
 
 
+def test_schema_migration_archives_duplicate_current_states_and_is_rerunnable(service):
+    _, repo, _ = service
+    from services.db_schema import init_portfolio_v1_tables
+
+    account = repo.create_account("迁移", "A", "CNY")
+    repo.conn.execute("DROP INDEX uq_portfolio_current_target")
+    repo.conn.execute("DROP INDEX uq_portfolio_current_alert")
+    repo.conn.execute(
+        "INSERT INTO portfolio_strategy_targets (account_id, symbol, target_quantity, reference_price, status, effective_date, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (account.id, "600519.SH", 10, 100, "active", "2026-08-20", "2026-08-20T10:00:00"),
+    )
+    repo.conn.execute(
+        "INSERT INTO portfolio_strategy_targets (account_id, symbol, target_quantity, reference_price, status, effective_date, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (account.id, "600519.SH", 20, 110, "active", "2026-08-21", "2026-08-21T10:00:00"),
+    )
+    repo.conn.execute(
+        "INSERT INTO portfolio_strategy_alerts (account_id, symbol, state, updated_at) VALUES (?, ?, ?, ?)",
+        (account.id, "600519.SH", "armed", "2026-08-20T10:00:00"),
+    )
+    repo.conn.execute(
+        "INSERT INTO portfolio_strategy_alerts (account_id, symbol, state, updated_at) VALUES (?, ?, ?, ?)",
+        (account.id, "600519.SH", "triggered", "2026-08-21T10:00:00"),
+    )
+    repo.conn.commit()
+
+    init_portfolio_v1_tables(repo.conn)
+    first_state = repo.conn.execute(
+        "SELECT id, archived_at FROM portfolio_strategy_targets ORDER BY id"
+    ).fetchall()
+    first_alert_state = repo.conn.execute(
+        "SELECT id, archived_at FROM portfolio_strategy_alerts ORDER BY id"
+    ).fetchall()
+
+    assert first_state[0]["archived_at"] is not None
+    assert first_state[1]["archived_at"] is None
+    assert first_alert_state[0]["archived_at"] is not None
+    assert first_alert_state[1]["archived_at"] is None
+
+    init_portfolio_v1_tables(repo.conn)
+    assert [tuple(row) for row in first_state] == [
+        tuple(row)
+        for row in repo.conn.execute("SELECT id, archived_at FROM portfolio_strategy_targets ORDER BY id")
+    ]
+    assert [tuple(row) for row in first_alert_state] == [
+        tuple(row)
+        for row in repo.conn.execute("SELECT id, archived_at FROM portfolio_strategy_alerts ORDER BY id")
+    ]
+
+
 def test_materializer_receives_the_application_connection(service):
     svc, _, tm = service
     calls = []
