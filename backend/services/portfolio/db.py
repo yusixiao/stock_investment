@@ -52,6 +52,9 @@ def init_db(conn: sqlite3.Connection | None = None):
         );
     """)
     conn.commit()
+    from services.db_schema import init_portfolio_v1_tables
+
+    init_portfolio_v1_tables(conn)
 
     if close_after:
         conn.close()

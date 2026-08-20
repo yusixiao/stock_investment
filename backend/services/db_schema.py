@@ -202,3 +202,71 @@ def init_chat_tables(conn: sqlite3.Connection):
         "ON chat_messages(session_id, created_at)"
     )
     conn.commit()
+
+
+def init_portfolio_v1_tables(conn: sqlite3.Connection):
+    """创建 Portfolio v1 账户及策略状态表；可与共享业务库重复执行。"""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS portfolio_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            market TEXT NOT NULL,
+            base_currency TEXT NOT NULL,
+            strategy_task_id TEXT UNIQUE,
+            strategy_bound_at TEXT,
+            strategy_unbound_at TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS portfolio_account_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL REFERENCES portfolio_accounts(id) ON DELETE CASCADE,
+            symbol TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            price REAL NOT NULL,
+            shares INTEGER NOT NULL,
+            trade_date TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS portfolio_strategy_targets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL REFERENCES portfolio_accounts(id) ON DELETE CASCADE,
+            symbol TEXT NOT NULL,
+            target_quantity INTEGER NOT NULL,
+            reference_price REAL NOT NULL,
+            status TEXT NOT NULL,
+            effective_date TEXT NOT NULL,
+            archived_at TEXT,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS portfolio_strategy_target_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL REFERENCES portfolio_accounts(id) ON DELETE CASCADE,
+            effective_date TEXT NOT NULL,
+            targets TEXT NOT NULL,
+            archived_at TEXT,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS portfolio_strategy_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL REFERENCES portfolio_accounts(id) ON DELETE CASCADE,
+            symbol TEXT NOT NULL,
+            state TEXT NOT NULL,
+            payload TEXT,
+            archived_at TEXT,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_portfolio_account_trades_account
+            ON portfolio_account_trades(account_id, trade_date, id);
+        CREATE INDEX IF NOT EXISTS idx_portfolio_targets_account
+            ON portfolio_strategy_targets(account_id, symbol);
+        """
+    )
+    conn.commit()
