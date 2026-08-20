@@ -112,10 +112,12 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
   const [returnSort, setReturnSort] = useState<'asc' | 'desc' | null>(null);
 
   const sortedTasks = useMemo(() => {
-    if (!returnSort) return tasks;
-    // 三态:有效数 → 排序;非数 / null → 沉到末尾(无论升降)
     const arr = [...tasks];
     arr.sort((a, b) => {
+      const executionOrder = Number(b.execution_status === 'active') - Number(a.execution_status === 'active');
+      if (executionOrder !== 0) return executionOrder;
+      if (!returnSort) return 0;
+      // 三态:有效数 → 排序;非数 / null → 沉到末尾(无论升降)
       const ra = a.summary?.total_return as number | null | undefined;
       const rb = b.summary?.total_return as number | null | undefined;
       const va = typeof ra === 'number' && Number.isFinite(ra) ? ra : null;
@@ -315,6 +317,11 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                         {isDeleted && (
                           <Badge variant="default" className="ml-2">
                             已删除
+                          </Badge>
+                        )}
+                        {task.execution_status === 'active' && (
+                          <Badge variant="success" className="ml-2">
+                            执行中
                           </Badge>
                         )}
                       </td>

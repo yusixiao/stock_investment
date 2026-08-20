@@ -210,7 +210,7 @@ class TaskManager:
         conn = self._get_conn()
         try:
             row = conn.execute(
-                "SELECT status, result, error, pipeline_info, start_date, end_date, source_task_id, log_dir FROM backtest_tasks WHERE task_id = ?",
+                "SELECT status, result, error, pipeline_info, start_date, end_date, source_task_id, log_dir, execution_status, execution_account_id FROM backtest_tasks WHERE task_id = ?",
                 (task_id,),
             ).fetchone()
         finally:
@@ -223,6 +223,8 @@ class TaskManager:
             "status": row["status"],
             "result": result,
             "error": row["error"],
+            "execution_status": row["execution_status"],
+            "execution_account_id": row["execution_account_id"],
         }
         if row["pipeline_info"]:
             try:
@@ -239,6 +241,60 @@ class TaskManager:
             resp["log_dir"] = row["log_dir"]
         return resp
 
+    def set_execution_account(self, task_id: str, account_id: int) -> dict:
+        """将任务标记为某账户的唯一活动策略关联。"""
+        conn = self._get_conn()
+        try:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conflict = conn.execute(
+                    "SELECT task_id FROM backtest_tasks "
+                    "WHERE execution_account_id = ? AND execution_status = 'active' "
+                    "AND task_id != ?",
+                    (account_id, task_id),
+                ).fetchone()
+                if conflict:
+                    raise ValueError(
+                        f"account {account_id} is already associated with task {conflict['task_id']}"
+                    )
+                updated = conn.execute(
+                    "UPDATE backtest_tasks SET execution_status = 'active', "
+                    "execution_account_id = ? WHERE task_id = ?",
+                    (account_id, task_id),
+                )
+                if updated.rowcount == 0:
+                    raise ValueError(f"task {task_id} not found")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        finally:
+            conn.close()
+        return {
+            "task_id": task_id,
+            "execution_status": "active",
+            "execution_account_id": account_id,
+        }
+
+    def clear_execution_account(self, task_id: str) -> dict:
+        conn = self._get_conn()
+        try:
+            updated = conn.execute(
+                "UPDATE backtest_tasks SET execution_status = 'inactive', "
+                "execution_account_id = NULL WHERE task_id = ?",
+                (task_id,),
+            )
+            if updated.rowcount == 0:
+                raise ValueError(f"task {task_id} not found")
+            conn.commit()
+        finally:
+            conn.close()
+        return {
+            "task_id": task_id,
+            "execution_status": "inactive",
+            "execution_account_id": None,
+        }
+
     def list_tasks(
         self,
         show_deleted: bool = False,
@@ -248,18 +304,18 @@ class TaskManager:
         effective_include = bool(show_deleted) or bool(include_deleted)
         conn = self._get_conn()
         try:
-            base_cols = "task_id, status, task_type, summary, created_at, source_task_id, is_deleted, pipeline_info, start_date, end_date"
+            base_cols = "task_id, status, task_type, summary, created_at, source_task_id, is_deleted, pipeline_info, start_date, end_date, execution_status, execution_account_id"
             # 旧版/测试任务: pipeline_info 为空(NULL 或 '') → 不在历史页展示
             # show_deleted=True 时仍返回全部以便 debug
             if effective_include:
                 rows = conn.execute(
-                    f"SELECT {base_cols} FROM backtest_tasks ORDER BY created_at DESC"
+                    f"SELECT {base_cols} FROM backtest_tasks ORDER BY execution_status = 'active' DESC, created_at DESC"
                 ).fetchall()
             else:
                 rows = conn.execute(
                     f"SELECT {base_cols} FROM backtest_tasks "
                     f"WHERE is_deleted = 0 AND pipeline_info IS NOT NULL AND pipeline_info != '' "
-                    f"ORDER BY created_at DESC"
+                    f"ORDER BY execution_status = 'active' DESC, created_at DESC"
                 ).fetchall()
         finally:
             conn.close()
@@ -273,6 +329,8 @@ class TaskManager:
                 "deleted": bool(r["is_deleted"]),
                 "start_date": r["start_date"],
                 "end_date": r["end_date"],
+                "execution_status": r["execution_status"],
+                "execution_account_id": r["execution_account_id"],
             }
             if r["source_task_id"]:
                 item["source_task_id"] = r["source_task_id"]

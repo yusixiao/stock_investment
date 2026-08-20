@@ -401,6 +401,23 @@ class TestBacktestStatus:
         assert resp.status_code == 404
 
 
+class TestExecutionMetadataApi:
+    def test_task_list_and_detail_include_execution_metadata(self, isolated_task_manager):
+        task_id = isolated_task_manager.create_task(
+            strategy_class="ExampleStrategy", params={}
+        )
+        isolated_task_manager.set_execution_account(task_id, 7)
+
+        listed = client.get("/api/backtest/tasks").json()
+        item = next(task for task in listed if task["task_id"] == task_id)
+        detail = client.get(f"/api/backtest/result/{task_id}").json()
+
+        assert item["execution_status"] == "active"
+        assert item["execution_account_id"] == 7
+        assert detail["execution_status"] == "active"
+        assert detail["execution_account_id"] == 7
+
+
 class TestTaskManagerSourceTask:
     @pytest.fixture(autouse=True)
     def _setup(self, isolated_task_manager):

@@ -39,6 +39,8 @@ export interface TaskResult {
   result: BacktestResultPayload | null;
   error?: string;
   created_at: string;
+  execution_status: 'inactive' | 'active';
+  execution_account_id: number | null;
 }
 
 export interface BacktestResultPayload {
@@ -103,6 +105,8 @@ export interface TaskListItem {
   created_at: string;
   deleted: boolean;
   source_task_id?: string;
+  execution_status: 'inactive' | 'active';
+  execution_account_id: number | null;
 }
 
 export const backtestEngineApi = {

@@ -1,0 +1,67 @@
+import sqlite3
+
+import pytest
+
+
+class TestExecutionMetadata:
+    def test_migration_adds_inactive_execution_columns(self, isolated_task_manager):
+        conn = sqlite3.connect(isolated_task_manager._db_path)
+        columns = {
+            row[1]: row for row in conn.execute("PRAGMA table_info(backtest_tasks)")
+        }
+        conn.close()
+
+        assert columns["execution_account_id"][3] == 0
+        assert columns["execution_status"][4] == "'inactive'"
+
+    def test_setting_and_clearing_execution_account_updates_metadata(
+        self, isolated_task_manager
+    ):
+        task_id = isolated_task_manager.create_task(
+            strategy_class="ExampleStrategy", params={}
+        )
+
+        assert isolated_task_manager.set_execution_account(task_id, 7) == {
+            "task_id": task_id,
+            "execution_status": "active",
+            "execution_account_id": 7,
+        }
+        assert isolated_task_manager.get_result(task_id)["status"] == "running"
+        assert isolated_task_manager.get_result(task_id)["execution_status"] == "active"
+        assert isolated_task_manager.get_result(task_id)["execution_account_id"] == 7
+
+        assert isolated_task_manager.clear_execution_account(task_id) == {
+            "task_id": task_id,
+            "execution_status": "inactive",
+            "execution_account_id": None,
+        }
+
+    def test_same_account_or_task_cannot_have_two_active_associations(
+        self, isolated_task_manager
+    ):
+        first = isolated_task_manager.create_task(strategy_class="One", params={})
+        second = isolated_task_manager.create_task(strategy_class="Two", params={})
+        isolated_task_manager.set_execution_account(first, 7)
+
+        with pytest.raises(ValueError):
+            isolated_task_manager.set_execution_account(second, 7)
+
+        isolated_task_manager.set_execution_account(first, 8)
+        assert isolated_task_manager.get_result(first)["execution_account_id"] == 8
+
+    def test_list_tasks_orders_active_before_inactive(self, isolated_task_manager):
+        inactive_old = isolated_task_manager.create_task(
+            strategy_class="Old", params={}
+        )
+        active = isolated_task_manager.create_task(strategy_class="Active", params={})
+        inactive_new = isolated_task_manager.create_task(
+            strategy_class="New", params={}
+        )
+        isolated_task_manager.set_execution_account(active, 7)
+
+        ordered = isolated_task_manager.list_tasks()
+        assert [task["task_id"] for task in ordered] == [
+            active,
+            inactive_new,
+            inactive_old,
+        ]

@@ -52,7 +52,9 @@ def init_backtest_tables(conn: sqlite3.Connection):
             source_task_id TEXT,
             deleted INTEGER NOT NULL DEFAULT 0,
             is_deleted INTEGER NOT NULL DEFAULT 0,
-            log_dir TEXT
+            log_dir TEXT,
+            execution_account_id INTEGER,
+            execution_status TEXT NOT NULL DEFAULT 'inactive'
         );
 
         CREATE TABLE IF NOT EXISTS stock_exclusions (
@@ -94,6 +96,21 @@ def run_merge_strategies_migration(conn: sqlite3.Connection):
     # 2. log_dir
     if not _column_exists(conn, "backtest_tasks", "log_dir"):
         conn.execute("ALTER TABLE backtest_tasks ADD COLUMN log_dir TEXT")
+
+    # 执行关联元数据；活动账户通过部分唯一索引保证一对一。
+    if not _column_exists(conn, "backtest_tasks", "execution_account_id"):
+        conn.execute(
+            "ALTER TABLE backtest_tasks ADD COLUMN execution_account_id INTEGER"
+        )
+    if not _column_exists(conn, "backtest_tasks", "execution_status"):
+        conn.execute(
+            "ALTER TABLE backtest_tasks ADD COLUMN execution_status TEXT NOT NULL DEFAULT 'inactive'"
+        )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_backtest_active_execution_account "
+        "ON backtest_tasks(execution_account_id) "
+        "WHERE execution_status = 'active' AND execution_account_id IS NOT NULL"
+    )
 
     # 3. pipeline_info 旧格式 -> 新格式 (仅迁移含 $.pipeline 数组的行)
     conn.execute(
