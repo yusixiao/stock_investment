@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
+from services.backtest.task_manager import task_manager
 from services.portfolio.db import get_connection
 from services.portfolio.repository import AccountRepository
 
@@ -38,8 +40,48 @@ class StrategyTargetRevision:
     source_task_id: str | None = None
 
 
-def _task_connection() -> sqlite3.Connection:
-    return get_connection()
+def _iso_date(value: Any) -> str:
+    if not isinstance(value, str) or len(value) != 10:
+        raise TargetRecommendationUnavailable("target date must be YYYY-MM-DD")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise TargetRecommendationUnavailable("target date must be YYYY-MM-DD") from exc
+    if parsed.isoformat() != value:
+        raise TargetRecommendationUnavailable("target date must be YYYY-MM-DD")
+    return value
+
+
+def _quantity(value: Any, *, allow_zero: bool = False) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < (0 if allow_zero else 1):
+        requirement = "non-negative" if allow_zero else "positive"
+        raise TargetRecommendationUnavailable(f"target quantity must be a {requirement} integer")
+    return value
+
+
+def _positive_price(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TargetRecommendationUnavailable("reference price must be finite and positive")
+    result = float(value)
+    if not math.isfinite(result) or result <= 0:
+        raise TargetRecommendationUnavailable("reference price must be finite and positive")
+    return result
+
+
+def _target(
+    symbol: Any, quantity: Any, price: Any, status: str, effective_date: str,
+    task_id: str, *, allow_zero: bool = False,
+) -> StrategyTarget:
+    if not isinstance(symbol, str) or not symbol:
+        raise TargetRecommendationUnavailable("target symbol is required")
+    return StrategyTarget(
+        symbol=symbol,
+        target_quantity=_quantity(quantity, allow_zero=allow_zero),
+        reference_price=_positive_price(price),
+        status=status,
+        effective_date=effective_date,
+        source_task_id=task_id,
+    )
 
 
 def _result_revisions(result: Any, task_id: str) -> list[StrategyTargetRevision]:
@@ -57,19 +99,16 @@ def _result_revisions(result: Any, task_id: str) -> list[StrategyTargetRevision]
     revisions: list[StrategyTargetRevision] = []
     try:
         for raw_revision in raw_revisions:
-            effective_date = str(raw_revision.get("effective_date", raw_revision.get("date")))
-            datetime.strptime(effective_date, "%Y-%m-%d")
+            effective_date = _iso_date(raw_revision.get("effective_date", raw_revision.get("date")))
             raw_targets = raw_revision["targets"]
             if not isinstance(raw_targets, list):
                 raise TypeError
             targets = tuple(
-                StrategyTarget(
-                    symbol=str(item["symbol"]),
-                    target_quantity=int(item.get("target_quantity", item.get("quantity", item.get("shares")))),
-                    reference_price=float(item.get("reference_price", item.get("price"))),
-                    status=str(item.get("status", "active")),
-                    effective_date=effective_date,
-                    source_task_id=task_id,
+                _target(
+                    item.get("symbol"),
+                    item.get("target_quantity", item.get("quantity", item.get("shares"))),
+                    item.get("reference_price", item.get("price")),
+                    str(item.get("status", "active")), effective_date, task_id, allow_zero=True,
                 )
                 for item in raw_targets
             )
@@ -79,30 +118,64 @@ def _result_revisions(result: Any, task_id: str) -> list[StrategyTargetRevision]
     return sorted(revisions, key=lambda revision: revision.effective_date)
 
 
-def _load_task_result(task_id: str, connection: sqlite3.Connection) -> dict:
-    row = connection.execute(
-        "SELECT result FROM backtest_tasks WHERE task_id = ?", (task_id,)
-    ).fetchone()
-    if row is None or not row["result"]:
+def _load_task_result(task_id: str) -> dict:
+    task = task_manager.get_result(task_id)
+    if not task or not task.get("result"):
         raise TargetRecommendationUnavailable("backtest task result is unavailable")
+    return task["result"]
+
+
+def _raw_trade_revisions(result: dict, task_id: str) -> list[StrategyTargetRevision]:
+    raw_trades = result.get("raw_trades")
+    if not isinstance(raw_trades, list) or not raw_trades:
+        raise TargetRecommendationUnavailable("backtest result has no target recommendations")
+    state: dict[str, StrategyTarget] = {}
+    revisions: list[StrategyTargetRevision] = []
     try:
-        result = json.loads(row["result"])
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise TargetRecommendationUnavailable("backtest task result is invalid") from exc
-    return result
+        ordered = sorted(enumerate(raw_trades), key=lambda pair: (_iso_date(pair[1]["date"]), pair[0]))
+        for _, trade in ordered:
+            effective_date = _iso_date(trade["date"])
+            symbol = trade["symbol"]
+            direction = trade["direction"]
+            quantity = _quantity(trade["shares"])
+            price = _positive_price(trade["price"])
+            if not isinstance(symbol, str) or not symbol or direction not in {"buy", "sell"}:
+                raise TargetRecommendationUnavailable("raw trade target recommendation is invalid")
+            previous = state.get(symbol)
+            if direction == "buy":
+                state[symbol] = _target(symbol, quantity, price, "active", effective_date, task_id)
+            else:
+                reference_price = previous.reference_price if previous else price
+                state[symbol] = StrategyTarget(
+                    symbol=symbol, target_quantity=0, reference_price=reference_price,
+                    status="exited", effective_date=effective_date, source_task_id=task_id,
+                )
+            revisions.append(StrategyTargetRevision(effective_date, tuple(state.values()), task_id))
+    except (KeyError, TypeError, TargetRecommendationUnavailable) as exc:
+        if isinstance(exc, TargetRecommendationUnavailable):
+            raise
+        raise TargetRecommendationUnavailable("raw trade target recommendation is invalid") from exc
+    return revisions
 
 
 def materialize_targets(
     account_id: int, task_id: str, connection: sqlite3.Connection | None = None
 ) -> int:
     owns_connection = connection is None
-    conn = connection or _task_connection()
+    conn = connection or get_connection()
     try:
         repository = AccountRepository(conn)
-        revisions = _result_revisions(_load_task_result(task_id, conn), task_id)
+        result = _load_task_result(task_id)
+        revisions = _result_revisions(result, task_id) if (
+            result.get("strategy_targets") or result.get("target_history")
+            or result.get("strategy_target_history") or (result.get("execution") or {}).get("strategy_targets")
+        ) else _raw_trade_revisions(result, task_id)
         now = datetime.now().isoformat()
+        archived_dates: set[str] = set()
         for revision in revisions:
-            repository.archive_target_history(account_id, revision.effective_date, now)
+            if revision.effective_date not in archived_dates:
+                repository.archive_target_history(account_id, revision.effective_date, now)
+                archived_dates.add(revision.effective_date)
             repository.add_target_history(
                 account_id,
                 revision.effective_date,
@@ -113,17 +186,20 @@ def materialize_targets(
                 now,
             )
 
+        as_of_date = date.today().isoformat()
+        eligible = [revision for revision in revisions if revision.effective_date <= as_of_date]
+        current_targets = eligible[-1].targets if eligible else ()
         repository.replace_current_targets(
             account_id,
             [
                 (target.symbol, target.target_quantity, target.reference_price, target.status, target.effective_date)
-                for target in revisions[-1].targets
+                for target in current_targets
             ],
             now,
         )
         if owns_connection:
             conn.commit()
-        return len(revisions[-1].targets)
+        return len(current_targets)
     except Exception:
         if owns_connection:
             conn.rollback()
@@ -154,7 +230,7 @@ def get_target_history(
     account_id: int, connection: sqlite3.Connection | None = None
 ) -> list[StrategyTargetRevision]:
     owns_connection = connection is None
-    conn = connection or _task_connection()
+    conn = connection or get_connection()
     try:
         return _history_rows(account_id, conn)
     finally:
@@ -165,6 +241,7 @@ def get_target_history(
 def get_current_targets(
     account_id: int, as_of_date: str, connection: sqlite3.Connection | None = None
 ) -> list[StrategyTarget]:
+    as_of_date = _iso_date(as_of_date)
     revisions = [r for r in get_target_history(account_id, connection) if r.effective_date <= as_of_date]
     if not revisions:
         return []
@@ -178,6 +255,7 @@ def get_current_targets(
 def is_buy_allowed(
     account_id: int, symbol: str, as_of_date: str, connection: sqlite3.Connection | None = None
 ) -> bool:
+    _iso_date(as_of_date)
     return any(
         target.symbol == symbol and target.target_quantity > 0
         for target in get_current_targets(account_id, as_of_date, connection)

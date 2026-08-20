@@ -47,3 +47,35 @@ TDD 红灯验证：首次运行 focused 测试在实现前因 `ModuleNotFoundErr
 - 当前 adapter 依赖回测结果显式提供目标推荐段；不兼容的结果会 fail-closed，需要由产生该结果的回测版本提供对应 contract。
 - 目标历史 payload 使用 JSON 快照保存 source task metadata；当前已有 schema 不增加回测目标字段，也不回写 `backtest_tasks`。
 - Task 4 尚未实现真实交易、持仓 overlay 和提醒评估；本任务只提供目标历史与买入范围查询接口。
+
+## Task 3 Fix Round 1
+
+### Reviewer findings 修复
+
+- 生产解析路径改为 `TaskManager.get_result(task_id)`，不再在 Portfolio adapter 内直接查询 `backtest_tasks`。
+- `raw_trades` 成为必须支持的生产 contract。按 `(date, 原始顺序)` 折叠：buy 为该标的建立/更新正数量和买入价，sell 将数量置零；每个 revision 继承此前全部标的状态。
+- 同一交易日的多笔 trade revision 全部保留；重复 materialize 时只归档该日期的旧批次，不归档本次批次内的 revision。
+- current 表只写 `date.today()` 不晚于当前评估日的最后 revision，未来 trade 只保留在历史表。
+- 日期严格要求 `YYYY-MM-DD` 且 round-trip 校验；raw trade quantity 必须是正整数，price 必须是 finite positive；显式兼容 target history 允许 quantity=0 表示删除。
+- 测试 fixture 改为 raw trade contract，覆盖 2026-06-02 五笔目标：`12200@89.2281`、`28200@39.38361`、`202500@5.39406`、`29700@37.53015`、`41300@26.04528`，并覆盖后续 sell 归零、未来 sell、TaskManager seam 和生产 materializer binding。
+
+### Fix 测试命令及完整结果
+
+```text
+$ rtk pytest backend/tests/test_strategy_targets.py -q
+Pytest: 7 passed
+
+$ rtk pytest backend/tests/test_portfolio_account_service.py backend/tests/test_portfolio_v1_api.py -q
+Pytest: 20 passed
+
+$ rtk pytest backend/tests/test_portfolio_db.py backend/tests/test_portfolio_manager.py backend/tests/test_backtest_task_manager.py -q
+Pytest: 40 passed
+
+$ rtk git diff --check && python -m compileall -q backend/services/portfolio/strategy_targets.py backend/services/portfolio/repository.py backend/routers/portfolio_v1.py backend/tests/test_strategy_targets.py
+(no output; exit code 0)
+```
+
+### Fix concerns
+
+- raw trade 语义按 Controller ruling 实现；如果未来回测结果同时提供显式 target history，仍优先兼容显式字段，但生产不依赖该字段。
+- `current` 的 materialize 评估日取运行环境 `date.today()`；历史查询仍可通过 `as_of_date` 回放任意合法交易日。
