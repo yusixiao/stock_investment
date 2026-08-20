@@ -74,6 +74,39 @@ class AccountRepository:
             holdings[trade["symbol"]] = holdings.get(trade["symbol"], 0) + delta
         return {symbol: shares for symbol, shares in holdings.items() if shares > 0}
 
+    def strategy_target_history(self, account_id: int) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT effective_date, targets FROM portfolio_strategy_target_history "
+            "WHERE account_id = ? AND archived_at IS NULL ORDER BY effective_date, id",
+            (account_id,),
+        ).fetchall()
+
+    def archive_target_history(self, account_id: int, effective_date: str, archived_at: str) -> None:
+        self.conn.execute(
+            "UPDATE portfolio_strategy_target_history SET archived_at = COALESCE(archived_at, ?) "
+            "WHERE account_id = ? AND effective_date = ? AND archived_at IS NULL",
+            (archived_at, account_id, effective_date),
+        )
+
+    def add_target_history(self, account_id: int, effective_date: str, payload: str, created_at: str) -> None:
+        self.conn.execute(
+            "INSERT INTO portfolio_strategy_target_history "
+            "(account_id, effective_date, targets, created_at) VALUES (?, ?, ?, ?)",
+            (account_id, effective_date, payload, created_at),
+        )
+
+    def replace_current_targets(self, account_id: int, targets: list[tuple], archived_at: str) -> None:
+        self.conn.execute(
+            "UPDATE portfolio_strategy_targets SET archived_at = COALESCE(archived_at, ?) WHERE account_id = ?",
+            (archived_at, account_id),
+        )
+        self.conn.executemany(
+            "INSERT INTO portfolio_strategy_targets "
+            "(account_id, symbol, target_quantity, reference_price, status, effective_date, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(account_id, *target, archived_at) for target in targets],
+        )
+
     def archive_strategy_state(self, account_id: int, archived_at: str):
         self.conn.execute(
             "UPDATE portfolio_strategy_targets SET archived_at = COALESCE(archived_at, ?) WHERE account_id = ?",

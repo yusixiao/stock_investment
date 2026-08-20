@@ -7,8 +7,8 @@ from services.backtest.task_manager import task_manager
 from services.portfolio.account_service import (
     AccountService,
     TargetMaterializerUnavailable,
-    materialize_strategy_targets,
 )
+from services.portfolio.strategy_targets import materialize_targets
 from services.portfolio.db import get_connection, init_db
 from services.portfolio.repository import AccountRepository
 
@@ -37,7 +37,7 @@ def _get_task_manager():
 
 
 def _get_materializer():
-    return materialize_strategy_targets
+    return materialize_targets
 
 
 def _get_service() -> AccountService:
