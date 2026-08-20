@@ -14,6 +14,7 @@ from fastapi import APIRouter, Body, HTTPException
 from config import DEPLOYED_STRATEGY_DIR, LOG_DIR
 from services.api_utils import safe_json
 from services.backtest import data_cache
+from services.backtest.data_snapshot import create_snapshot
 from services.backtest.engine import BacktestEngine
 from services.backtest.market_filter import apply_market_filter, resolve_data_market
 from services.backtest.strategy_loader import load_strategy_from_file, scan_strategies
@@ -112,10 +113,20 @@ def api_run_backtest(body: dict = Body(...)):
                 raise RuntimeError(
                     f"{data_market} 市场数据未加载,请先在「策略回测」页点击「加载数据」"
                 )
-            task_manager.update_progress(task_id, 0, 0, "切片数据中...")
-            sliced = data_cache.slice_bundle(
-                bundle, target_symbols, start_date, end_date
+            cache_status = data_cache.get_status(data_market)
+            snapshot = create_snapshot(
+                bundle,
+                data_market,
+                target_symbols,
+                start_date,
+                end_date,
+                generation=cache_status.get("generation"),
+                refresh_id=cache_status.get("refresh_id"),
+                market_version=cache_status.get("market_version"),
+                stale=cache_status.get("stale", False),
             )
+            task_manager.update_progress(task_id, 0, 0, "切片数据中...")
+            sliced = snapshot.sliced
             if not sliced.stock_data:
                 raise RuntimeError("切片后无可用 K 线数据,检查日期范围/股票代码")
             task_manager.update_progress(
@@ -128,17 +139,7 @@ def api_run_backtest(body: dict = Body(...)):
             task_log_dir = LOG_DIR / "backtest" / task_id
             engine = BacktestEngine(
                 strategy=strategy,
-                stock_data=sliced.stock_data,
-                valuation_data=sliced.valuation_data,
-                dividend_data=sliced.dividend_data,
-                financial_data=sliced.financial_data,
-                balance_data=sliced.balance_data,
-                cashflow_data=sliced.cashflow_data,
-                income_data=sliced.income_data,
-                weekly_data=sliced.weekly_data,
-                monthly_data=sliced.monthly_data,
-                iter_start=sliced.iter_start_idx,
-                iter_end=sliced.iter_end_idx,
+                snapshot=snapshot,
                 on_progress=lambda cur, total: on_progress(cur, total, "回测中..."),
                 log_dir=task_log_dir,
             )
@@ -330,29 +331,34 @@ def api_scan_radar(body: dict = Body(...)):
     def run_task():
         try:
             on_progress(0, 0, "等待数据加载...")
-            _wait_for_data(data_market)
             bundle = data_cache.get_market(data_market)
+            if bundle is None:
+                raise RuntimeError(
+                    f"{data_market} 市场数据未加载,请先在「策略雷达」页点击「加载数据」"
+                )
             start_date, end_date = _resolve_scan_dates(bundle, lookback)
             on_progress(0, 0, f"切片数据 {start_date}~{end_date}...")
             # HK_CONNECT:把扫描全集收敛到港股通成分股
             scan_symbols = apply_market_filter(market, None)
-            sliced = data_cache.slice_bundle(bundle, scan_symbols, start_date, end_date)
+            cache_status = data_cache.get_status(data_market)
+            snapshot = create_snapshot(
+                bundle,
+                data_market,
+                scan_symbols,
+                start_date,
+                end_date,
+                generation=cache_status.get("generation"),
+                refresh_id=cache_status.get("refresh_id"),
+                market_version=cache_status.get("market_version"),
+                stale=cache_status.get("stale", False),
+            )
+            sliced = snapshot.sliced
             if not sliced.stock_data:
                 raise RuntimeError("切片后无 K 线数据")
 
             engine = BacktestEngine(
                 strategy=strategy,
-                stock_data=sliced.stock_data,
-                valuation_data=sliced.valuation_data,
-                dividend_data=sliced.dividend_data,
-                financial_data=sliced.financial_data,
-                balance_data=sliced.balance_data,
-                cashflow_data=sliced.cashflow_data,
-                income_data=sliced.income_data,
-                weekly_data=sliced.weekly_data,
-                monthly_data=sliced.monthly_data,
-                iter_start=sliced.iter_start_idx,
-                iter_end=sliced.iter_end_idx,
+                snapshot=snapshot,
                 on_progress=lambda cur, total: on_progress(cur, total, "扫描中..."),
                 log_dir=LOG_DIR / "scan_radar" / task_id,
             )
@@ -378,6 +384,12 @@ def api_scan_radar(body: dict = Body(...)):
                 "strategy_class": class_name,
                 "strategy_name": intrinsic_name,
                 "frequency": intrinsic_frequency,
+                "data_context": snapshot.data_context(),
+                "data_provenance": {
+                    "refresh_id": snapshot.refresh_id,
+                    "generation": snapshot.generation,
+                    "market_version": snapshot.market_version,
+                },
             }
             task_manager.complete_task(task_id, safe_json(result))
         except Exception as e:

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from services.backtest import data_cache
+from services.backtest.data_snapshot import create_snapshot
 
 client = TestClient(app)
 
@@ -83,6 +84,199 @@ class TestBacktestRun:
         )
         assert resp.status_code == 200
         assert "task_id" in resp.json()
+
+    @patch("routers.backtest.BacktestEngine")
+    @patch("routers.backtest.create_snapshot", wraps=create_snapshot)
+    @patch("services.backtest.data_cache.get_status")
+    @patch("services.backtest.data_cache.get_market")
+    def test_run_passes_data_snapshot_to_engine(
+        self, mock_load, mock_status, mock_snapshot, mock_engine
+    ):
+        import time
+        import pandas as pd
+        from pathlib import Path
+
+        dates = pd.date_range("2024-01-01", periods=3, freq="B").strftime(
+            "%Y-%m-%d"
+        ).tolist()
+        df = pd.DataFrame(
+            {
+                "date": dates,
+                "open": [10.0, 10.5, 11.0],
+                "high": [10.5, 11.0, 11.5],
+                "low": [9.5, 10.0, 10.5],
+                "close": [10.2, 10.8, 11.2],
+                "volume": [1000.0] * 3,
+                "amount": [10000.0] * 3,
+            }
+        )
+        mock_load.return_value = _make_test_bundle({"TEST.SH": df})
+        mock_status.return_value = {
+            "generation": 3,
+            "refresh_id": "refresh-test",
+            "market_version": 2,
+            "stale": False,
+        }
+        mock_engine.return_value.run.return_value = {
+            "metrics": {},
+            "equity_curve": [],
+            "trades": [],
+            "raw_trades": [],
+            "end_prices": {},
+        }
+
+        strategy_path = (
+            Path(__file__).resolve().parent.parent
+            / "services"
+            / "backtest"
+            / "strategies"
+            / "experiments"
+            / "ma_tangle_value"
+            / "ma_tangle_value_strategy.py"
+        )
+        resp = client.post(
+            "/api/backtest/run",
+            json={
+                "strategy_class": "MaTangleValueStrategy",
+                "filepath": str(strategy_path),
+                "params": {},
+            },
+        )
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+
+        for _ in range(40):
+            if mock_engine.called:
+                break
+            time.sleep(0.05)
+
+        snapshot = mock_engine.call_args.kwargs["snapshot"]
+        assert snapshot.market == "A"
+        assert snapshot.refresh_id == "refresh-test"
+        assert snapshot.market_version == 2
+        assert snapshot.stale is False
+        assert mock_snapshot.call_args.kwargs["generation"] == 3
+        assert task_id
+
+    @patch("routers.backtest.apply_market_filter", return_value=["TEST.SH"])
+    @patch("routers.backtest._wait_for_data")
+    @patch("services.backtest.data_cache.get_status")
+    @patch("services.backtest.data_cache.get_market")
+    @patch("routers.backtest.load_strategy_from_file", return_value=[])
+    def test_scan_result_contains_snapshot_context(
+        self,
+        mock_loader,
+        mock_load,
+        mock_status,
+        mock_wait,
+        mock_filter,
+    ):
+        import time
+        import pandas as pd
+        from services.backtest.strategy_base import Strategy
+
+        class _ScanStrategy(Strategy):
+            frequency = "daily"
+
+        mock_loader.return_value = [_ScanStrategy]
+        dates = pd.date_range("2024-01-01", periods=3, freq="B").strftime(
+            "%Y-%m-%d"
+        ).tolist()
+        df = pd.DataFrame(
+            {
+                "date": dates,
+                "open": [10.0, 10.5, 11.0],
+                "high": [10.5, 11.0, 11.5],
+                "low": [9.5, 10.0, 10.5],
+                "close": [10.2, 10.8, 11.2],
+                "volume": [1000.0] * 3,
+                "amount": [10000.0] * 3,
+            }
+        )
+        mock_load.return_value = _make_test_bundle({"TEST.SH": df})
+        mock_status.return_value = {
+            "generation": 5,
+            "refresh_id": "refresh-scan",
+            "market_version": 8,
+            "stale": True,
+        }
+
+        from routers import backtest as backtest_router
+
+        fake_engine = MagicMock()
+        fake_engine.run_scan.return_value = {
+            "events": {},
+            "dates": dates,
+            "all_symbols_count": 1,
+        }
+        with patch.object(backtest_router, "BacktestEngine", return_value=fake_engine):
+            resp = client.post(
+                "/api/backtest/scan-radar",
+                json={
+                    "strategy_class": "_ScanStrategy",
+                    "filepath": "ignored.py",
+                    "lookback": "1m",
+                    "market": "A",
+                },
+            )
+
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+        from services.backtest.task_manager import task_manager
+
+        result = None
+        for _ in range(40):
+            result = task_manager.get_result(task_id)
+            if result is not None:
+                break
+            time.sleep(0.05)
+        payload = result["result"]
+        assert payload["data_context"] == {
+            "market": "A",
+            "data_as_of": dates[-1],
+            "stale": True,
+        }
+        assert payload["data_provenance"]["refresh_id"] == "refresh-scan"
+
+    @patch("routers.backtest.apply_market_filter", return_value=["TEST.SH"])
+    @patch("routers.backtest._wait_for_data")
+    @patch("services.backtest.data_cache.get_market", return_value=None)
+    @patch("routers.backtest.load_strategy_from_file")
+    def test_scan_does_not_implicitly_load_missing_cache(
+        self, mock_loader, mock_load, mock_wait, mock_filter
+    ):
+        import time
+        from services.backtest.strategy_base import Strategy
+        from services.backtest.task_manager import task_manager
+
+        class _ScanStrategy(Strategy):
+            frequency = "daily"
+
+        mock_loader.return_value = [_ScanStrategy]
+        mock_wait.side_effect = AssertionError("implicit cache loading")
+
+        resp = client.post(
+            "/api/backtest/scan-radar",
+            json={
+                "strategy_class": "_ScanStrategy",
+                "filepath": "ignored.py",
+                "lookback": "1m",
+                "market": "A",
+            },
+        )
+
+        assert resp.status_code == 200
+        task_id = resp.json()["task_id"]
+        status = None
+        for _ in range(40):
+            status = task_manager.get_status(task_id)
+            if status and status["status"] != "running":
+                break
+            time.sleep(0.05)
+
+        mock_wait.assert_not_called()
+        result = task_manager.get_result(task_id)
+        assert "未加载" in result["error"]
 
     @patch("services.backtest.data_cache.get_market")
     def test_run_writes_decision_logs_to_task_dir(self, mock_load):

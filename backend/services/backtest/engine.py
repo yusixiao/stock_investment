@@ -21,6 +21,7 @@ import copy
 from services.backtest.analyzer import compute_metrics, pair_round_trips
 from services.backtest.broker import Broker
 from services.backtest.context import Context, ScreenContext
+from services.backtest.data_snapshot import BacktestDataSnapshot
 from services.backtest.date_utils import format_match_date
 from services.backtest.decision_log import DecisionLogSink
 from services.backtest.market_data import MarketData
@@ -33,7 +34,7 @@ class BacktestEngine:
     def __init__(
         self,
         strategy: Strategy,
-        stock_data: dict[str, pd.DataFrame],
+        stock_data: dict[str, pd.DataFrame] | None = None,
         valuation_data: dict | None = None,
         dividend_data: dict | None = None,
         financial_data: dict | None = None,
@@ -47,8 +48,27 @@ class BacktestEngine:
         on_progress: Callable[[int, int], None] | None = None,
         log_dir: Path | None = None,
         enable_decision_log: bool = True,
+        snapshot: BacktestDataSnapshot | None = None,
     ):
         self._strategy = strategy
+        self._data_snapshot = snapshot
+        if snapshot is not None:
+            if stock_data is not None:
+                raise ValueError("Provide snapshot or stock_data, not both")
+            sliced = snapshot.sliced
+            stock_data = sliced.stock_data
+            valuation_data = sliced.valuation_data
+            dividend_data = sliced.dividend_data
+            financial_data = sliced.financial_data
+            balance_data = sliced.balance_data
+            cashflow_data = sliced.cashflow_data
+            income_data = sliced.income_data
+            weekly_data = sliced.weekly_data
+            monthly_data = sliced.monthly_data
+            iter_start = sliced.iter_start_idx
+            iter_end = sliced.iter_end_idx
+        if stock_data is None:
+            raise ValueError("BacktestEngine requires snapshot or stock_data")
         # 通过 inspect.signature 自动取 Broker.__init__ 接受的关键字参数,
         # 这样未来 Broker 新增 kwarg(如 price_func)无需改本类
         broker_params = inspect.signature(Broker.__init__).parameters
@@ -136,6 +156,18 @@ class BacktestEngine:
             if bar is not None:
                 valuation[sym] = float(bar["close"])
         return valuation
+
+    def _attach_data_context(self, result: dict) -> dict:
+        """仅在 Snapshot 路径下附加数据上下文,保持旧调用结果兼容。"""
+        if self._data_snapshot is None:
+            return result
+        result["data_context"] = self._data_snapshot.data_context()
+        result["data_provenance"] = {
+            "refresh_id": self._data_snapshot.refresh_id,
+            "generation": self._data_snapshot.generation,
+            "market_version": self._data_snapshot.market_version,
+        }
+        return result
 
     # ---------- 主循环 ----------
 
@@ -264,7 +296,7 @@ class BacktestEngine:
             )
             if bar is not None:
                 end_prices[sym] = float(bar["close"])
-        return {
+        return self._attach_data_context({
             "metrics": compute_metrics(
                 equity_curve, self._broker.all_trades, self._initial_capital
             ),
@@ -273,7 +305,7 @@ class BacktestEngine:
             "raw_trades": self._broker.all_trades,
             "end_prices": end_prices,
             "log_dir": str(self._log_sink.log_dir) if self._log_sink.enabled else None,
-        }
+        })
 
     # ---------- 选股雷达扫描(无 broker / 仅收集 hits + factors) ----------
 
@@ -301,11 +333,11 @@ class BacktestEngine:
         all_symbols = list(self._all_symbols)
 
         if n_bars == 0 or n_iter == 0:
-            return {
+            return self._attach_data_context({
                 "events": {},
                 "dates": [],
                 "all_symbols_count": len(all_symbols),
-            }
+            })
 
         # run_scan 也写决策日志:scan-radar 路由配 log_dir 后,helper 内的
         # log_pass/log_reject/log_flow 应当落盘(此前因 ScreenContext 是 no-op
@@ -361,8 +393,8 @@ class BacktestEngine:
             )
         self._log_sink.flush()
 
-        return {
+        return self._attach_data_context({
             "events": events,
             "dates": list(dates[iter_start : iter_end + 1]),
             "all_symbols_count": len(all_symbols),
-        }
+        })
