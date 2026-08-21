@@ -349,6 +349,8 @@ def run_strategy_monitor(monitor_id: int, payload: ManualRun):
             raise HTTPException(status_code=409, detail="strategy monitor is inactive")
         run = repo.create_strategy_run(monitor_id, payload.as_of_date)
         try:
+            # This seam is deliberately a bounded, current-date snapshot scan.
+            # Historical/full backtests must not be wired into this HTTP handler.
             outcome = execute_strategy_current_date(monitor, payload.as_of_date, None)
         except Exception as exc:  # noqa: BLE001
             error = f"strategy execution failed: {exc}"

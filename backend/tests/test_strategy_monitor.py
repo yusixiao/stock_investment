@@ -131,6 +131,41 @@ def test_failed_run_is_processed_only_once(store, monkeypatch):
     assert len(repo.list_strategy_runs(monitor.id)) == 1
 
 
+@pytest.mark.parametrize(
+    ("frequency", "latest_date", "next_date"),
+    [
+        ("daily", "2026-08-21", "2026-08-24"),
+        ("weekly", "2026-08-24", "2026-08-31"),
+        ("monthly", "2026-08-03", "2026-09-01"),
+        ("quarterly", "2026-10-01", "2027-01-04"),
+    ],
+)
+def test_latest_data_date_without_next_run_is_retried_once_then_waits_for_new_data(
+    frequency, latest_date, next_date, monkeypatch
+):
+    dates = [latest_date]
+    calendar = TradingDateStore({"A": dates})
+    conn = make_connection()
+    repo = MonitoringRepository(conn)
+    monitor = repo.create_strategy_monitor(
+        "strategy", "Strategy", "strategy.py", {}, "A", frequency, next_run_date=None
+    )
+    calls = []
+    monkeypatch.setattr(
+        "services.monitoring.strategy_monitor.execute_strategy_current_date",
+        lambda monitor, as_of_date, store: calls.append(as_of_date) or {"status": "success"},
+    )
+
+    assert run_due_strategy_monitors(latest_date, connection=conn, store=calendar) == 1
+    assert run_due_strategy_monitors(latest_date, connection=conn, store=calendar) == 0
+    assert calls == [latest_date]
+    assert repo.get_strategy_monitor(monitor.id).next_run_date is None
+
+    dates.append(next_date)
+    assert run_due_strategy_monitors(next_date, connection=conn, store=calendar) == 1
+    assert calls == [latest_date, next_date]
+
+
 def test_current_date_execution_uses_loaded_snapshot(monkeypatch):
     class FakeStrategy:
         def __init__(self, param_overrides=None):

@@ -151,14 +151,19 @@ def _claim(repo: MonitoringRepository, monitor: StrategyMonitor, scheduled_date:
         conn.execute(f"SAVEPOINT {savepoint}")
     try:
         current = conn.execute(
-            "SELECT * FROM monitoring_strategy_monitors WHERE id = ? AND is_active = 1 AND next_run_date = ?",
+            "SELECT * FROM monitoring_strategy_monitors "
+            "WHERE id = ? AND is_active = 1 AND (next_run_date = ? OR next_run_date IS NULL)",
             (monitor.id, scheduled_date),
         ).fetchone()
         running = conn.execute(
             "SELECT 1 FROM monitoring_strategy_runs WHERE monitor_id = ? AND status = 'running' LIMIT 1",
             (monitor.id,),
         ).fetchone()
-        if current is None or running is not None:
+        processed = conn.execute(
+            "SELECT 1 FROM monitoring_strategy_runs WHERE monitor_id = ? AND scheduled_date = ? LIMIT 1",
+            (monitor.id, scheduled_date),
+        ).fetchone()
+        if current is None or running is not None or processed is not None:
             if owns_transaction:
                 conn.rollback()
             else:
@@ -200,7 +205,9 @@ def run_due_strategy_monitors(
         for monitor in repo.list_strategy_monitors():
             if markets is not None and monitor.market not in markets:
                 continue
-            if monitor.next_run_date != as_of_date:
+            # None means the loaded calendar has no future date yet. Evaluate
+            # today's due rule and let _claim deduplicate repeated scheduler calls.
+            if monitor.next_run_date is not None and monitor.next_run_date != as_of_date:
                 continue
             if not is_due(monitor.frequency, monitor.market, as_of_date, store):
                 continue
