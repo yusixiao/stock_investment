@@ -227,8 +227,21 @@ class MonitoringRepository:
             raise
 
     def rearm_price_monitor(self, monitor_id: int) -> bool:
-        cursor = self.conn.execute("UPDATE monitoring_stock_monitors SET state = 'armed', updated_at = ? WHERE id = ? AND is_active = 1 AND state = 'triggered'", (_now(), monitor_id))
-        return cursor.rowcount == 1
+        started = not self.conn.in_transaction
+        try:
+            if started:
+                self.conn.execute("BEGIN IMMEDIATE")
+            cursor = self.conn.execute(
+                "UPDATE monitoring_stock_monitors SET state = 'armed', updated_at = ? WHERE id = ? AND is_active = 1 AND state = 'triggered'",
+                (_now(), monitor_id),
+            )
+            if started:
+                self.conn.commit()
+            return cursor.rowcount == 1
+        except Exception:
+            if started:
+                self.conn.rollback()
+            raise
 
     def list_stock_events(self, monitor_id: int) -> list[dict[str, Any]]:
         rows = self.conn.execute("SELECT * FROM monitoring_stock_events WHERE monitor_id = ? ORDER BY observed_date, id", (monitor_id,)).fetchall()
