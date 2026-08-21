@@ -128,6 +128,16 @@ describe('MarketMonitor', () => {
     expect(screen.queryByText('运行失败')).not.toBeInTheDocument();
   });
 
+  it('refreshes strategy history and shows an error when a run fails', async () => {
+    monitoringApi.listStrategyMonitors.mockResolvedValue({ ...emptyPage, items: [{ id: 1, name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'value.py', params: {}, market: 'A', frequency: 'daily', symbols: null, is_active: true, next_run_date: null, last_run_at: null, last_run_status: 'pending', last_error: null, created_at: '', updated_at: '' }] });
+    monitoringApi.runStrategyMonitor.mockRejectedValueOnce(new Error('execution failed'));
+    render(<MarketMonitor />);
+    fireEvent.click(await screen.findByRole('button', { name: '立即运行' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('运行策略监控失败');
+    await waitFor(() => expect(monitoringApi.listStrategyRuns).toHaveBeenCalledTimes(2));
+  });
+
   it('shows an action error when pausing a stock monitor fails', async () => {
     monitoringApi.listStockMonitors.mockResolvedValue({ ...emptyPage, items: [{ id: 2, market: 'HK', symbol: '00005', name: null, threshold_price: 100, is_active: true, state: 'armed', last_price: null, last_price_date: null, last_triggered_at: null, created_at: '', updated_at: '' }] });
     monitoringApi.pauseStockMonitor.mockRejectedValueOnce(new Error('pause failed'));

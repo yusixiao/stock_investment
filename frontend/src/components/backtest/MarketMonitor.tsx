@@ -158,6 +158,12 @@ const MarketMonitor: React.FC = () => {
       const monitors = await monitoringApi.listStrategyMonitors();
       setStrategies(monitors.items);
     } catch {
+      try {
+        const page = await monitoringApi.listStrategyRuns(monitorId);
+        setStrategyRuns((current) => ({ ...current, [monitorId]: page.items }));
+      } catch {
+        // Keep the run error visible even if the follow-up history request also fails.
+      }
       setStrategyActionError('运行策略监控失败，请稍后重试');
     } finally {
       setRunningStrategyId(null);
