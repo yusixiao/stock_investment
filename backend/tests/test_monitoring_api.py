@@ -141,6 +141,50 @@ def test_monitoring_validation_and_missing_entities_map_to_http_errors(client):
     assert http.get("/api/v1/monitoring/stock-monitors", params={"limit": 0}).status_code == 422
 
 
+@pytest.mark.parametrize("symbols", [[""], ["600000", "  "], ["00005"]])
+def test_strategy_symbols_are_validated_against_strategy_market(client, symbols):
+    http, _ = client
+    response = http.post(
+        "/api/v1/monitoring/strategy-monitors",
+        json=strategy_payload(symbols=symbols),
+    )
+    assert response.status_code == 422
+
+    created = http.post("/api/v1/monitoring/strategy-monitors", json=strategy_payload()).json()
+    updated = http.patch(
+        f"/api/v1/monitoring/strategy-monitors/{created['id']}",
+        json={"symbols": ["00005"]},
+    )
+    assert updated.status_code == 422
+
+
+def test_pause_and_resume_require_expected_state(client):
+    http, _ = client
+    monitor = http.post(
+        "/api/v1/monitoring/stock-monitors",
+        json={"market": "HK", "symbol": "00005", "threshold_price": 100},
+    ).json()
+
+    assert http.post(f"/api/v1/monitoring/stock-monitors/{monitor['id']}/resume").status_code == 409
+    assert http.post(f"/api/v1/monitoring/stock-monitors/{monitor['id']}/pause").status_code == 200
+    assert http.post(f"/api/v1/monitoring/stock-monitors/{monitor['id']}/pause").status_code == 409
+    assert http.post(f"/api/v1/monitoring/stock-monitors/{monitor['id']}/resume").status_code == 200
+    assert http.post(f"/api/v1/monitoring/stock-monitors/{monitor['id']}/resume").status_code == 409
+
+
+def test_monitoring_routes_publish_typed_response_contracts(client):
+    http, _ = client
+    schema = http.get("/openapi.json").json()
+    paths = schema["paths"]
+    assert paths["/api/v1/monitoring/strategy-monitors"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert paths["/api/v1/monitoring/stock-monitors/{monitor_id}/events"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    components = schema["components"]["schemas"]
+    assert "StrategyMonitorResponse" in components
+    assert "StockMonitorResponse" in components
+    assert "StrategyRunPage" in components
+    assert "StockEventPage" in components
+
+
 def test_manual_strategy_run_persists_run_and_strategy_endpoint_has_no_stock_import(client):
     http, conn = client
     monitor = http.post("/api/v1/monitoring/strategy-monitors", json=strategy_payload()).json()
@@ -160,6 +204,23 @@ def test_manual_strategy_run_persists_run_and_strategy_endpoint_has_no_stock_imp
     history = http.get(f"/api/v1/monitoring/strategy-monitors/{monitor['id']}/runs")
     assert history.status_code == 200
     assert history.json()["total"] == 1
+
+
+def test_manual_strategy_run_marks_unexpected_execution_error_as_failed(client):
+    http, conn = client
+    monitor = http.post("/api/v1/monitoring/strategy-monitors", json=strategy_payload()).json()
+    with patch("routers.monitoring.execute_strategy_current_date", side_effect=RuntimeError("adapter down")):
+        response = http.post(
+            f"/api/v1/monitoring/strategy-monitors/{monitor['id']}/run",
+            json={"as_of_date": "2026-08-21"},
+        )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "strategy execution failed: adapter down"
+    run = conn.execute(
+        "SELECT status, error FROM monitoring_strategy_runs WHERE monitor_id = ?", (monitor["id"],)
+    ).fetchone()
+    assert tuple(run) == ("failed", "strategy execution failed: adapter down")
 
 
 def test_monitoring_writes_are_committed_for_a_new_connection(client):

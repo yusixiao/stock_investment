@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import re
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -15,6 +16,91 @@ from services.monitoring.strategy_monitor import (
 
 router = APIRouter(prefix="/api/v1/monitoring", tags=["monitoring"])
 Market = Literal["A", "HK", "US"]
+
+
+class StrategyMonitorResponse(BaseModel):
+    id: int
+    name: str
+    strategy_class: str
+    filepath: str
+    params: dict[str, Any]
+    market: Market
+    frequency: str
+    symbols: list[str] | None
+    is_active: bool
+    next_run_date: str | None
+    last_run_at: str | None
+    last_run_status: str
+    last_error: str | None
+    created_at: str
+    updated_at: str
+
+
+class StrategyRunResponse(BaseModel):
+    id: int
+    monitor_id: int
+    scheduled_date: str
+    started_at: str
+    finished_at: str | None
+    status: str
+    task_id: str | None
+    result: dict[str, Any] | None
+    error: str | None
+
+
+class StockMonitorResponse(BaseModel):
+    id: int
+    market: Market
+    symbol: str
+    name: str | None
+    threshold_price: float
+    is_active: bool
+    state: str
+    last_price: float | None
+    last_price_date: str | None
+    last_triggered_at: str | None
+    created_at: str
+    updated_at: str
+
+
+class StockEventResponse(BaseModel):
+    id: int
+    monitor_id: int
+    market: Market
+    symbol: str
+    observed_price: float
+    threshold_price: float
+    observed_date: str
+    triggered_at: str
+    status: str
+
+
+class StrategyMonitorPage(BaseModel):
+    items: list[StrategyMonitorResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class StrategyRunPage(BaseModel):
+    items: list[StrategyRunResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class StockMonitorPage(BaseModel):
+    items: list[StockMonitorResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class StockEventPage(BaseModel):
+    items: list[StockEventResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class StrategyMonitorCreate(BaseModel):
@@ -34,6 +120,11 @@ class StrategyMonitorCreate(BaseModel):
             raise ValueError("frequency must be daily, weekly, monthly, or quarterly")
         return value
 
+    @model_validator(mode="after")
+    def valid_symbols(self):
+        _validate_symbols(self.market, self.symbols)
+        return self
+
 
 class StrategyMonitorPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1)
@@ -51,6 +142,12 @@ class StrategyMonitorPatch(BaseModel):
         if value is not None and value not in FREQUENCIES:
             raise ValueError("frequency must be daily, weekly, monthly, or quarterly")
         return value
+
+    @model_validator(mode="after")
+    def valid_symbols(self):
+        if self.market is not None and self.symbols is not None:
+            _validate_symbols(self.market, self.symbols)
+        return self
 
 
 class StockMonitorCreate(BaseModel):
@@ -100,8 +197,6 @@ def _page(items: list[Any], limit: int, offset: int) -> dict[str, Any]:
 def _validate_symbol(market: str | None, symbol: str | None) -> None:
     if not market or not symbol or any(char.isspace() for char in symbol):
         raise ValueError("symbol is invalid")
-    import re
-
     patterns = {
         "A": r"^\d{6}(?:\.(?:SH|SZ))?$",
         "HK": r"^\d{5}(?:\.HK)?$",
@@ -109,6 +204,15 @@ def _validate_symbol(market: str | None, symbol: str | None) -> None:
     }
     if re.fullmatch(patterns[market], symbol) is None:
         raise ValueError(f"symbol is invalid for market {market}")
+
+
+def _validate_symbols(market: str, symbols: list[str] | None) -> None:
+    if symbols is None:
+        return
+    if not symbols:
+        raise ValueError("symbols must not be empty")
+    for symbol in symbols:
+        _validate_symbol(market, symbol)
 
 
 def _dump(value: Any) -> dict[str, Any]:
@@ -141,7 +245,7 @@ def _domain_error(exc: ValueError) -> HTTPException:
     return HTTPException(status_code=422, detail=message)
 
 
-@router.get("/strategy-monitors")
+@router.get("/strategy-monitors", response_model=StrategyMonitorPage)
 def list_strategy_monitors(include_inactive: bool = False, limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
     conn, repo = _repo()
     try:
@@ -150,7 +254,7 @@ def list_strategy_monitors(include_inactive: bool = False, limit: int = Query(50
         _close_connection(conn)
 
 
-@router.post("/strategy-monitors", status_code=201)
+@router.post("/strategy-monitors", status_code=201, response_model=StrategyMonitorResponse)
 def create_strategy_monitor(payload: StrategyMonitorCreate):
     conn, repo = _repo()
     try:
@@ -163,11 +267,16 @@ def create_strategy_monitor(payload: StrategyMonitorCreate):
         _close_connection(conn)
 
 
-@router.patch("/strategy-monitors/{monitor_id}")
+@router.patch("/strategy-monitors/{monitor_id}", response_model=StrategyMonitorResponse)
 def update_strategy_monitor(monitor_id: int, payload: StrategyMonitorPatch):
     conn, repo = _repo()
     try:
-        result = repo.update_strategy_monitor(monitor_id, **payload.model_dump(exclude_unset=True))
+        changes = payload.model_dump(exclude_unset=True)
+        current = repo.get_strategy_monitor(monitor_id)
+        if current is None:
+            raise _not_found("strategy monitor not found")
+        _validate_symbols(changes.get("market", current.market), changes.get("symbols", current.symbols))
+        result = repo.update_strategy_monitor(monitor_id, **changes)
         _commit(conn)
         return _dump(result)
     except ValueError as exc:
@@ -176,7 +285,7 @@ def update_strategy_monitor(monitor_id: int, payload: StrategyMonitorPatch):
         _close_connection(conn)
 
 
-@router.delete("/strategy-monitors/{monitor_id}")
+@router.delete("/strategy-monitors/{monitor_id}", response_model=StrategyMonitorResponse)
 def delete_strategy_monitor(monitor_id: int):
     conn, repo = _repo()
     try:
@@ -189,7 +298,7 @@ def delete_strategy_monitor(monitor_id: int):
         _close_connection(conn)
 
 
-@router.post("/strategy-monitors/{monitor_id}/run", status_code=201)
+@router.post("/strategy-monitors/{monitor_id}/run", status_code=201, response_model=StrategyRunResponse)
 def run_strategy_monitor(monitor_id: int, payload: ManualRun):
     conn, repo = _repo()
     try:
@@ -199,7 +308,13 @@ def run_strategy_monitor(monitor_id: int, payload: ManualRun):
         if not monitor.is_active:
             raise HTTPException(status_code=409, detail="strategy monitor is inactive")
         run = repo.create_strategy_run(monitor_id, payload.as_of_date)
-        outcome = execute_strategy_current_date(monitor, payload.as_of_date, None)
+        try:
+            outcome = execute_strategy_current_date(monitor, payload.as_of_date, None)
+        except Exception as exc:  # noqa: BLE001
+            error = f"strategy execution failed: {exc}"
+            repo.finish_strategy_run(run.id, "failed", error=error)
+            _commit(conn)
+            raise HTTPException(status_code=500, detail=error) from exc
         if outcome.get("status") == "unexecuted":
             run = repo.finish_strategy_run(run.id, "failed", result=outcome, error=outcome.get("reason"))
         else:
@@ -214,7 +329,7 @@ def run_strategy_monitor(monitor_id: int, payload: ManualRun):
         _close_connection(conn)
 
 
-@router.get("/strategy-monitors/{monitor_id}/runs")
+@router.get("/strategy-monitors/{monitor_id}/runs", response_model=StrategyRunPage)
 def list_strategy_runs(monitor_id: int, limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
     conn, repo = _repo()
     try:
@@ -225,7 +340,7 @@ def list_strategy_runs(monitor_id: int, limit: int = Query(50, ge=1, le=200), of
         _close_connection(conn)
 
 
-@router.get("/stock-monitors")
+@router.get("/stock-monitors", response_model=StockMonitorPage)
 def list_stock_monitors(include_inactive: bool = False, limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
     conn, repo = _repo()
     try:
@@ -234,7 +349,7 @@ def list_stock_monitors(include_inactive: bool = False, limit: int = Query(50, g
         _close_connection(conn)
 
 
-@router.post("/stock-monitors", status_code=201)
+@router.post("/stock-monitors", status_code=201, response_model=StockMonitorResponse)
 def create_stock_monitor(payload: StockMonitorCreate):
     conn, repo = _repo()
     try:
@@ -245,7 +360,7 @@ def create_stock_monitor(payload: StockMonitorCreate):
         _close_connection(conn)
 
 
-@router.patch("/stock-monitors/{monitor_id}")
+@router.patch("/stock-monitors/{monitor_id}", response_model=StockMonitorResponse)
 def update_stock_monitor(monitor_id: int, payload: StockMonitorPatch):
     conn, repo = _repo()
     try:
@@ -262,7 +377,7 @@ def update_stock_monitor(monitor_id: int, payload: StockMonitorPatch):
         _close_connection(conn)
 
 
-@router.delete("/stock-monitors/{monitor_id}")
+@router.delete("/stock-monitors/{monitor_id}", response_model=StockMonitorResponse)
 def delete_stock_monitor(monitor_id: int):
     conn, repo = _repo()
     try:
@@ -284,8 +399,12 @@ def _change_stock_state(monitor_id: int, action: str):
         if not monitor.is_active:
             raise HTTPException(status_code=409, detail="stock monitor is inactive")
         if action == "pause":
+            if monitor.state != "armed":
+                raise HTTPException(status_code=409, detail="stock monitor is not armed")
             result = repo.pause_stock_monitor(monitor_id)
         else:
+            if monitor.state != "paused":
+                raise HTTPException(status_code=409, detail="stock monitor is not paused")
             result = repo.resume_stock_monitor(monitor_id)
         _commit(conn)
         return _dump(result)
@@ -297,17 +416,17 @@ def _change_stock_state(monitor_id: int, action: str):
         _close_connection(conn)
 
 
-@router.post("/stock-monitors/{monitor_id}/pause")
+@router.post("/stock-monitors/{monitor_id}/pause", response_model=StockMonitorResponse)
 def pause_stock_monitor(monitor_id: int):
     return _change_stock_state(monitor_id, "pause")
 
 
-@router.post("/stock-monitors/{monitor_id}/resume")
+@router.post("/stock-monitors/{monitor_id}/resume", response_model=StockMonitorResponse)
 def resume_stock_monitor(monitor_id: int):
     return _change_stock_state(monitor_id, "resume")
 
 
-@router.get("/stock-monitors/{monitor_id}/events")
+@router.get("/stock-monitors/{monitor_id}/events", response_model=StockEventPage)
 def list_stock_events(monitor_id: int, limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
     conn, repo = _repo()
     try:
