@@ -263,6 +263,32 @@ def test_stale_run_is_reclaimed_for_same_date_without_creating_duplicate(store, 
     assert len(repo.list_strategy_runs(monitor.id)) == 1
 
 
+def test_past_stale_schedule_is_recovered_without_reexecuting_past_date(store, monkeypatch):
+    conn = make_connection()
+    repo = MonitoringRepository(conn)
+    monitor = repo.create_strategy_monitor(
+        "strategy", "Strategy", "strategy.py", {}, "A", "daily", next_run_date="2026-08-21"
+    )
+    stale = repo.create_strategy_run(monitor.id, "2026-08-21")
+    conn.execute(
+        "UPDATE monitoring_strategy_runs SET started_at = ? WHERE id = ?",
+        ("2020-01-01T00:00:00", stale.id),
+    )
+    conn.commit()
+    submitted = []
+    monkeypatch.setattr(
+        strategy_monitor,
+        "_submit_strategy_run",
+        lambda monitor, run, as_of_date, **kwargs: submitted.append((run.id, as_of_date)),
+    )
+
+    assert run_due_strategy_monitors("2026-08-24", connection=conn, store=store) == 1
+    old_run = repo.get_strategy_run(monitor.id, "2026-08-21")
+    assert old_run.status == "failed"
+    assert submitted == [(stale.id + 1, "2026-08-24")]
+    assert repo.get_strategy_monitor(monitor.id).next_run_date == "2026-08-24"
+
+
 def test_dispatch_failure_finishes_run_and_advances_schedule(store, monkeypatch):
     conn = make_connection()
     repo = MonitoringRepository(conn)

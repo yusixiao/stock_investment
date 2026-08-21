@@ -16,6 +16,21 @@
 - 前端 TypeScript：`npx tsc --noEmit`，退出码 0
 - 前端 ESLint：`npm run lint`，退出码 0
 
+## 过期调度复审追加
+
+- scheduler 现在先处理已过期的 `next_run_date`：只对其对应日期的 stale running run 做 failed recovery，不重新执行过期日期。
+- 过期日期被跳过后，指针推进到当前日期之后的第一个 due 日期；若当前日期是 due，则同一次 scheduler 调用进入当前日期 claim。
+- 同日幂等、不同日期 running 不互相阻塞以及无未来日期返回 `None` 的规则保持不变。
+
+本轮定向验证：监控、scheduler、repository、API 测试 `55 passed`。
+
+本轮最终全量验证：
+
+- 全量后端：`1503 passed, 1 skipped`
+- 前端 Vitest：`416 passed, 13 skipped`
+- 前端 TypeScript：`npx tsc --noEmit`，退出码 0
+- 前端 ESLint：`npm run lint`，退出码 0
+
 ## 最终复审裁决追加
 
 - `initial_run_date()` 无未来交易日时严格返回 `None`，不回退历史 due 日期；scheduler 在 `None` 状态按当前交易日重新评估。

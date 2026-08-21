@@ -288,6 +288,31 @@ def _claim(repo: MonitoringRepository, monitor: StrategyMonitor, scheduled_date:
         raise
 
 
+def _recover_overdue_schedule(
+    repo: MonitoringRepository, monitor: StrategyMonitor, as_of_date: str, store: Any
+) -> StrategyMonitor:
+    """Skip missed dates, recovering only stale runs for their own date."""
+    scheduled = monitor.next_run_date
+    if scheduled is None or scheduled >= as_of_date:
+        return monitor
+    while scheduled is not None and scheduled < as_of_date:
+        old_run = repo.get_strategy_run(monitor.id, scheduled)
+        if old_run is not None and old_run.status == "running" and _is_stale_run(old_run.started_at):
+            repo.finish_strategy_run(
+                old_run.id,
+                "failed",
+                error=f"stale strategy run recovered for scheduled date {scheduled}",
+            )
+        scheduled = next_run_date(monitor.frequency, monitor.market, scheduled, store)
+    current = repo.get_strategy_monitor(monitor.id)
+    if current is None:
+        return monitor
+    if current.next_run_date != scheduled:
+        repo.update_strategy_monitor(monitor.id, next_run_date=scheduled)
+        current = repo.get_strategy_monitor(monitor.id)
+    return current or monitor
+
+
 def run_due_strategy_monitors(
     as_of_date: str,
     markets: set[str] | None = None,
@@ -308,6 +333,9 @@ def run_due_strategy_monitors(
         for monitor in repo.list_strategy_monitors():
             if markets is not None and monitor.market not in markets:
                 continue
+            monitor = _recover_overdue_schedule(repo, monitor, as_of_date, store)
+            if owned_connection:
+                connection.commit()
             # None means the loaded calendar has no future date yet. Evaluate
             # today's due rule and let _claim deduplicate repeated scheduler calls.
             if monitor.next_run_date is not None and monitor.next_run_date != as_of_date:
