@@ -62,4 +62,14 @@ describe('monitoringApi', () => {
     expect(get).toHaveBeenNthCalledWith(2, '/api/v1/monitoring/stock-monitors/2/events', expect.any(Object));
     expect(del).toHaveBeenCalledWith('/api/v1/monitoring/stock-monitors/2');
   });
+
+  it('uses PATCH for strategy and stock monitor updates', async () => {
+    patch.mockResolvedValue({ data: { id: 1 } });
+
+    await monitoringApi.updateStrategyMonitor(1, { frequency: 'weekly' });
+    await monitoringApi.updateStockMonitor(2, { threshold_price: 101 });
+
+    expect(patch).toHaveBeenNthCalledWith(1, '/api/v1/monitoring/strategy-monitors/1', { frequency: 'weekly' });
+    expect(patch).toHaveBeenNthCalledWith(2, '/api/v1/monitoring/stock-monitors/2', { threshold_price: 101 });
+  });
 });

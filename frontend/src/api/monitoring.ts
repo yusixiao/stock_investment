@@ -2,6 +2,10 @@ import apiClient from './index';
 
 export type MonitoringMarket = 'A' | 'HK' | 'US';
 export type MonitoringFrequency = 'daily' | 'weekly' | 'monthly' | 'quarterly';
+export type StrategyLastRunStatus = 'pending' | 'running' | 'success' | 'failed';
+export type StrategyRunStatus = 'running' | 'success' | 'failed';
+export type StockMonitorState = 'armed' | 'triggered' | 'paused';
+export type StockEventStatus = 'recorded' | 'notified';
 
 export interface StrategyMonitor {
   id: number;
@@ -15,7 +19,7 @@ export interface StrategyMonitor {
   is_active: boolean;
   next_run_date: string | null;
   last_run_at: string | null;
-  last_run_status: string;
+  last_run_status: StrategyLastRunStatus;
   last_error: string | null;
   created_at: string;
   updated_at: string;
@@ -27,7 +31,7 @@ export interface StrategyRun {
   scheduled_date: string;
   started_at: string;
   finished_at: string | null;
-  status: string;
+  status: StrategyRunStatus;
   task_id: string | null;
   result: Record<string, unknown> | null;
   error: string | null;
@@ -40,7 +44,7 @@ export interface StockMonitor {
   name: string | null;
   threshold_price: number;
   is_active: boolean;
-  state: string;
+  state: StockMonitorState;
   last_price: number | null;
   last_price_date: string | null;
   last_triggered_at: string | null;
@@ -57,7 +61,7 @@ export interface StockEvent {
   threshold_price: number;
   observed_date: string;
   triggered_at: string;
-  status: string;
+  status: StockEventStatus;
 }
 
 export interface MonitorPage<T> {
@@ -82,6 +86,24 @@ export interface CreateStockMonitorRequest {
   market: MonitoringMarket;
   symbol: string;
   threshold_price: number;
+}
+
+export interface UpdateStrategyMonitorRequest {
+  name?: string;
+  strategy_class?: string;
+  filepath?: string;
+  params?: Record<string, unknown>;
+  market?: MonitoringMarket;
+  frequency?: MonitoringFrequency;
+  symbols?: string[];
+  next_run_date?: string;
+}
+
+export interface UpdateStockMonitorRequest {
+  market?: MonitoringMarket;
+  symbol?: string;
+  threshold_price?: number;
+  name?: string;
 }
 
 const pageParams = { limit: 50, offset: 0 };
@@ -112,6 +134,11 @@ export const monitoringApi = {
     return response.data;
   },
 
+  async updateStrategyMonitor(id: number, payload: UpdateStrategyMonitorRequest): Promise<StrategyMonitor> {
+    const response = await apiClient.patch(`/api/v1/monitoring/strategy-monitors/${id}`, payload);
+    return response.data;
+  },
+
   async listStockMonitors(): Promise<MonitorPage<StockMonitor>> {
     const response = await apiClient.get('/api/v1/monitoring/stock-monitors', { params: pageParams });
     return response.data;
@@ -119,6 +146,11 @@ export const monitoringApi = {
 
   async createStockMonitor(payload: CreateStockMonitorRequest): Promise<StockMonitor> {
     const response = await apiClient.post('/api/v1/monitoring/stock-monitors', payload);
+    return response.data;
+  },
+
+  async updateStockMonitor(id: number, payload: UpdateStockMonitorRequest): Promise<StockMonitor> {
+    const response = await apiClient.patch(`/api/v1/monitoring/stock-monitors/${id}`, payload);
     return response.data;
   },
 

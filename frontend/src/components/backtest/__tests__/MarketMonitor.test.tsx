@@ -15,8 +15,10 @@ const monitoringApi = vi.hoisted(() => ({
   listStockEvents: vi.fn(),
   deleteStockMonitor: vi.fn(),
 }));
+const backtestEngineApi = vi.hoisted(() => ({ listStrategies: vi.fn() }));
 
 vi.mock('../../../api/monitoring', () => ({ monitoringApi }));
+vi.mock('../../../api/backtestEngine', () => ({ backtestEngineApi }));
 
 const emptyPage = { items: [], total: 0, limit: 50, offset: 0 };
 
@@ -27,6 +29,7 @@ describe('MarketMonitor', () => {
     monitoringApi.listStockMonitors.mockResolvedValue(emptyPage);
     monitoringApi.listStrategyRuns.mockResolvedValue(emptyPage);
     monitoringApi.listStockEvents.mockResolvedValue(emptyPage);
+    backtestEngineApi.listStrategies.mockResolvedValue([{ filepath: 'strategies/value.py', className: 'ValueStrategy', name: '价值策略', strategyType: 'strategy', frequency: 'daily', frequencyOverridable: true, params: {} }]);
   });
 
   it('renders independent strategy and stock sections without portfolio account controls', async () => {
@@ -99,10 +102,38 @@ describe('MarketMonitor', () => {
     render(<MarketMonitor />);
     await screen.findByRole('heading', { name: '策略监控' });
     fireEvent.click(screen.getByRole('button', { name: '添加策略监控' }));
-    fireEvent.change(screen.getByLabelText('策略名称'), { target: { value: '全市场策略' } });
+    fireEvent.change(screen.getByLabelText('策略名称'), { target: { value: '价值策略' } });
     fireEvent.click(screen.getByRole('button', { name: '保存策略监控' }));
 
     await waitFor(() => expect(monitoringApi.createStrategyMonitor).toHaveBeenCalled());
     expect(monitoringApi.createStrategyMonitor.mock.calls[0][0].symbols).toBeUndefined();
+    expect(monitoringApi.createStrategyMonitor.mock.calls[0][0]).toMatchObject({ name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'strategies/value.py' });
+  });
+
+  it('blocks strategy creation when the executable strategy directory fails to load', async () => {
+    backtestEngineApi.listStrategies.mockRejectedValueOnce(new Error('directory unavailable'));
+    render(<MarketMonitor />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('策略目录加载失败');
+    fireEvent.click(screen.getByRole('button', { name: '添加策略监控' }));
+    expect(screen.getByRole('button', { name: '保存策略监控' })).toBeDisabled();
+  });
+
+  it('reports run failures and refreshes strategy history after a successful run', async () => {
+    monitoringApi.listStrategyMonitors.mockResolvedValue({ ...emptyPage, items: [{ id: 1, name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'value.py', params: {}, market: 'A', frequency: 'daily', symbols: null, is_active: true, next_run_date: null, last_run_at: null, last_run_status: 'pending', last_error: null, created_at: '', updated_at: '' }] });
+    monitoringApi.runStrategyMonitor.mockResolvedValue({ id: 11 });
+    render(<MarketMonitor />);
+    fireEvent.click(await screen.findByRole('button', { name: '立即运行' }));
+    await waitFor(() => expect(monitoringApi.runStrategyMonitor).toHaveBeenCalledWith(1, expect.any(String)));
+    await waitFor(() => expect(monitoringApi.listStrategyRuns).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('运行失败')).not.toBeInTheDocument();
+  });
+
+  it('shows an action error when pausing a stock monitor fails', async () => {
+    monitoringApi.listStockMonitors.mockResolvedValue({ ...emptyPage, items: [{ id: 2, market: 'HK', symbol: '00005', name: null, threshold_price: 100, is_active: true, state: 'armed', last_price: null, last_price_date: null, last_triggered_at: null, created_at: '', updated_at: '' }] });
+    monitoringApi.pauseStockMonitor.mockRejectedValueOnce(new Error('pause failed'));
+    render(<MarketMonitor />);
+    fireEvent.click(await screen.findByRole('button', { name: '暂停 00005' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('暂停股票监控失败');
   });
 });
