@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BacktestHistory from '../BacktestHistory';
 
-const { listTasks } = vi.hoisted(() => ({ listTasks: vi.fn() }));
+const { listTasks, deleteTask } = vi.hoisted(() => ({ listTasks: vi.fn(), deleteTask: vi.fn() }));
 const { getAccounts, getSnapshot, bindStrategy, createAccount } = vi.hoisted(() => ({
   getAccounts: vi.fn(),
   getSnapshot: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock('../../../api/backtestEngine', async () => {
   const actual = await vi.importActual<typeof import('../../../api/backtestEngine')>(
     '../../../api/backtestEngine',
   );
-  return { ...actual, backtestEngineApi: { ...actual.backtestEngineApi, listTasks } };
+  return { ...actual, backtestEngineApi: { ...actual.backtestEngineApi, listTasks, deleteTask } };
 });
 
 vi.mock('../../../api/portfolio', () => ({
@@ -130,6 +130,56 @@ describe('BacktestHistory execution ordering', () => {
 
     await screen.findByText('执行中');
     expect(screen.getAllByRole('button', { name: '绑定账户' })).toHaveLength(1);
+  });
+
+  it('uses consistent shared variants for bind and delete actions', async () => {
+    render(<BacktestHistory />);
+
+    await screen.findByText('执行中');
+
+    const inactiveRow = screen.getByText('inactive-task').closest('tr');
+    if (!inactiveRow) throw new Error('inactive task row not found');
+
+    expect(within(inactiveRow).getByRole('button', { name: '绑定账户' })).toHaveAttribute(
+      'data-variant',
+      'outline',
+    );
+    expect(within(inactiveRow).getByRole('button', { name: /删除/ })).toHaveAttribute(
+      'data-variant',
+      'danger-subtle',
+    );
+  });
+
+  it('asks for confirmation before deleting a history task', async () => {
+    render(<BacktestHistory />);
+
+    await screen.findByText('执行中');
+    const inactiveRow = screen.getByText('inactive-task').closest('tr');
+    if (!inactiveRow) throw new Error('inactive task row not found');
+
+    fireEvent.click(within(inactiveRow).getByRole('button', { name: '删除' }));
+
+    expect(screen.getByText(/确认删除这条回测记录吗/)).toBeInTheDocument();
+    expect(deleteTask).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+
+    expect(deleteTask).toHaveBeenCalledWith('inactive-task');
+  });
+
+  it('centers history actions and aligns toolbar text metrics', async () => {
+    render(<BacktestHistory />);
+
+    await screen.findByText('执行中');
+
+    const toolbarLabel = screen.getByText('显示已删除').closest('label');
+    const refreshButton = screen.getByRole('button', { name: '刷新' });
+    const inactiveRow = screen.getByText('inactive-task').closest('tr');
+    const actionGroup = inactiveRow?.querySelector('td:last-child > div');
+
+    expect(toolbarLabel).toHaveClass('text-sm', 'font-medium', 'leading-5');
+    expect(refreshButton).toHaveClass('text-sm', 'font-medium', 'leading-5');
+    expect(actionGroup).toHaveClass('justify-end');
   });
 
   it('removes the bind action after refresh marks the task active', async () => {

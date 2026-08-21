@@ -18,6 +18,14 @@ describe('Button', () => {
     expect(button.className).toContain('bg-danger');
   });
 
+  it('keeps action labels on one line', () => {
+    render(<Button>创建并绑定策略账户</Button>);
+
+    expect(screen.getByRole('button', { name: '创建并绑定策略账户' }).className).toContain(
+      'whitespace-nowrap',
+    );
+  });
+
   it('disables the button when loading and shows loading text', () => {
     render(<Button isLoading loadingText="Saving">Save</Button>);
 

@@ -503,6 +503,7 @@ describe('SettingsPage', () => {
     vi.clearAllMocks();
 
     fireEvent.click(screen.getByRole('button', { name: '重置' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认重置' }));
 
     // Reset should call resetDraft and NOT call load
     expect(resetDraft).toHaveBeenCalledTimes(1);
@@ -596,6 +597,7 @@ describe('SettingsPage', () => {
 
     // Click reset button
     fireEvent.click(screen.getByRole('button', { name: '重置' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认重置' }));
 
     // Verify semantic: reset should only discard local changes
     // It should NOT trigger a network load

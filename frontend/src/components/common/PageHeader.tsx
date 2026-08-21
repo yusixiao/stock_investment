@@ -17,7 +17,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   className = '',
 }) => {
   return (
-    <header className={cn('glass-panel-lg px-5 py-5', className)}>
+    <header className={cn('page-header glass-panel-lg px-5 py-5', className)}>
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           {eyebrow ? <span className="label-uppercase">{eyebrow}</span> : null}

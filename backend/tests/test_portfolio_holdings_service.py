@@ -108,3 +108,24 @@ def test_delete_trade_rejects_reprojection_that_would_break_sell_history(portfol
     delete_trade(account.id, sell.id, connection=conn)
     assert get_holdings(account.id, "2026-08-19", connection=conn)[0].actual_shares == 10
     assert repo.list_trades(account.id)[0]["realized_pnl"] == 0
+
+
+def test_inactive_account_rejects_recording_trade(portfolio):
+    conn, repo, account = portfolio
+    repo.conn.execute("UPDATE portfolio_accounts SET is_active = 0 WHERE id = ?", (account.id,))
+    repo.conn.commit()
+
+    with pytest.raises(ValueError, match="account inactive"):
+        record_trade(account.id, "600519.SH", "buy", 1, 100.0, "2026-08-19", connection=conn)
+
+
+def test_inactive_account_rejects_deleting_trade(portfolio):
+    conn, repo, account = portfolio
+    trade = record_trade(account.id, "600519.SH", "buy", 1, 100.0, "2026-08-19", connection=conn)
+    repo.conn.execute("UPDATE portfolio_accounts SET is_active = 0 WHERE id = ?", (account.id,))
+    repo.conn.commit()
+
+    with pytest.raises(ValueError, match="account inactive"):
+        delete_trade(account.id, trade.id, connection=conn)
+
+    assert len(repo.list_trades(account.id)) == 1

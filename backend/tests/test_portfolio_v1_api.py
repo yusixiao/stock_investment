@@ -56,6 +56,49 @@ def test_v1_bind_maps_domain_errors(client):
     assert response.status_code == 409
 
 
+def test_v1_delete_account_returns_inactive_account(client):
+    http, _ = client
+    account = http.post(
+        "/api/v1/portfolio/accounts",
+        json={"name": "待删除", "market": "A", "base_currency": "CNY"},
+    ).json()
+
+    response = http.delete(f"/api/v1/portfolio/accounts/{account['id']}")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == account["id"]
+    assert response.json()["is_active"] is False
+
+
+def test_v1_delete_account_maps_bound_and_repeated_deletion_errors(client):
+    http, _ = client
+    bound = http.post(
+        "/api/v1/portfolio/accounts",
+        json={"name": "绑定账户", "market": "A", "base_currency": "CNY"},
+    ).json()
+    assert http.post(
+        f"/api/v1/portfolio/accounts/{bound['id']}/strategy", json={"task_id": "task-1"}
+    ).status_code == 200
+
+    assert http.delete(f"/api/v1/portfolio/accounts/{bound['id']}").status_code == 409
+    assert http.delete(f"/api/v1/portfolio/accounts/{bound['id']}").status_code == 409
+
+    unbound = http.post(
+        "/api/v1/portfolio/accounts",
+        json={"name": "重复删除", "market": "A", "base_currency": "CNY"},
+    ).json()
+    assert http.delete(f"/api/v1/portfolio/accounts/{unbound['id']}").status_code == 200
+    assert http.delete(f"/api/v1/portfolio/accounts/{unbound['id']}").status_code == 409
+
+
+def test_v1_delete_account_returns_404_for_missing_account(client):
+    http, _ = client
+
+    response = http.delete("/api/v1/portfolio/accounts/999999")
+
+    assert response.status_code == 404
+
+
 def test_v1_rejects_missing_required_fields(client):
     http, _ = client
 
@@ -132,6 +175,66 @@ def test_v1_core_trade_holdings_and_snapshot_contract(client):
         assert snapshot.json()["accounts"][0]["positions"][0]["last_price"] == 120.0
         assert snapshot.json()["accounts"][0]["positions"][0]["price_date"] == "2026-08-18"
         assert snapshot.json()["accounts"][0]["positions"][0]["price_stale"] is True
+
+
+def test_v1_inactive_account_history_is_readable_but_default_trade_list_is_active_only(client):
+    http, _ = client
+    account = http.post(
+        "/api/v1/portfolio/accounts",
+        json={"name": "历史账户", "market": "A", "base_currency": "CNY"},
+    ).json()
+    account_id = account["id"]
+    trade = http.post(
+        "/api/v1/portfolio/trades",
+        json={
+            "account_id": account_id,
+            "symbol": "600519",
+            "side": "buy",
+            "quantity": 2,
+            "price": 100,
+            "trade_date": "2026-08-19",
+        },
+    ).json()
+    assert http.delete(f"/api/v1/portfolio/accounts/{account_id}").status_code == 200
+
+    assert http.get("/api/v1/portfolio/trades").json()["total"] == 0
+    history = http.get("/api/v1/portfolio/trades", params={"account_id": account_id})
+    assert history.status_code == 200
+    assert history.json()["total"] == 1
+    assert history.json()["items"][0]["id"] == trade["id"]
+
+    with patch("routers.portfolio_v1._get_store") as get_store:
+        get_store.return_value.query_latest_closes.return_value = {"600519.SH": (120.0, "2026-08-18")}
+        snapshot = http.get(
+            "/api/v1/portfolio/snapshot",
+            params={"account_id": account_id, "as_of": "2026-08-19"},
+        )
+    assert snapshot.status_code == 200
+    assert snapshot.json()["account_count"] == 1
+    assert snapshot.json()["accounts"][0]["account_id"] == account_id
+
+
+def test_v1_inactive_trade_writes_return_conflict(client):
+    http, _ = client
+    account = http.post(
+        "/api/v1/portfolio/accounts",
+        json={"name": "只读账户", "market": "A", "base_currency": "CNY"},
+    ).json()
+    account_id = account["id"]
+    assert http.delete(f"/api/v1/portfolio/accounts/{account_id}").status_code == 200
+
+    create = http.post(
+        "/api/v1/portfolio/trades",
+        json={
+            "account_id": account_id,
+            "symbol": "600519",
+            "side": "buy",
+            "quantity": 1,
+            "price": 100,
+            "trade_date": "2026-08-19",
+        },
+    )
+    assert create.status_code == 409
 
 
 def test_v1_normalizes_frontend_market_values(client):

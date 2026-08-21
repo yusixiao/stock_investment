@@ -155,6 +155,16 @@ def test_binding_requires_successful_inactive_unlinked_task(service, task_id):
         svc.bind_strategy(account.id, task_id)
 
 
+def test_binding_rejects_inactive_account(service):
+    svc, repo, _ = service
+    account = svc.create_account("停用账户", "A", "CNY", None)
+    repo.conn.execute("UPDATE portfolio_accounts SET is_active = 0 WHERE id = ?", (account.id,))
+    repo.conn.commit()
+
+    with pytest.raises(ValueError, match="account inactive"):
+        svc.bind_strategy(account.id, "success")
+
+
 def test_binding_is_one_to_one_and_unbinding_preserves_trades(service):
     svc, repo, tm = service
     first = svc.create_account("一", "A", "CNY", None)
@@ -179,6 +189,112 @@ def test_create_account_can_bind_successful_task(service):
 
     assert account.strategy_task_id == "success-2"
     assert tm.set_calls == [("success-2", account.id)]
+
+
+def test_soft_delete_deactivates_account_and_preserves_history(service):
+    svc, repo, _ = service
+    account = svc.create_account("软删除", "A", "CNY", None)
+    repo.add_trade(account.id, "600519.SH", "buy", 100, 10, "2026-08-20")
+    repo.add_target_history(account.id, "2026-08-20", "{}", "2026-08-20T00:00:00")
+
+    deleted = svc.soft_delete_account(account.id)
+
+    assert deleted.is_active is False
+    assert len(repo.list_trades(account.id)) == 1
+    assert len(repo.strategy_target_history(account.id)) == 1
+    assert repo.get_account(account.id).is_active is False
+
+
+def test_soft_delete_rejects_bound_account_without_changing_binding(service):
+    svc, repo, _ = service
+    account = svc.create_account("绑定账户", "A", "CNY", None)
+    svc.bind_strategy(account.id, "success")
+
+    with pytest.raises(ValueError, match="unbind strategy before deleting account"):
+        svc.soft_delete_account(account.id)
+
+    assert repo.get_account(account.id).strategy_task_id == "success"
+    assert repo.get_account(account.id).is_active is True
+
+
+def test_soft_delete_rejects_already_inactive_account(service):
+    svc, _, _ = service
+    account = svc.create_account("重复删除", "A", "CNY", None)
+    svc.soft_delete_account(account.id)
+
+    with pytest.raises(ValueError, match="account already inactive"):
+        svc.soft_delete_account(account.id)
+
+
+def test_soft_delete_only_updates_is_active(service):
+    svc, repo, _ = service
+    account = svc.create_account("只更新状态", "A", "CNY", None)
+
+    deleted = svc.soft_delete_account(account.id)
+    row = repo.conn.execute(
+        "SELECT is_active, updated_at FROM portfolio_accounts WHERE id = ?", (account.id,)
+    ).fetchone()
+
+    assert deleted.updated_at == account.updated_at
+    assert row["is_active"] == 0
+    assert row["updated_at"] == account.updated_at
+
+
+def test_soft_delete_begins_immediate_before_loading_account(service):
+    svc, repo, _ = service
+    account = svc.create_account("先加锁", "A", "CNY", None)
+    statements = []
+    repo.conn.set_trace_callback(statements.append)
+
+    svc.soft_delete_account(account.id)
+
+    begin_index = next(i for i, sql in enumerate(statements) if "BEGIN IMMEDIATE" in sql.upper())
+    select_index = next(i for i, sql in enumerate(statements) if "SELECT * FROM portfolio_accounts" in sql)
+    assert begin_index < select_index
+
+
+def test_soft_delete_maps_zero_row_competition_and_rolls_back(service):
+    svc, repo, _ = service
+    account = svc.create_account("竞争删除", "A", "CNY", None)
+
+    def competing_delete(*args):
+        repo.conn.execute("UPDATE portfolio_accounts SET is_active = 0 WHERE id = ?", (account.id,))
+        raise ValueError("account already inactive")
+
+    repo.soft_delete = competing_delete
+
+    with pytest.raises(ValueError, match="account already inactive"):
+        svc.soft_delete_account(account.id)
+
+    assert repo.conn.in_transaction is False
+    assert repo.get_account(account.id).is_active is True
+
+
+def test_soft_delete_rolls_back_repository_failure(service):
+    svc, repo, _ = service
+    account = svc.create_account("删除回滚", "A", "CNY", None)
+
+    def failing_delete(*args):
+        repo.conn.execute("UPDATE portfolio_accounts SET is_active = 0 WHERE id = ?", (account.id,))
+        raise RuntimeError("delete failed")
+
+    repo.soft_delete = failing_delete
+
+    with pytest.raises(RuntimeError, match="delete failed"):
+        svc.soft_delete_account(account.id)
+
+    assert repo.conn.in_transaction is False
+    assert repo.get_account(account.id).is_active is True
+
+
+def test_repository_soft_delete_rejects_zero_row_update(service):
+    _, repo, _ = service
+    account = repo.create_account("仓储竞争", "A", "CNY")
+    repo.conn.execute("UPDATE portfolio_accounts SET is_active = 0 WHERE id = ?", (account.id,))
+    repo.conn.commit()
+
+    with pytest.raises(ValueError, match="account already inactive"):
+        repo.soft_delete(account.id, "ignored")
 
 
 def test_create_account_begins_immediate_before_insert_and_rolls_back_bind(service):

@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { cn } from '../../utils/cn';
 
 let activeDrawerCount = 0;
@@ -28,11 +28,35 @@ export const Drawer: React.FC<DrawerProps> = ({
   side = 'right',
   backdropClassName,
 }) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
   // Close the drawer when Escape is pressed.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         onClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !panelRef.current) return;
+
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (focusable.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     },
     [onClose]
@@ -40,6 +64,8 @@ export const Drawer: React.FC<DrawerProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      panelRef.current?.focus();
       document.addEventListener('keydown', handleKeyDown);
       activeDrawerCount++;
       if (activeDrawerCount === 1) {
@@ -52,6 +78,8 @@ export const Drawer: React.FC<DrawerProps> = ({
         if (activeDrawerCount === 0) {
           document.body.style.overflow = '';
         }
+        restoreFocusRef.current?.focus();
+        restoreFocusRef.current = null;
       };
     }
   }, [isOpen, handleKeyDown]);
@@ -78,6 +106,9 @@ export const Drawer: React.FC<DrawerProps> = ({
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
+          aria-label={title ? undefined : '抽屉'}
+          tabIndex={-1}
+          ref={panelRef}
           className={cn(
             'relative flex w-full flex-col bg-card',
             borderClass,
@@ -103,7 +134,7 @@ export const Drawer: React.FC<DrawerProps> = ({
               </svg>
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto overscroll-contain p-6">
             {children}
           </div>
         </div>

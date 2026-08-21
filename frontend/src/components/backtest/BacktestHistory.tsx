@@ -3,12 +3,11 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   RiArrowDownSLine,
   RiArrowUpSLine,
-  RiDeleteBin6Line,
   RiExpandUpDownLine,
   RiRefreshLine,
 } from '@remixicon/react';
 import { cn } from '../../utils/cn';
-import { ApiErrorAlert, Badge, Tooltip } from '../common';
+import { ApiErrorAlert, Badge, Button, ConfirmDialog, Tooltip } from '../common';
 import { backtestEngineApi, type TaskListItem } from '../../api/backtestEngine';
 import type { BacktestTask } from './BacktestAnalysis';
 import { mapPayloadToResultData } from '../../utils/backtestPayload';
@@ -109,6 +108,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
   const [showDeleted, setShowDeleted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
   // 排序:null = 默认(按 created_at 后端原序);'asc' / 'desc' = 按总收益率
   const [returnSort, setReturnSort] = useState<'asc' | 'desc' | null>(null);
@@ -219,6 +219,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
       await refresh();
     } finally {
       setDeletingId(null);
+      setDeleteConfirmId(null);
     }
   };
 
@@ -264,7 +265,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
           <span className="text-xs text-muted-text">共 {tasks.length} 条</span>
         </div>
         <div className="flex items-center gap-3">
-          <label className="inline-flex items-center gap-1.5 text-xs text-secondary-text">
+          <label className="inline-flex items-center gap-1.5 text-sm font-medium leading-5 text-secondary-text">
             <input
               type="checkbox"
               checked={showDeleted}
@@ -277,7 +278,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
             type="button"
             onClick={refresh}
             disabled={loading}
-            className="inline-flex items-center gap-1 text-xs text-secondary-text hover:text-foreground disabled:opacity-50"
+            className="inline-flex items-center gap-1 text-sm font-medium leading-5 text-secondary-text hover:text-foreground disabled:opacity-50"
             title="刷新"
           >
             <RiRefreshLine className={cn('h-4 w-4', loading && 'animate-spin')} />
@@ -292,6 +293,19 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
           className="mx-4 mt-3"
         />
       ) : null}
+
+      <ConfirmDialog
+        isOpen={deleteConfirmId !== null}
+        title="删除回测记录"
+        message="确认删除这条回测记录吗？删除后默认列表中将不再显示。"
+        confirmText="确认删除"
+        cancelText="取消"
+        isDanger
+        onConfirm={() => {
+          if (deleteConfirmId) void handleDelete(deleteConfirmId);
+        }}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {tasks.length === 0 ? (
@@ -333,7 +347,7 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                   <th className="px-3 py-2">日期范围</th>
                   <th className="px-3 py-2">状态</th>
                   <th className="px-3 py-2">创建时间</th>
-                  <th className="px-3 py-2 text-right">操作</th>
+                  <th className="px-3 py-2 text-center">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -395,55 +409,59 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                           : '--'}
                       </td>
                       <td className="px-3 py-2">
-                        <Badge
-                          variant={
+                        <span
+                          className={cn(
+                            'text-xs font-medium',
                             task.status === 'success'
-                              ? 'success'
+                              ? 'text-success'
                               : task.status === 'failed'
-                                ? 'danger'
-                                : 'default'
-                          }
+                                ? 'text-danger'
+                                : 'text-muted-text',
+                          )}
                         >
                           {task.status === 'success'
                             ? '完成'
                             : task.status === 'failed'
                               ? '失败'
                               : '运行中'}
-                        </Badge>
+                        </span>
                       </td>
-                      <td className="px-3 py-2 text-xs tabular-nums">
-                        {formatDateTime(task.created_at)}
-                      </td>
+                        <td className="px-3 py-2 text-xs tabular-nums">
+                          {formatDateTime(task.created_at)}
+                        </td>
                         <td className="px-3 py-2 text-right">
-                        {!isDeleted && task.status === 'success' && task.execution_status !== 'active' && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleBind(task);
-                            }}
-                            disabled={bindingId === task.task_id}
-                            className="mr-3 text-xs text-cyan hover:text-cyan/80 disabled:opacity-50"
-                          >
-                            {bindingId === task.task_id ? '绑定中...' : '绑定账户'}
-                          </button>
-                        )}
-                        {!isDeleted && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(task.task_id);
-                            }}
-                            disabled={deletingId === task.task_id}
-                            className="inline-flex items-center gap-1 text-xs text-danger hover:text-danger/80 disabled:opacity-50"
-                            title="软删除"
-                          >
-                            <RiDeleteBin6Line className="h-3.5 w-3.5" />
-                            删除
-                          </button>
-                        )}
-                      </td>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            {!isDeleted && task.status === 'success' && task.execution_status !== 'active' && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleBind(task);
+                                }}
+                                disabled={bindingId === task.task_id}
+                              >
+                                {bindingId === task.task_id ? '绑定中...' : '绑定账户'}
+                              </Button>
+                            )}
+                            {!isDeleted && (
+                              <Button
+                                type="button"
+                                variant="danger-subtle"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteConfirmId(task.task_id);
+                                }}
+                                disabled={deletingId === task.task_id}
+                                title="软删除"
+                              >
+                                删除
+                              </Button>
+                            )}
+                          </div>
+                        </td>
                     </tr>
                   );
                 })}

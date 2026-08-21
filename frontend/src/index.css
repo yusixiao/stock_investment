@@ -6,6 +6,7 @@
    1. THEME VARIABLES (Base/Classic)
    ========================================= */
 :root {
+  color-scheme: light;
   /* Typography */
   font-family:
     "Inter",
@@ -43,6 +44,10 @@
   --input: 217 28% 84%;
   --ring: 193 100% 43%;
   --radius: 1rem;
+  --radius-control: 0.75rem;
+  --radius-card: 1rem;
+  --radius-panel: 1.25rem;
+  --control-height: 2.75rem;
   --elevated: 0 0% 100%;
   --hover: 214 29% 90%;
   --secondary-text: 224 18% 28%;
@@ -302,6 +307,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: 228 35% 7%;
   --foreground: 210 33% 98%;
   --card: 230 24% 10%;
@@ -702,7 +708,14 @@
 }
 
 /* ============ Input Styles ============ */
+.control-surface {
+  min-height: var(--control-height);
+  border-radius: var(--radius-control);
+  font-family: inherit;
+}
+
 .input-surface {
+  border-radius: var(--radius-control);
   background: var(--input-surface-bg);
   border-color: var(--input-surface-border);
   color: var(--input-surface-text, var(--text-primary));
@@ -986,11 +999,29 @@
 
 /* ============ Glassmorphism Panels ============ */
 .glass-panel {
-  @apply rounded-2xl border border-border/60 bg-card/70 shadow-soft-card backdrop-blur-md transition-all;
+  @apply rounded-2xl border border-border/60 bg-card/70 shadow-soft-card backdrop-blur-md;
+  border-radius: var(--radius-panel);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
 }
 
 .glass-panel-lg {
-  @apply rounded-3xl border border-border/60 bg-card/70 shadow-soft-card backdrop-blur-md transition-all;
+  @apply rounded-3xl border border-border/60 bg-card/70 shadow-soft-card backdrop-blur-md;
+  border-radius: var(--radius-panel);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.page-header {
+  min-width: 0;
+}
+
+.app-page {
+  container-type: inline-size;
 }
 
 /* ============ Utilities ============ */
@@ -1096,7 +1127,25 @@ textarea {
   font: inherit;
 }
 
-.terminal-card {
+button,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transform: none !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.terminal-card,
+.surface-card {
   --terminal-card-border: var(--border-default);
   --terminal-card-border-hover: var(--border-hover);
   --terminal-card-gradient-start: var(--border-accent);
@@ -1106,7 +1155,7 @@ textarea {
   --terminal-card-shadow-hover: var(--shadow-soft-card-strong);
   position: relative;
   overflow: hidden;
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   border: 1px solid var(--terminal-card-border);
   background: linear-gradient(
     180deg,
@@ -1116,11 +1165,12 @@ textarea {
   box-shadow: var(--terminal-card-shadow);
 }
 
-.terminal-card::before {
+.terminal-card::before,
+.surface-card::before {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: 1rem;
+  border-radius: var(--radius-card);
   padding: 1px;
   background: linear-gradient(
     135deg,
@@ -1947,14 +1997,20 @@ textarea {
 
 .btn-primary,
 .btn-secondary {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   gap: 0.5rem;
+  min-height: 2.5rem;
   border-radius: 0.9rem;
   padding: 0.7rem 1.1rem;
+  font-size: 0.875rem;
   font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  font-family: inherit;
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease,
@@ -1995,10 +2051,17 @@ textarea {
 
 .btn-primary:disabled,
 .btn-secondary:disabled {
+  pointer-events: none;
   cursor: not-allowed;
   opacity: 0.58;
   box-shadow: none;
   transform: none;
+}
+
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px rgb(0 212 255 / 15%);
 }
 
 :root:not(.dark) .portfolio-page .btn-primary:not(:disabled),

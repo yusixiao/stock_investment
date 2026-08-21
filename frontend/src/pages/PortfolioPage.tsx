@@ -45,6 +45,8 @@ type PendingDelete =
   | { eventType: 'cash'; id: number; message: string }
   | { eventType: 'corporate'; id: number; message: string };
 
+type PendingAccountDelete = PortfolioAccountItem;
+
 type FxRefreshFeedback = {
   tone: 'neutral' | 'success' | 'warning';
   text: string;
@@ -58,10 +60,10 @@ type FxRefreshContext = {
 type PortfolioAlertVariant = 'info' | 'success' | 'warning' | 'danger';
 
 const PORTFOLIO_INPUT_CLASS =
-  'input-surface input-focus-glow h-11 w-full rounded-xl border bg-transparent px-4 text-sm transition-all focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
+  'control-surface input-surface input-focus-glow h-11 w-full border bg-transparent px-4 text-sm transition-[border-color,box-shadow,background-color,color] focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
 const PORTFOLIO_SELECT_CLASS = `${PORTFOLIO_INPUT_CLASS} appearance-none pr-10`;
 const PORTFOLIO_FILE_PICKER_CLASS =
-  'input-surface input-focus-glow flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border bg-transparent px-4 text-sm transition-all focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
+  'control-surface input-surface input-focus-glow flex h-11 w-full cursor-pointer items-center justify-center border bg-transparent px-4 text-sm transition-[border-color,box-shadow,background-color,color] focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
 const PORTFOLIO_DISABLED_FILE_PICKER_CLASS = PORTFOLIO_FILE_PICKER_CLASS.replace(
   'cursor-pointer',
   'cursor-not-allowed',
@@ -194,6 +196,7 @@ const PortfolioPage: React.FC = () => {
 
   const [accounts, setAccounts] = useState<PortfolioAccountItem[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<AccountOption>('all');
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [accountCreating, setAccountCreating] = useState(false);
   const [accountCreateError, setAccountCreateError] = useState<string | null>(null);
@@ -214,6 +217,9 @@ const PortfolioPage: React.FC = () => {
   const [riskWarning, setRiskWarning] = useState<string | null>(null);
   const [writeWarning, setWriteWarning] = useState<string | null>(null);
   const [strategyActionLoading, setStrategyActionLoading] = useState(false);
+  const [unbindConfirmOpen, setUnbindConfirmOpen] = useState(false);
+  const [accountDeleteTarget, setAccountDeleteTarget] = useState<PendingAccountDelete | null>(null);
+  const [accountDeleteLoading, setAccountDeleteLoading] = useState(false);
 
   const [brokers] = useState<PortfolioImportBrokerItem[]>(FALLBACK_BROKERS);
   const [selectedBroker, setSelectedBroker] = useState('huatai');
@@ -272,7 +278,8 @@ const PortfolioPage: React.FC = () => {
   const refreshViewKey = `${selectedAccount === 'all' ? 'all' : `account:${selectedAccount}`}:cost:${costMethod}`;
   const refreshContextRef = useRef<FxRefreshContext>({ viewKey: refreshViewKey, requestId: 0 });
   const hasAccounts = accounts.length > 0;
-  const writableAccount = selectedAccount === 'all' ? undefined : accounts.find((item) => item.id === selectedAccount);
+  const selectedAccountItem = selectedAccount === 'all' ? undefined : accounts.find((item) => item.id === selectedAccount);
+  const writableAccount = selectedAccountItem?.isActive ? selectedAccountItem : undefined;
   const hasStrategyAccounts = accounts.some((item) => Boolean(item.strategyTaskId));
   const strategyBound = selectedAccount === 'all'
     ? hasStrategyAccounts
@@ -297,7 +304,7 @@ const PortfolioPage: React.FC = () => {
 
   const loadAccounts = useCallback(async () => {
     try {
-      const response = await portfolioApi.getAccounts(false);
+      const response = await portfolioApi.getAccounts(includeInactive);
       const items = response.accounts || [];
       setAccounts(items);
       setSelectedAccount((prev) => {
@@ -309,14 +316,15 @@ const PortfolioPage: React.FC = () => {
     } catch (err) {
       setError(getParsedApiError(err));
     }
-  }, []);
+  }, [includeInactive]);
 
-  const loadSnapshotAndRisk = useCallback(async () => {
+  const loadSnapshotAndRisk = useCallback(async (accountIdOverride?: number | null) => {
+    const accountId = accountIdOverride === null ? undefined : accountIdOverride ?? queryAccountId;
     setIsLoading(true);
     setRiskWarning(null);
     try {
       const snapshotData = await portfolioApi.getSnapshot({
-        accountId: queryAccountId,
+        accountId,
         costMethod,
       });
       setSnapshot(snapshotData);
@@ -471,6 +479,22 @@ const PortfolioPage: React.FC = () => {
       setError(getParsedApiError(err));
     } finally {
       setStrategyActionLoading(false);
+      setUnbindConfirmOpen(false);
+    }
+  };
+
+  const handleConfirmAccountDelete = async () => {
+    if (!accountDeleteTarget || accountDeleteLoading) return;
+    try {
+      setAccountDeleteLoading(true);
+      await portfolioApi.deleteAccount(accountDeleteTarget.id);
+      setAccountDeleteTarget(null);
+      setSelectedAccount('all');
+      await Promise.all([loadAccounts(), loadSnapshotAndRisk(null)]);
+    } catch (err) {
+      setError(getParsedApiError(err));
+    } finally {
+      setAccountDeleteLoading(false);
     }
   };
 
@@ -726,7 +750,7 @@ const PortfolioPage: React.FC = () => {
   };
 
   return (
-    <div className="portfolio-page min-h-screen space-y-4 p-4 md:p-6">
+    <div className="app-page portfolio-page min-h-screen space-y-4 p-4 md:p-6">
       <section className="space-y-3">
         <div className="space-y-2">
           <h1 className="text-xl md:text-2xl font-semibold text-foreground">持仓管理</h1>
@@ -734,14 +758,14 @@ const PortfolioPage: React.FC = () => {
             组合快照、手工录入、CSV 导入与风险分析（支持全组合 / 单账户切换）
           </p>
         </div>
-        {hasAccounts ? (
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_220px_280px] gap-2 items-end">
               <div>
                 <p className="text-xs text-secondary mb-1">账户视图</p>
                 <select
                   value={String(selectedAccount)}
                   onChange={(e) => setSelectedAccount(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  disabled={!hasAccounts}
                   className={PORTFOLIO_SELECT_CLASS}
                 >
                   <option value="all">全部账户</option>
@@ -751,6 +775,17 @@ const PortfolioPage: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                <label className="mt-2 flex items-center gap-2 text-xs text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={includeInactive}
+                    onChange={(e) => setIncludeInactive(e.target.checked)}
+                  />
+                  显示停用账户
+                </label>
+                {!selectedAccountItem?.isActive && selectedAccountItem ? (
+                  <p className="mt-2 text-xs text-warning">已停用</p>
+                ) : null}
               </div>
               <div>
                 <p className="text-xs text-secondary mb-1">成本口径</p>
@@ -763,10 +798,10 @@ const PortfolioPage: React.FC = () => {
                   <option value="avg">均价成本（AVG）</option>
                 </select>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className="btn-secondary text-sm flex-1"
+                  className="btn-secondary min-w-[7rem] flex-1 text-sm"
                   onClick={() => {
                     setShowCreateAccount((prev) => !prev);
                     setAccountCreateError(null);
@@ -779,30 +814,40 @@ const PortfolioPage: React.FC = () => {
                   type="button"
                   onClick={() => void handleRefresh()}
                   disabled={isLoading || fxRefreshing}
-                  className="btn-secondary text-sm flex-1"
+                  className="btn-secondary min-w-[7rem] flex-1 text-sm"
                 >
                   {isLoading ? '刷新中...' : '刷新数据'}
                 </button>
                 {writableAccount?.strategyTaskId ? (
                   <button
                     type="button"
-                    onClick={() => void handleUnbindStrategy()}
+                     onClick={() => setUnbindConfirmOpen(true)}
                     disabled={strategyActionLoading}
-                    className="btn-secondary text-sm flex-1"
+                    className="btn-secondary min-w-[7rem] flex-1 text-sm"
                   >
                     {strategyActionLoading ? '解绑中...' : '解绑策略'}
+                  </button>
+                ) : null}
+                {writableAccount && !writableAccount.strategyTaskId ? (
+                  <button
+                    type="button"
+                    className="btn-secondary min-w-[7rem] flex-1 text-sm"
+                    onClick={() => setAccountDeleteTarget(writableAccount)}
+                    disabled={accountDeleteLoading}
+                  >
+                    删除账户
                   </button>
                 ) : null}
               </div>
             </div>
           </div>
-        ) : (
+        {!hasAccounts ? (
           <InlineAlert
             variant="warning"
             className="inline-block rounded-lg px-3 py-2 text-xs shadow-none"
             message="还没有可用账户，请先创建账户后再录入交易或导入 CSV。"
           />
-        )}
+        ) : null}
       </section>
 
       {error ? <ApiErrorAlert error={error} onDismiss={() => setError(null)} /> : null}
@@ -813,6 +858,29 @@ const PortfolioPage: React.FC = () => {
           message={riskWarning}
         />
       ) : null}
+
+      <ConfirmDialog
+        isOpen={unbindConfirmOpen}
+        title="解绑策略账户"
+        message="解绑后该账户将不再跟随策略目标，确认继续吗？"
+        confirmText="确认解绑"
+        cancelText="取消"
+        isDanger
+        onConfirm={() => void handleUnbindStrategy()}
+        onCancel={() => setUnbindConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        isOpen={Boolean(accountDeleteTarget)}
+        title="删除账户"
+        message="删除后该账户将被停用，历史持仓和流水会保留，确认继续吗？"
+        confirmText={accountDeleteLoading ? '删除中...' : '确认删除账户'}
+        cancelText="取消"
+        isDanger
+        onConfirm={() => void handleConfirmAccountDelete()}
+        onCancel={() => {
+          if (!accountDeleteLoading) setAccountDeleteTarget(null);
+        }}
+      />
       {writeWarning ? (
         <InlineAlert
           variant="warning"
@@ -1063,11 +1131,13 @@ const PortfolioPage: React.FC = () => {
         </Card>
       </section>
 
-      {writeBlocked && hasAccounts ? (
+      {writeBlocked ? (
         <InlineAlert
           variant="warning"
           className="rounded-lg px-3 py-2 text-xs shadow-none"
-          message="当前处于“全部账户”视图。为避免误写，请先选择一个具体账户后再进行手工录入或 CSV 提交。"
+          message={hasAccounts
+            ? '当前处于“全部账户”视图。为避免误写，请先选择一个具体账户后再进行手工录入或 CSV 提交。'
+            : '当前处于“全部账户”视图'}
         />
       ) : null}
 

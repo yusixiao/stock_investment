@@ -25,6 +25,27 @@ describe('portfolio strategy API mapping', () => {
     expect(del).toHaveBeenCalledWith('/api/v1/portfolio/accounts/7/strategy');
   });
 
+  it('deletes an account through the v1 account route', async () => {
+    del.mockResolvedValueOnce({
+      data: {
+        id: 7,
+        name: 'Main',
+        is_active: false,
+        strategy_task_id: 'task-1',
+      },
+    });
+
+    const account = await portfolioApi.deleteAccount(7);
+
+    expect(del).toHaveBeenCalledWith('/api/v1/portfolio/accounts/7');
+    expect(account).toMatchObject({
+      id: 7,
+      name: 'Main',
+      isActive: false,
+      strategyTaskId: 'task-1',
+    });
+  });
+
   it('maps enriched snapshot fields without using the legacy portfolio route', async () => {
     get.mockResolvedValueOnce({
       data: {

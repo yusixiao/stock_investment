@@ -106,16 +106,17 @@ const HomePage: React.FC = () => {
       </header>
 
       {selectedCode && (
-        <div className="flex items-center gap-4 px-3 pb-2 md:px-4">
+        <div className="flex flex-wrap items-center gap-4 px-3 pb-2 md:px-4">
           <span className="text-sm font-medium text-primary-text">
             {selectedName} <span className="text-secondary-text">({selectedCode})</span>
           </span>
 
-          <div className="flex items-center gap-1 rounded-lg border border-border/50 p-0.5">
+          <div className="flex items-center gap-1 rounded-lg border border-border/50 p-0.5" role="group" aria-label="K 线周期">
             {PERIOD_OPTIONS.map(opt => (
               <button
                 key={opt.value}
                 type="button"
+                aria-pressed={period === opt.value}
                 onClick={() => setPeriod(opt.value)}
                 className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                   period === opt.value
@@ -128,11 +129,12 @@ const HomePage: React.FC = () => {
             ))}
           </div>
 
-          <div className="flex items-center gap-1 rounded-lg border border-border/50 p-0.5">
+          <div className="flex items-center gap-1 rounded-lg border border-border/50 p-0.5" role="group" aria-label="复权方式">
             {ADJUST_OPTIONS.map(opt => (
               <button
                 key={opt.value}
                 type="button"
+                aria-pressed={adjust === opt.value}
                 onClick={() => setAdjust(opt.value)}
                 className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                   adjust === opt.value

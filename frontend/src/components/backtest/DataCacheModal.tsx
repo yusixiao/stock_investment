@@ -2,6 +2,7 @@ import type React from 'react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { backtestCacheApi, type CacheMarket, type CacheStatusMap } from '../../api/backtestCache';
+import { ConfirmDialog } from '../common';
 
 interface Props {
   isOpen: boolean;
@@ -20,6 +21,7 @@ const DataCacheModal: React.FC<Props> = ({ isOpen, status, onClose, onRefresh })
   const [selected, setSelected] = useState<CacheMarket>('A');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [invalidateConfirmOpen, setInvalidateConfirmOpen] = useState(false);
 
   if (!isOpen) return null;
 
@@ -131,7 +133,7 @@ const DataCacheModal: React.FC<Props> = ({ isOpen, status, onClose, onRefresh })
           {cur?.loaded && (
             <button
               type="button"
-              onClick={handleInvalidate}
+              onClick={() => setInvalidateConfirmOpen(true)}
               disabled={busy}
               className="rounded-lg border border-border/50 px-3 py-1.5 text-xs text-secondary-text transition-colors hover:text-foreground disabled:opacity-50"
             >
@@ -155,6 +157,19 @@ const DataCacheModal: React.FC<Props> = ({ isOpen, status, onClose, onRefresh })
           </button>
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={invalidateConfirmOpen}
+        title="清除缓存"
+        message={`确认清除${MARKET_LABELS[selected]}缓存吗？清除后需要重新加载数据。`}
+        confirmText="确认清除"
+        cancelText="取消"
+        isDanger
+        onConfirm={() => {
+          setInvalidateConfirmOpen(false);
+          void handleInvalidate();
+        }}
+        onCancel={() => setInvalidateConfirmOpen(false)}
+      />
     </div>
   );
 

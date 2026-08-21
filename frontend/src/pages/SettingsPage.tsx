@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth, useSystemConfig } from '../hooks';
 import { createParsedApiError, getParsedApiError, type ParsedApiError } from '../api/error';
 import { systemConfigApi } from '../api/systemConfig';
-import { ApiErrorAlert, Button, ConfirmDialog, EmptyState } from '../components/common';
+import { ApiErrorAlert, Button, ConfirmDialog, EmptyState, PageHeader } from '../components/common';
 import {
   AuthSettingsCard,
   ChangePasswordCard,
@@ -210,6 +210,7 @@ const SettingsPage: React.FC = () => {
   const [isImportingEnv, setIsImportingEnv] = useState(false);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [isCheckingDesktopUpdate, setIsCheckingDesktopUpdate] = useState(false);
   const envBackupImportRef = useRef<HTMLInputElement | null>(null);
   const desktopRuntimeApi = getDesktopRuntimeApi();
@@ -502,27 +503,23 @@ const SettingsPage: React.FC = () => {
 
   return (
     <div className="settings-page min-h-full px-4 pb-6 pt-4 md:px-6">
-      <div className="mb-5 rounded-[1.5rem] border settings-border bg-card/94 px-5 py-5 shadow-soft-card-strong backdrop-blur-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">系统设置</h1>
-            <p className="text-xs leading-6 text-muted-text">
-              统一管理模型、数据源、通知、安全认证与导入能力。
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+       <PageHeader
+         className="mb-5"
+         title="系统设置"
+         description="统一管理模型、数据源、通知、安全认证与导入能力。"
+         actions={(
+           <>
             <Button
               type="button"
-              variant="settings-secondary"
-              onClick={resetDraft}
+              variant="secondary"
+              onClick={() => setResetConfirmOpen(true)}
               disabled={isLoading || isSaving}
             >
               重置
             </Button>
             <Button
               type="button"
-              variant="settings-primary"
+              variant="primary"
               onClick={() => void save()}
               disabled={!hasDirty || isSaving || isLoading}
               isLoading={isSaving}
@@ -530,18 +527,32 @@ const SettingsPage: React.FC = () => {
             >
               {isSaving ? '保存中...' : `保存配置${dirtyCount ? ` (${dirtyCount})` : ''}`}
             </Button>
-          </div>
-        </div>
+           </>
+         )}
+       />
 
-        {saveError ? (
-          <ApiErrorAlert
-            className="mt-3"
-            error={saveError}
-            actionLabel={retryAction === 'save' ? '重试保存' : undefined}
-            onAction={retryAction === 'save' ? () => void retry() : undefined}
-          />
-        ) : null}
-      </div>
+       {saveError ? (
+         <ApiErrorAlert
+           className="mb-4"
+           error={saveError}
+           actionLabel={retryAction === 'save' ? '重试保存' : undefined}
+           onAction={retryAction === 'save' ? () => void retry() : undefined}
+         />
+       ) : null}
+
+       <ConfirmDialog
+         isOpen={resetConfirmOpen}
+         title="重置未保存修改"
+         message="当前有未保存的修改，确认放弃这些修改吗？"
+         confirmText="确认重置"
+         cancelText="取消"
+         isDanger
+         onConfirm={() => {
+           resetDraft();
+           setResetConfirmOpen(false);
+         }}
+         onCancel={() => setResetConfirmOpen(false)}
+       />
 
       {loadError ? (
         <ApiErrorAlert

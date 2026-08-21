@@ -31,15 +31,19 @@ const BacktestPage: React.FC = () => {
 
   return (
     <div className="flex h-full flex-col">
-      <nav className="flex-shrink-0 border-b border-border/40 px-4">
-        <div className="flex gap-1">
+      <nav className="page-tabs flex-shrink-0 border-b border-border/40 px-4" aria-label="回测工作区">
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="回测工作区标签">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               type="button"
+              id={`tab-${tab.key}`}
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              aria-controls={activeTab === tab.key ? `panel-${tab.key}` : undefined}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                'inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
+                'inline-flex min-h-11 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-[border-color,color,background-color] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan/15',
                 activeTab === tab.key
                   ? 'border-cyan text-cyan'
                   : 'border-transparent text-secondary-text hover:text-foreground',
@@ -52,7 +56,12 @@ const BacktestPage: React.FC = () => {
         </div>
       </nav>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div
+        id={`panel-${activeTab}`}
+        role="tabpanel"
+        aria-labelledby={`tab-${activeTab}`}
+        className="min-h-0 flex-1 overflow-hidden"
+      >
         {activeTab === 'backtest' && <BacktestAnalysis />}
         {activeTab === 'radar' && <StrategyRadar />}
         {activeTab === 'monitor' && <MarketMonitor />}

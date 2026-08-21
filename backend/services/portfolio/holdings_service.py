@@ -43,6 +43,8 @@ def record_trade(account_id: int, symbol: str, side: str, quantity: int, price: 
         account = repo.get_account(account_id)
         if account is None:
             raise ValueError("account not found")
+        if not account.is_active:
+            raise ValueError("account inactive")
         if side == "buy" and account.strategy_task_id and not is_buy_allowed(account_id, symbol, trade_date, conn):
             raise ValueError("buy symbol is not a current strategy target")
         holdings = _project(repo.list_trades(account_id), trade_date)
@@ -76,6 +78,11 @@ def delete_trade(account_id: int, trade_id: int, connection: sqlite3.Connection 
             conn.execute("BEGIN IMMEDIATE")
             started = True
         repo = AccountRepository(conn)
+        account = repo.get_account(account_id)
+        if account is None:
+            raise ValueError("account not found")
+        if not account.is_active:
+            raise ValueError("account inactive")
         trade = repo.get_trade(trade_id)
         if trade is None or trade["account_id"] != account_id:
             raise ValueError("trade does not belong to account")
@@ -242,7 +249,7 @@ def build_snapshot(
         raise ValueError("unsupported cost method")
     date.fromisoformat(as_of_date)
     repo = AccountRepository(connection)
-    accounts = repo.list_accounts()
+    accounts = repo.list_accounts(include_inactive=account_id is not None)
     if account_id is not None:
         accounts = [account for account in accounts if account.id == account_id]
         if not accounts:

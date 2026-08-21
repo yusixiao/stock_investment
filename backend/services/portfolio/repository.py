@@ -30,6 +30,19 @@ class AccountRepository:
         row = self.conn.execute("SELECT * FROM portfolio_accounts WHERE id = ?", (account_id,)).fetchone()
         return self._account(row) if row else None
 
+    def soft_delete(self, account_id: int, updated_at: str) -> Account:
+        del updated_at
+        cursor = self.conn.execute(
+            "UPDATE portfolio_accounts SET is_active = 0 WHERE id = ? AND is_active = 1",
+            (account_id,),
+        )
+        if cursor.rowcount == 0:
+            account = self.get_account(account_id)
+            if account is None:
+                raise ValueError("account not found")
+            raise ValueError("account already inactive")
+        return cast(Account, self.get_account(account_id))
+
     def list_accounts(self, include_inactive: bool = False) -> list[Account]:
         sql = "SELECT * FROM portfolio_accounts"
         if not include_inactive:

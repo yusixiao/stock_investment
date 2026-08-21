@@ -135,6 +135,15 @@ def get_account(account_id: int):
         _materializer_error(exc)
 
 
+@router.delete("/accounts/{account_id}")
+def delete_account(account_id: int):
+    try:
+        with _connection_scope() as conn:
+            return asdict(_get_service(conn).soft_delete_account(account_id))
+    except ValueError as exc:
+        _error(exc)
+
+
 @router.post("/accounts/{account_id}/strategy")
 def bind_strategy(account_id: int, body: StrategyBindingRequest):
     try:
@@ -180,7 +189,7 @@ def list_trades(
 ):
     with _connection_scope() as conn:
         repo = AccountRepository(conn)
-        accounts = repo.list_accounts()
+        accounts = repo.list_accounts(include_inactive=account_id is not None)
         if account_id is not None:
             accounts = [account for account in accounts if account.id == account_id]
         items = []

@@ -24,6 +24,7 @@ const {
   createAccount,
   bindStrategy,
   unbindStrategy,
+  deleteAccount,
 } = vi.hoisted(() => ({
   getAccounts: vi.fn(),
   getSnapshot: vi.fn(),
@@ -44,6 +45,7 @@ const {
   createAccount: vi.fn(),
   bindStrategy: vi.fn(),
   unbindStrategy: vi.fn(),
+  deleteAccount: vi.fn(),
 }));
 
 vi.mock('../../api/portfolio', () => ({
@@ -67,6 +69,7 @@ vi.mock('../../api/portfolio', () => ({
     createAccount,
     bindStrategy,
     unbindStrategy,
+    deleteAccount,
   },
 }));
 
@@ -85,6 +88,7 @@ type AccountItem = {
   market?: 'cn' | 'hk' | 'us';
   baseCurrency?: string;
   strategyTaskId?: string | null;
+  isActive?: boolean;
 };
 
 function makeAccounts(items: AccountItem[] = [{ id: 1, name: 'Main' }]) {
@@ -95,7 +99,7 @@ function makeAccounts(items: AccountItem[] = [{ id: 1, name: 'Main' }]) {
       broker: 'Demo',
       market: item.market ?? 'us',
       baseCurrency: item.baseCurrency ?? 'CNY',
-      isActive: true,
+       isActive: item.isActive ?? true,
       ownerId: null,
       createdAt: '2026-03-19T00:00:00Z',
       updatedAt: '2026-03-19T00:00:00Z',
@@ -241,6 +245,96 @@ describe('PortfolioPage FX refresh', () => {
       errors: [],
     });
     createAccount.mockResolvedValue({ id: 1 });
+    deleteAccount.mockResolvedValue({ id: 1, name: 'Main', isActive: false });
+  });
+
+  it('deletes a selected active account without a strategy binding after confirmation', async () => {
+    getAccounts
+      .mockResolvedValueOnce(makeAccounts([{ id: 1, name: 'Main' }]))
+      .mockResolvedValueOnce({ accounts: [] });
+    deleteAccount.mockResolvedValueOnce({ id: 1, name: 'Main', isActive: false });
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } });
+
+    fireEvent.click(await screen.findByRole('button', { name: '删除账户' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('删除后该账户将被停用');
+
+    fireEvent.click(screen.getByRole('button', { name: '确认删除账户' }));
+
+    await waitFor(() => expect(deleteAccount).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(getAccounts).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('当前处于“全部账户”视图')).toBeInTheDocument();
+  });
+
+  it('loads inactive accounts only after enabling the inactive account filter', async () => {
+    const inactiveAccount = { id: 2, name: '已停用账户', isActive: false };
+    getAccounts.mockImplementation(async (includeInactive: boolean) => (
+      includeInactive
+        ? makeAccounts([{ id: 1, name: 'Main' }, inactiveAccount])
+        : makeAccounts([{ id: 1, name: 'Main' }])
+    ));
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    fireEvent.click(screen.getByRole('checkbox', { name: '显示停用账户' }));
+
+    await waitFor(() => expect(getAccounts).toHaveBeenLastCalledWith(true));
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '2' } });
+
+    expect(await screen.findByText('已停用')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '删除账户' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '解绑策略' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '提交交易' })).toBeDisabled();
+  });
+
+  it('keeps the inactive account filter available when there are no active accounts', async () => {
+    const inactiveAccount = { id: 2, name: '仅停用账户', isActive: false };
+    getAccounts.mockImplementation(async (includeInactive: boolean) => (
+      includeInactive ? makeAccounts([inactiveAccount]) : { accounts: [] }
+    ));
+
+    render(<PortfolioPage />);
+    await waitFor(() => expect(getAccounts).toHaveBeenCalledWith(false));
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '显示停用账户' }));
+
+    await waitFor(() => expect(getAccounts).toHaveBeenLastCalledWith(true));
+    expect(screen.getByRole('option', { name: /仅停用账户/ })).toBeInTheDocument();
+  });
+
+  it('does not show account deletion for an active account bound to a strategy', async () => {
+    getAccounts.mockResolvedValue(makeAccounts([{ id: 1, name: '策略账户', strategyTaskId: 'task-1' }]));
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } });
+
+    expect(await screen.findByRole('button', { name: '解绑策略' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '删除账户' })).not.toBeInTheDocument();
+  });
+
+  it('reloads the all-account snapshot scope after deleting the selected account', async () => {
+    getAccounts
+      .mockResolvedValueOnce(makeAccounts([{ id: 1, name: 'Main' }]))
+      .mockResolvedValueOnce({ accounts: [] });
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } });
+    await waitFor(() => expect(getSnapshot).toHaveBeenLastCalledWith({ accountId: 1, costMethod: 'fifo' }));
+    const accountSnapshotCallsBeforeDelete = getSnapshot.mock.calls.filter(
+      ([query]: [{ accountId?: number }]) => query.accountId === 1,
+    ).length;
+
+    fireEvent.click(screen.getByRole('button', { name: '删除账户' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认删除账户' }));
+
+    await waitFor(() => expect(getSnapshot).toHaveBeenLastCalledWith({ accountId: undefined, costMethod: 'fifo' }));
+    expect(getSnapshot.mock.calls.filter(
+      ([query]: [{ accountId?: number }]) => query.accountId === 1,
+    )).toHaveLength(accountSnapshotCallsBeforeDelete);
   });
 
   it('does not auto-request unsupported risk or broker endpoints', async () => {

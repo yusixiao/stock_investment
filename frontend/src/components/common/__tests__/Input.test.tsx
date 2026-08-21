@@ -9,6 +9,7 @@ describe('Input', () => {
     const input = screen.getByLabelText('API Key');
     expect(input).toHaveAttribute('id', 'api_key');
     expect(input).toHaveAttribute('aria-describedby', 'api_key-hint');
+    expect(input).toHaveClass('control-surface');
     expect(screen.getByText('Stored locally')).toBeInTheDocument();
   });
 
@@ -45,6 +46,7 @@ describe('Input', () => {
 
     const input = screen.getByLabelText('密码');
     expect(input).toHaveAttribute('type', 'password');
+    expect(screen.getByRole('button', { name: '显示内容' })).not.toHaveAttribute('tabindex', '-1');
 
     fireEvent.click(screen.getByRole('button', { name: '显示内容' }));
     expect(input).toHaveAttribute('type', 'text');

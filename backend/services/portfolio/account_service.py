@@ -38,6 +38,8 @@ class AccountService:
         try:
             self._begin_transaction()
             account = self._require_account(account_id)
+            if not account.is_active:
+                raise ValueError("account inactive")
             if self.repository.current_holdings(account_id):
                 raise ValueError("account has current holdings")
             task = self.task_manager.get_result(task_id, connection=self.repository.conn)
@@ -86,6 +88,21 @@ class AccountService:
 
     def list_accounts(self, include_inactive: bool = False) -> list[Account]:
         return self.repository.list_accounts(include_inactive)
+
+    def soft_delete_account(self, account_id: int) -> Account:
+        try:
+            self._begin_transaction()
+            account = self._require_account(account_id)
+            if not account.is_active:
+                raise ValueError("account already inactive")
+            if account.strategy_task_id is not None:
+                raise ValueError("unbind strategy before deleting account")
+            result = self.repository.soft_delete(account_id, account.updated_at)
+            self.repository.conn.commit()
+            return result
+        except Exception:
+            self.repository.conn.rollback()
+            raise
 
     def _require_account(self, account_id: int) -> Account:
         account = self.repository.get_account(account_id)

@@ -120,6 +120,11 @@ export const portfolioApi = {
     return toCamelCase<PortfolioAccountItem>(response.data);
   },
 
+  async deleteAccount(accountId: number): Promise<PortfolioAccountItem> {
+    const response = await apiClient.delete<Record<string, unknown>>(`/api/v1/portfolio/accounts/${accountId}`);
+    return toCamelCase<PortfolioAccountItem>(response.data);
+  },
+
   async bindStrategy(accountId: number, taskId: string): Promise<PortfolioAccountItem> {
     const response = await apiClient.post<Record<string, unknown>>(
       `/api/v1/portfolio/accounts/${accountId}/strategy`,
