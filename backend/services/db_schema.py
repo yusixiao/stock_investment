@@ -296,6 +296,63 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             UNIQUE(account_id, date)
         );
 
+        CREATE TABLE IF NOT EXISTS monitoring_strategy_monitors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            strategy_class TEXT NOT NULL,
+            filepath TEXT NOT NULL,
+            params TEXT NOT NULL DEFAULT '{}',
+            market TEXT NOT NULL,
+            frequency TEXT NOT NULL,
+            symbols TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            next_run_date TEXT,
+            last_run_at TEXT,
+            last_run_status TEXT NOT NULL DEFAULT 'pending',
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS monitoring_strategy_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            monitor_id INTEGER NOT NULL REFERENCES monitoring_strategy_monitors(id),
+            scheduled_date TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            status TEXT NOT NULL,
+            task_id TEXT,
+            result TEXT,
+            error TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS monitoring_stock_monitors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            name TEXT,
+            threshold_price REAL NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            state TEXT NOT NULL DEFAULT 'armed',
+            last_price REAL,
+            last_price_date TEXT,
+            last_triggered_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS monitoring_stock_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            monitor_id INTEGER NOT NULL REFERENCES monitoring_stock_monitors(id),
+            market TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            observed_price REAL NOT NULL,
+            threshold_price REAL NOT NULL,
+            observed_date TEXT NOT NULL,
+            triggered_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'recorded'
+        );
+
         """
     )
     columns = {row[1] for row in conn.execute("PRAGMA table_info(portfolio_account_trades)")}
@@ -316,6 +373,10 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
         CREATE UNIQUE INDEX IF NOT EXISTS uq_portfolio_current_alert
             ON portfolio_strategy_alerts(account_id, symbol)
             WHERE archived_at IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_monitoring_strategy_runs_monitor
+            ON monitoring_strategy_runs(monitor_id, scheduled_date DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_monitoring_stock_events_monitor
+            ON monitoring_stock_events(monitor_id, observed_date DESC, id DESC);
         """
     )
     conn.commit()
