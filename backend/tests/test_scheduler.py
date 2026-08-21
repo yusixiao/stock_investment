@@ -30,6 +30,32 @@ def test_partial_refresh_does_not_call_buy_opportunity_seam(monkeypatch):
     seam.assert_not_called()
 
 
+def test_partial_refresh_runs_monitors_for_successful_market(monkeypatch):
+    buy = MagicMock()
+    strategy = MagicMock(return_value=1)
+    stock = MagicMock(return_value=1)
+    monkeypatch.setattr(scheduler, "_evaluate_buy_opportunities_after_refresh", buy)
+    monkeypatch.setattr(
+        "services.monitoring.strategy_monitor.run_due_strategy_monitors", strategy
+    )
+    monkeypatch.setattr(
+        "services.monitoring.stock_price_monitor.evaluate_stock_price_monitors", stock
+    )
+
+    record = MagicMock(status="partial", market_states={
+        "A": {"update": {"status": "failed"}, "view": {"status": "failed"}, "cache": {"status": "failed"}},
+        "HK": {"update": {"status": "success"}, "view": {"status": "success"}, "cache": {"status": "success"}},
+    })
+
+    scheduler._on_market_refresh_complete(record)
+
+    buy.assert_called_once_with(record, {"HK"})
+    strategy.assert_called_once()
+    stock.assert_called_once()
+    assert strategy.call_args.kwargs["markets"] == {"HK"}
+    assert stock.call_args.kwargs["markets"] == {"HK"}
+
+
 def test_completed_record_with_derived_failure_does_not_evaluate_failed_market(monkeypatch):
     seam = MagicMock()
     monkeypatch.setattr(scheduler, "_evaluate_buy_opportunities_after_refresh", seam)

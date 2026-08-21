@@ -105,7 +105,7 @@ def _evaluate_buy_opportunities_after_refresh(record, markets):
 
 
 def _on_market_refresh_complete(record):
-    if getattr(record, "status", None) == "completed":
+    if getattr(record, "status", None) in {"completed", "partial"}:
         import logging
         from datetime import date
 
