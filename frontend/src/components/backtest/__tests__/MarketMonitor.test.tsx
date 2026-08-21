@@ -1,0 +1,108 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import MarketMonitor from '../MarketMonitor';
+
+const monitoringApi = vi.hoisted(() => ({
+  listStrategyMonitors: vi.fn(),
+  createStrategyMonitor: vi.fn(),
+  runStrategyMonitor: vi.fn(),
+  listStrategyRuns: vi.fn(),
+  deleteStrategyMonitor: vi.fn(),
+  listStockMonitors: vi.fn(),
+  createStockMonitor: vi.fn(),
+  pauseStockMonitor: vi.fn(),
+  resumeStockMonitor: vi.fn(),
+  listStockEvents: vi.fn(),
+  deleteStockMonitor: vi.fn(),
+}));
+
+vi.mock('../../../api/monitoring', () => ({ monitoringApi }));
+
+const emptyPage = { items: [], total: 0, limit: 50, offset: 0 };
+
+describe('MarketMonitor', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    monitoringApi.listStrategyMonitors.mockResolvedValue(emptyPage);
+    monitoringApi.listStockMonitors.mockResolvedValue(emptyPage);
+    monitoringApi.listStrategyRuns.mockResolvedValue(emptyPage);
+    monitoringApi.listStockEvents.mockResolvedValue(emptyPage);
+  });
+
+  it('renders independent strategy and stock sections without portfolio account controls', async () => {
+    render(<MarketMonitor />);
+
+    expect(await screen.findByRole('heading', { name: '策略监控' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '股票价格监控' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '添加策略监控' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加股票监控' }));
+    expect(screen.getByLabelText('策略名称')).toBeInTheDocument();
+    expect(screen.getByLabelText('股票代码')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/账户|持仓/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/从策略选择股票/)).not.toBeInTheDocument();
+  });
+
+  it('requires market, symbol, and a positive threshold before creating stock monitor', async () => {
+    render(<MarketMonitor />);
+    await screen.findByRole('heading', { name: '股票价格监控' });
+
+    fireEvent.click(screen.getByRole('button', { name: '添加股票监控' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存股票监控' }));
+
+    expect((await screen.findAllByRole('alert')).find((element) => element.textContent === '请选择市场')).toBeInTheDocument();
+    expect(screen.getByText('请输入股票代码')).toBeInTheDocument();
+    expect(screen.getByText('请输入正数阈值')).toBeInTheDocument();
+    expect(monitoringApi.createStockMonitor).not.toHaveBeenCalled();
+  });
+
+  it('shows stock state and confirms pause and delete actions', async () => {
+    monitoringApi.listStockMonitors.mockResolvedValue({
+      ...emptyPage,
+      items: [{
+        id: 2, market: 'HK', symbol: '00005', name: '腾讯', threshold_price: 100,
+        is_active: true, state: 'armed', last_price: 98, last_price_date: '2026-08-21',
+        last_triggered_at: null, created_at: '2026-08-20', updated_at: '2026-08-21',
+      }],
+    });
+    monitoringApi.pauseStockMonitor.mockResolvedValue({ id: 2, state: 'paused' });
+    render(<MarketMonitor />);
+
+    expect(await screen.findByText('00005')).toBeInTheDocument();
+    expect(screen.getByText('当前价 98')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '暂停 00005' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(monitoringApi.pauseStockMonitor).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    await waitFor(() => expect(monitoringApi.pauseStockMonitor).toHaveBeenCalledWith(2));
+  });
+
+  it('shows strategy run history separately from stock price events', async () => {
+    monitoringApi.listStrategyMonitors.mockResolvedValue({
+      ...emptyPage,
+      items: [{ id: 1, name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'value.py', params: {}, market: 'A', frequency: 'daily', symbols: ['600000'], is_active: true, next_run_date: '2026-08-22', last_run_at: '2026-08-21', last_run_status: 'success', last_error: null, created_at: '2026-08-20', updated_at: '2026-08-21' }],
+    });
+    monitoringApi.listStrategyRuns.mockResolvedValue({ ...emptyPage, items: [{ id: 11, monitor_id: 1, scheduled_date: '2026-08-21', started_at: '2026-08-21T09:00:00', finished_at: '2026-08-21T09:01:00', status: 'success', task_id: null, result: null, error: null }] });
+    monitoringApi.listStockMonitors.mockResolvedValue({ ...emptyPage, items: [{ id: 2, market: 'HK', symbol: '00005', name: null, threshold_price: 100, is_active: true, state: 'triggered', last_price: 98, last_price_date: '2026-08-21', last_triggered_at: '2026-08-21T10:00:00', created_at: '2026-08-20', updated_at: '2026-08-21' }] });
+    monitoringApi.listStockEvents.mockResolvedValue({ ...emptyPage, items: [{ id: 21, monitor_id: 2, market: 'HK', symbol: '00005', observed_price: 98, threshold_price: 100, observed_date: '2026-08-21', triggered_at: '2026-08-21T10:00:00', status: 'recorded' }] });
+
+    render(<MarketMonitor />);
+
+    expect(await screen.findByText('运行历史')).toBeInTheDocument();
+    expect(screen.getAllByText('2026-08-21').length).toBeGreaterThan(0);
+    expect(screen.getByText('成功')).toBeInTheDocument();
+    expect(await screen.findByText('价格事件')).toBeInTheDocument();
+    expect(screen.getByText('98')).toBeInTheDocument();
+  });
+
+  it('does not send an empty strategy symbol list', async () => {
+    monitoringApi.createStrategyMonitor.mockResolvedValue({ id: 3, name: '全市场策略' });
+    render(<MarketMonitor />);
+    await screen.findByRole('heading', { name: '策略监控' });
+    fireEvent.click(screen.getByRole('button', { name: '添加策略监控' }));
+    fireEvent.change(screen.getByLabelText('策略名称'), { target: { value: '全市场策略' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存策略监控' }));
+
+    await waitFor(() => expect(monitoringApi.createStrategyMonitor).toHaveBeenCalled());
+    expect(monitoringApi.createStrategyMonitor.mock.calls[0][0].symbols).toBeUndefined();
+  });
+});
