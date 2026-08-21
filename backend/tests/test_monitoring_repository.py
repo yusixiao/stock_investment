@@ -1,4 +1,8 @@
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+import pytest
 
 from services.db_schema import init_portfolio_v1_tables
 from services.monitoring.models import StockPriceMonitor, StrategyMonitor
@@ -64,6 +68,11 @@ def test_stock_monitors_allow_duplicate_symbols_pause_resume_and_soft_delete():
     assert updated.name == "新浦发"
 
     deleted = repo.soft_delete_stock_monitor(first.id)
+    with pytest.raises(ValueError):
+        repo.pause_stock_monitor(first.id)
+    with pytest.raises(ValueError):
+        repo.resume_stock_monitor(first.id)
+    assert repo.get_stock_monitor(first.id).state == "armed"
     assert not deleted.is_active
     assert len(repo.list_stock_monitors()) == 1
     assert len(repo.list_stock_monitors(include_inactive=True)) == 2
@@ -85,3 +94,84 @@ def test_claim_price_trigger_is_single_shot_until_rearmed_and_history_survives_d
     repo.soft_delete_stock_monitor(monitor.id)
     assert len(repo.list_stock_events(monitor.id)) == 2
     assert repo.get_stock_monitor(monitor.id).state == "triggered"
+
+
+def test_monitoring_rejects_invalid_enum_values():
+    repo = make_repository()
+
+    with pytest.raises(ValueError):
+        repo.create_strategy_monitor("bad", "Strategy", "x.py", {}, "A", "yearly")
+    strategy = repo.create_strategy_monitor("ok", "Strategy", "x.py", {}, "A", "daily")
+    with pytest.raises(ValueError):
+        repo.update_strategy_monitor(strategy.id, frequency="yearly")
+
+    stock = repo.create_stock_monitor("A", "600000", 10)
+    with pytest.raises(ValueError):
+        repo.update_stock_monitor(stock.id, state="unknown")
+    with pytest.raises(ValueError):
+        repo.finish_strategy_run(repo.create_strategy_run(strategy.id, "2026-08-21").id, "running")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        repo.conn.execute(
+            "INSERT INTO monitoring_strategy_monitors (name, strategy_class, filepath, params, market, frequency, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("bad", "Strategy", "x.py", "{}", "A", "yearly", "now", "now"),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        repo.conn.execute(
+            "INSERT INTO monitoring_strategy_runs (monitor_id, scheduled_date, started_at, status) VALUES (?, ?, ?, ?)",
+            (strategy.id, "2026-08-21", "now", "unknown"),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        repo.conn.execute(
+            "INSERT INTO monitoring_stock_monitors (market, symbol, threshold_price, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("A", "600000", 10, "unknown", "now", "now"),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        repo.conn.execute(
+            "INSERT INTO monitoring_stock_events (monitor_id, market, symbol, observed_price, threshold_price, observed_date, triggered_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (stock.id, "A", "600000", 9, 10, "2026-08-21", "2026-08-21T16:00:00", "unknown"),
+        )
+
+
+def test_finish_strategy_run_is_terminal_and_does_not_overwrite_latest_monitor_status():
+    repo = make_repository()
+    monitor = repo.create_strategy_monitor("strategy", "Strategy", "x.py", {}, "A", "daily")
+    run = repo.create_strategy_run(monitor.id, "2026-08-21")
+    newer_run = repo.create_strategy_run(monitor.id, "2026-08-22")
+
+    newer_finished = repo.finish_strategy_run(newer_run.id, "success", result={"value": 2})
+    assert newer_finished.status == "success"
+    older_finished = repo.finish_strategy_run(run.id, "failed", error="old failure")
+    assert older_finished.status == "failed"
+    with pytest.raises(ValueError):
+        repo.finish_strategy_run(run.id, "failed", error="late result")
+    assert repo.list_strategy_runs(monitor.id)[0] == newer_finished
+    assert repo.get_strategy_monitor(monitor.id).last_run_status == "success"
+
+
+def test_claim_price_trigger_is_idempotent_across_two_connections(tmp_path: Path):
+    db_path = tmp_path / "monitoring.db"
+    seed = sqlite3.connect(db_path)
+    seed.row_factory = sqlite3.Row
+    init_portfolio_v1_tables(seed)
+    monitor = MonitoringRepository(seed).create_stock_monitor("US", "AAPL", 100)
+    seed.commit()
+    seed.close()
+
+    connections = []
+    for _ in range(2):
+        conn = sqlite3.connect(db_path, check_same_thread=False, timeout=5)
+        conn.row_factory = sqlite3.Row
+        connections.append(conn)
+
+    def claim(index: int) -> bool:
+        return MonitoringRepository(connections[index]).claim_price_trigger(
+            monitor.id, 99, "2026-08-21", "2026-08-21T16:00:00"
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(claim, (0, 1)))
+
+    assert sorted(results) == [False, True]
+    check = sqlite3.connect(db_path)
+    assert check.execute("SELECT COUNT(*) FROM monitoring_stock_events").fetchone()[0] == 1

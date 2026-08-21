@@ -303,12 +303,12 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             filepath TEXT NOT NULL,
             params TEXT NOT NULL DEFAULT '{}',
             market TEXT NOT NULL,
-            frequency TEXT NOT NULL,
+            frequency TEXT NOT NULL CHECK (frequency IN ('daily', 'weekly', 'monthly', 'quarterly')),
             symbols TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
             next_run_date TEXT,
             last_run_at TEXT,
-            last_run_status TEXT NOT NULL DEFAULT 'pending',
+            last_run_status TEXT NOT NULL DEFAULT 'pending' CHECK (last_run_status IN ('pending', 'running', 'success', 'failed')),
             last_error TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -320,7 +320,7 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             scheduled_date TEXT NOT NULL,
             started_at TEXT NOT NULL,
             finished_at TEXT,
-            status TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed')),
             task_id TEXT,
             result TEXT,
             error TEXT
@@ -333,7 +333,7 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             name TEXT,
             threshold_price REAL NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1,
-            state TEXT NOT NULL DEFAULT 'armed',
+            state TEXT NOT NULL DEFAULT 'armed' CHECK (state IN ('armed', 'triggered', 'paused')),
             last_price REAL,
             last_price_date TEXT,
             last_triggered_at TEXT,
@@ -350,7 +350,7 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             threshold_price REAL NOT NULL,
             observed_date TEXT NOT NULL,
             triggered_at TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'recorded'
+            status TEXT NOT NULL DEFAULT 'recorded' CHECK (status IN ('recorded', 'notified'))
         );
 
         """

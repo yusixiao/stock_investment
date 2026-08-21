@@ -5,6 +5,10 @@ from typing import Any, cast
 
 from .models import StockPriceMonitor, StrategyMonitor, StrategyRun
 
+FREQUENCIES = {"daily", "weekly", "monthly", "quarterly"}
+RUN_FINISH_STATUSES = {"success", "failed"}
+STOCK_STATES = {"armed", "triggered", "paused"}
+
 
 def _now() -> str:
     return datetime.now().isoformat()
@@ -12,6 +16,11 @@ def _now() -> str:
 
 def _json_load(value: str | None, default: Any) -> Any:
     return default if value is None else json.loads(value)
+
+
+def _validate(value: str, allowed: set[str], field: str) -> None:
+    if value not in allowed:
+        raise ValueError(f"invalid {field}: {value}")
 
 
 class MonitoringRepository:
@@ -49,6 +58,7 @@ class MonitoringRepository:
     def create_strategy_monitor(self, name: str, strategy_class: str, filepath: str, params: dict,
                                 market: str, frequency: str, symbols: list[str] | None = None,
                                 next_run_date: str | None = None) -> StrategyMonitor:
+        _validate(frequency, FREQUENCIES, "frequency")
         now = _now()
         cur = self.conn.execute(
             "INSERT INTO monitoring_strategy_monitors (name, strategy_class, filepath, params, market, frequency, symbols, next_run_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -77,6 +87,8 @@ class MonitoringRepository:
         for key in ("params", "symbols"):
             if key in values and values[key] is not None:
                 values[key] = json.dumps(values[key])
+        if "frequency" in values:
+            _validate(values["frequency"], FREQUENCIES, "frequency")
         values["updated_at"] = _now()
         assignments = ", ".join(f"{key} = ?" for key in values)
         self.conn.execute(f"UPDATE monitoring_strategy_monitors SET {assignments} WHERE id = ?", (*values.values(), monitor_id))
@@ -99,15 +111,39 @@ class MonitoringRepository:
 
     def finish_strategy_run(self, run_id: int, status: str, result: dict | None = None,
                             error: str | None = None, finished_at: str | None = None) -> StrategyRun:
-        row = self.conn.execute("SELECT * FROM monitoring_strategy_runs WHERE id = ?", (run_id,)).fetchone()
-        if row is None:
-            raise ValueError("strategy run not found")
-        finished = finished_at or _now()
-        self.conn.execute("UPDATE monitoring_strategy_runs SET status = ?, result = ?, error = ?, finished_at = ? WHERE id = ?",
-                          (status, json.dumps(result) if result is not None else None, error, finished, run_id))
-        self.conn.execute("UPDATE monitoring_strategy_monitors SET last_run_at = ?, last_run_status = ?, last_error = ?, updated_at = ? WHERE id = ?",
-                          (finished, status, error, finished, row["monitor_id"]))
-        return self._run(self.conn.execute("SELECT * FROM monitoring_strategy_runs WHERE id = ?", (run_id,)).fetchone())
+        _validate(status, RUN_FINISH_STATUSES, "strategy run finish status")
+        started = not self.conn.in_transaction
+        try:
+            if started:
+                self.conn.execute("BEGIN IMMEDIATE")
+            row = self.conn.execute("SELECT * FROM monitoring_strategy_runs WHERE id = ?", (run_id,)).fetchone()
+            if row is None:
+                raise ValueError("strategy run not found")
+            if row["status"] != "running":
+                raise ValueError("strategy run is already finished")
+            finished = finished_at or _now()
+            cursor = self.conn.execute(
+                "UPDATE monitoring_strategy_runs SET status = ?, result = ?, error = ?, finished_at = ? WHERE id = ? AND status = 'running'",
+                (status, json.dumps(result) if result is not None else None, error, finished, run_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("strategy run is already finished")
+            latest = self.conn.execute(
+                "SELECT id FROM monitoring_strategy_runs WHERE monitor_id = ? ORDER BY id DESC LIMIT 1",
+                (row["monitor_id"],),
+            ).fetchone()
+            if latest["id"] == run_id:
+                self.conn.execute(
+                    "UPDATE monitoring_strategy_monitors SET last_run_at = ?, last_run_status = ?, last_error = ?, updated_at = ? WHERE id = ?",
+                    (finished, status, error, finished, row["monitor_id"]),
+                )
+            if started:
+                self.conn.commit()
+            return self._run(self.conn.execute("SELECT * FROM monitoring_strategy_runs WHERE id = ?", (run_id,)).fetchone())
+        except Exception:
+            if started:
+                self.conn.rollback()
+            raise
 
     def list_strategy_runs(self, monitor_id: int) -> list[StrategyRun]:
         rows = self.conn.execute("SELECT * FROM monitoring_strategy_runs WHERE monitor_id = ? ORDER BY scheduled_date DESC, id DESC", (monitor_id,)).fetchall()
@@ -138,9 +174,16 @@ class MonitoringRepository:
             if monitor is None:
                 raise ValueError("stock monitor not found")
             return monitor
+        if "state" in values:
+            _validate(values["state"], STOCK_STATES, "stock monitor state")
         values["updated_at"] = _now()
         assignments = ", ".join(f"{key} = ?" for key in values)
-        self.conn.execute(f"UPDATE monitoring_stock_monitors SET {assignments} WHERE id = ?", (*values.values(), monitor_id))
+        where = " WHERE id = ?"
+        if "state" in values:
+            where += " AND is_active = 1"
+        cursor = self.conn.execute(f"UPDATE monitoring_stock_monitors SET {assignments}{where}", (*values.values(), monitor_id))
+        if "state" in values and cursor.rowcount != 1:
+            raise ValueError("stock monitor is inactive or not found")
         monitor = self.get_stock_monitor(monitor_id)
         if monitor is None:
             raise ValueError("stock monitor not found")
