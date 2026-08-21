@@ -56,6 +56,7 @@ from routers.auth_stub import router as auth_stub_router
 from routers.system_config import router as system_config_router
 from routers.agent import router as agent_router
 from routers.hk_connect import router as hk_connect_router
+from routers.monitoring import router as monitoring_router
 from scheduler import start_scheduler, shutdown_scheduler
 
 
@@ -110,6 +111,7 @@ app.include_router(auth_stub_router)
 app.include_router(system_config_router)
 app.include_router(agent_router)
 app.include_router(hk_connect_router)
+app.include_router(monitoring_router)
 
 
 @app.get("/api/health")
