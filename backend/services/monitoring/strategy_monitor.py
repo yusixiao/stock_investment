@@ -12,6 +12,19 @@ from services.monitoring.models import StrategyMonitor
 from services.monitoring.repository import FREQUENCIES, MonitoringRepository
 
 
+def get_monitoring_connection() -> sqlite3.Connection:
+    """Open the shared SQLite file without depending on the Portfolio domain."""
+    from config import PORTFOLIO_DB
+    from services.db_schema import init_portfolio_v1_tables
+
+    connection = sqlite3.connect(str(PORTFOLIO_DB))
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA foreign_keys=ON")
+    init_portfolio_v1_tables(connection)
+    return connection
+
+
 def _period_key(frequency: str, value: date) -> tuple[int, ...]:
     if frequency == "daily":
         return (value.toordinal(),)
@@ -38,26 +51,32 @@ def _dates(store: Any, market: str, start: str | None = None, end: str | None = 
     return [value for value in values if (start is None or value >= start) and (end is None or value <= end)]
 
 
-def is_due(frequency: str, market: str, as_of_date: str, store: Any) -> bool:
-    if frequency not in FREQUENCIES:
-        raise ValueError(f"invalid frequency: {frequency}")
+def _is_due_from_dates(frequency: str, as_of_date: str, dates: list[str]) -> bool:
     current = date.fromisoformat(as_of_date)
-    available = _dates(store, market, as_of_date, as_of_date)
-    if as_of_date not in available:
+    if as_of_date not in dates:
+        return False
+    if frequency == "quarterly" and current.month not in {1, 4, 7, 10}:
         return False
     period = _period_key(frequency, current)
     period_dates = [
-        value for value in _dates(store, market)
+        value for value in dates
         if _period_key(frequency, date.fromisoformat(value)) == period
     ]
     return bool(period_dates) and as_of_date == period_dates[0]
 
 
+def is_due(frequency: str, market: str, as_of_date: str, store: Any) -> bool:
+    if frequency not in FREQUENCIES:
+        raise ValueError(f"invalid frequency: {frequency}")
+    return _is_due_from_dates(frequency, as_of_date, _dates(store, market))
+
+
 def next_run_date(frequency: str, market: str, after_date: str, store: Any) -> str | None:
     if frequency not in FREQUENCIES:
         raise ValueError(f"invalid frequency: {frequency}")
-    for value in _dates(store, market, after_date):
-        if value > after_date and is_due(frequency, market, value, store):
+    dates = _dates(store, market)
+    for value in dates:
+        if value > after_date and _is_due_from_dates(frequency, value, dates):
             return value
     return None
 
@@ -93,11 +112,12 @@ def execute_strategy_current_date(monitor: StrategyMonitor, as_of_date: str, sto
 
 def _claim(repo: MonitoringRepository, monitor: StrategyMonitor, scheduled_date: str):
     conn = repo.conn
-    # Callers may have just created a monitor on a default sqlite connection;
-    # finish that unit of work before acquiring the cross-process write lock.
-    if conn.in_transaction:
-        conn.commit()
-    conn.execute("BEGIN IMMEDIATE")
+    owns_transaction = not conn.in_transaction
+    savepoint = f"strategy_monitor_claim_{monitor.id}"
+    if owns_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    else:
+        conn.execute(f"SAVEPOINT {savepoint}")
     try:
         current = conn.execute(
             "SELECT * FROM monitoring_strategy_monitors WHERE id = ? AND is_active = 1 AND next_run_date = ?",
@@ -108,13 +128,24 @@ def _claim(repo: MonitoringRepository, monitor: StrategyMonitor, scheduled_date:
             (monitor.id,),
         ).fetchone()
         if current is None or running is not None:
-            conn.rollback()
+            if owns_transaction:
+                conn.rollback()
+            else:
+                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
             return None
         run = repo.create_strategy_run(monitor.id, scheduled_date)
-        conn.commit()
-        return run
+        if owns_transaction:
+            conn.commit()
+        else:
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        return run, owns_transaction
     except Exception:
-        conn.rollback()
+        if owns_transaction:
+            conn.rollback()
+        else:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
         raise
 
 
@@ -126,10 +157,7 @@ def run_due_strategy_monitors(
 ) -> int:
     owned_connection = connection is None
     if connection is None:
-        from services.portfolio.db import get_connection, init_db
-
-        connection = get_connection()
-        init_db(connection)
+        connection = get_monitoring_connection()
     if store is None:
         from services.market_data.duckdb_store import DuckDBStore
 
@@ -145,9 +173,10 @@ def run_due_strategy_monitors(
                 continue
             if not is_due(monitor.frequency, monitor.market, as_of_date, store):
                 continue
-            run = _claim(repo, monitor, as_of_date)
-            if run is None:
+            claimed_run = _claim(repo, monitor, as_of_date)
+            if claimed_run is None:
                 continue
+            run, owns_claim_transaction = claimed_run
             claimed += 1
             try:
                 outcome = execute_strategy_current_date(monitor, as_of_date, store)
@@ -155,7 +184,8 @@ def run_due_strategy_monitors(
                     repo.finish_strategy_run(run.id, "failed", result=outcome, error=outcome["reason"])
                     continue
                 task_id = outcome.get("task_id")
-                connection.execute("BEGIN IMMEDIATE")
+                if owns_claim_transaction:
+                    connection.execute("BEGIN IMMEDIATE")
                 if task_id is not None:
                     connection.execute(
                         "UPDATE monitoring_strategy_runs SET task_id = ? WHERE id = ? AND status = 'running'",
@@ -164,9 +194,10 @@ def run_due_strategy_monitors(
                 repo.finish_strategy_run(run.id, "success", result=outcome)
                 following = next_run_date(monitor.frequency, monitor.market, as_of_date, store)
                 repo.update_strategy_monitor(monitor.id, next_run_date=following)
-                connection.commit()
+                if owns_claim_transaction:
+                    connection.commit()
             except Exception as exc:
-                if connection.in_transaction:
+                if owns_claim_transaction and connection.in_transaction:
                     connection.rollback()
                 repo.finish_strategy_run(run.id, "failed", error=str(exc))
     finally:

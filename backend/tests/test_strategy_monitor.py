@@ -4,6 +4,7 @@ import pytest
 
 from services.db_schema import init_portfolio_v1_tables
 from services.monitoring.repository import MonitoringRepository
+from services.monitoring import strategy_monitor
 from services.monitoring.strategy_monitor import (
     is_due,
     next_run_date,
@@ -50,7 +51,9 @@ def test_schedule_due_dates_for_all_supported_frequencies(store):
     assert is_due("monthly", "A", "2026-08-03", TradingDateStore({"A": ["2026-08-03"]}))
     assert is_due("quarterly", "A", "2026-10-01", store)
     assert not is_due("quarterly", "A", "2026-09-01", store)
+    assert not is_due("quarterly", "A", "2026-02-02", TradingDateStore({"A": ["2026-02-02"]}))
     assert next_run_date("weekly", "A", "2026-08-21", store) == "2026-08-24"
+    assert next_run_date("weekly", "A", "2026-08-24", store) == "2026-08-31"
     assert next_run_date("monthly", "A", "2026-08-21", store) == "2026-09-01"
     assert next_run_date("quarterly", "A", "2026-08-21", store) == "2026-10-01"
 
@@ -123,3 +126,43 @@ def test_default_execution_seam_records_unexecuted_instead_of_fake_success(store
     assert run.status == "failed"
     assert run.result["status"] == "unexecuted"
     assert run.error
+
+
+def test_existing_caller_transaction_is_not_committed(store, monkeypatch):
+    conn = make_connection()
+    repo = MonitoringRepository(conn)
+    monitor = repo.create_strategy_monitor(
+        "strategy", "Strategy", "strategy.py", {}, "A", "daily", next_run_date="2026-08-21"
+    )
+    monkeypatch.setattr(
+        "services.monitoring.strategy_monitor.execute_strategy_current_date",
+        lambda monitor, as_of_date, store: {"task_id": "task-1"},
+    )
+
+    assert conn.in_transaction
+    assert run_due_strategy_monitors("2026-08-21", connection=conn, store=store) == 1
+    assert conn.in_transaction
+    assert repo.get_strategy_monitor(monitor.id).last_run_status == "success"
+    conn.rollback()
+
+
+def test_owned_connection_comes_from_monitoring_service_factory(store, monkeypatch):
+    conn = make_connection()
+    repo = MonitoringRepository(conn)
+    repo.create_strategy_monitor(
+        "strategy", "Strategy", "strategy.py", {}, "A", "daily", next_run_date="2026-08-21"
+    )
+    factory_calls = []
+
+    def factory():
+        factory_calls.append(True)
+        return conn
+
+    monkeypatch.setattr(strategy_monitor, "get_monitoring_connection", factory)
+    monkeypatch.setattr(
+        "services.monitoring.strategy_monitor.execute_strategy_current_date",
+        lambda monitor, as_of_date, store: {"task_id": "task-1"},
+    )
+
+    assert run_due_strategy_monitors("2026-08-21", store=store) == 1
+    assert factory_calls == [True]
