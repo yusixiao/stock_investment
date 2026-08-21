@@ -175,3 +175,89 @@ def test_claim_price_trigger_is_idempotent_across_two_connections(tmp_path: Path
     assert sorted(results) == [False, True]
     check = sqlite3.connect(db_path)
     assert check.execute("SELECT COUNT(*) FROM monitoring_stock_events").fetchone()[0] == 1
+
+
+def test_init_migrates_existing_monitoring_tables_and_preserves_rows():
+    conn = sqlite3.connect(":memory:")
+    init_portfolio_v1_tables(conn)
+    conn.execute("PRAGMA foreign_keys = OFF")
+    for table in (
+        "monitoring_strategy_monitors",
+        "monitoring_strategy_runs",
+        "monitoring_stock_monitors",
+        "monitoring_stock_events",
+    ):
+        conn.execute(f"ALTER TABLE {table} RENAME TO {table}_checked")
+    conn.executescript(
+        """
+        CREATE TABLE monitoring_strategy_monitors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+            strategy_class TEXT NOT NULL, filepath TEXT NOT NULL,
+            params TEXT NOT NULL DEFAULT '{}', market TEXT NOT NULL,
+            frequency TEXT NOT NULL, symbols TEXT, is_active INTEGER NOT NULL DEFAULT 1,
+            next_run_date TEXT, last_run_at TEXT, last_run_status TEXT NOT NULL DEFAULT 'pending',
+            last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE monitoring_strategy_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, monitor_id INTEGER NOT NULL,
+            scheduled_date TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT,
+            status TEXT NOT NULL, task_id TEXT, result TEXT, error TEXT
+        );
+        CREATE TABLE monitoring_stock_monitors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, market TEXT NOT NULL, symbol TEXT NOT NULL,
+            name TEXT, threshold_price REAL NOT NULL, is_active INTEGER NOT NULL DEFAULT 1,
+            state TEXT NOT NULL DEFAULT 'armed', last_price REAL, last_price_date TEXT,
+            last_triggered_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE monitoring_stock_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, monitor_id INTEGER NOT NULL,
+            market TEXT NOT NULL, symbol TEXT NOT NULL, observed_price REAL NOT NULL,
+            threshold_price REAL NOT NULL, observed_date TEXT NOT NULL,
+            triggered_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'recorded'
+        );
+        INSERT INTO monitoring_strategy_monitors
+            (id, name, strategy_class, filepath, params, market, frequency, symbols, created_at, updated_at)
+            VALUES (7, 'old', 'Strategy', 'old.py', '{}', 'A', 'daily', NULL, 'now', 'now');
+        INSERT INTO monitoring_strategy_runs
+            (id, monitor_id, scheduled_date, started_at, status)
+            VALUES (8, 7, '2026-08-21', 'now', 'running');
+        INSERT INTO monitoring_stock_monitors
+            (id, market, symbol, threshold_price, created_at, updated_at)
+            VALUES (9, 'A', '600000', 10, 'now', 'now');
+        INSERT INTO monitoring_stock_events
+            (id, monitor_id, market, symbol, observed_price, threshold_price, observed_date, triggered_at)
+            VALUES (10, 9, 'A', '600000', 9, 10, '2026-08-21', 'now');
+        """
+    )
+    for table in (
+        "monitoring_strategy_monitors",
+        "monitoring_strategy_runs",
+        "monitoring_stock_monitors",
+        "monitoring_stock_events",
+    ):
+        conn.execute(f"DROP TABLE {table}_checked")
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = ON")
+
+    init_portfolio_v1_tables(conn)
+
+    assert conn.execute("SELECT id FROM monitoring_strategy_monitors").fetchone()[0] == 7
+    assert conn.execute("SELECT id FROM monitoring_strategy_runs").fetchone()[0] == 8
+    assert conn.execute("SELECT id FROM monitoring_stock_monitors").fetchone()[0] == 9
+    assert conn.execute("SELECT id FROM monitoring_stock_events").fetchone()[0] == 10
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO monitoring_strategy_monitors (name, strategy_class, filepath, market, frequency, created_at, updated_at) VALUES ('bad', 'S', 'x', 'A', 'yearly', 'now', 'now')"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO monitoring_strategy_runs (monitor_id, scheduled_date, started_at, status) VALUES (7, '2026-08-21', 'now', 'unknown')"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO monitoring_stock_monitors (market, symbol, threshold_price, state, created_at, updated_at) VALUES ('A', '600001', 10, 'unknown', 'now', 'now')"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO monitoring_stock_events (monitor_id, market, symbol, observed_price, threshold_price, observed_date, triggered_at, status) VALUES (9, 'A', '600000', 9, 10, '2026-08-21', 'now', 'unknown')"
+        )

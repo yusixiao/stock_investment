@@ -355,6 +355,7 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
 
         """
     )
+    _ensure_monitoring_constraints(conn)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(portfolio_account_trades)")}
     for name, definition in (("fee", "REAL NOT NULL DEFAULT 0"), ("tax", "REAL NOT NULL DEFAULT 0"), ("realized_pnl", "REAL NOT NULL DEFAULT 0")):
         if name not in columns:
@@ -404,3 +405,115 @@ def _archive_duplicate_current_states(conn: sqlite3.Connection, table: str):
         )
         """
     )
+
+
+def _ensure_monitoring_constraints(conn: sqlite3.Connection):
+    """为早期无 CHECK 约束的监控表执行保数据重建迁移。"""
+    markers = {
+        "monitoring_strategy_monitors": "CHECK (frequency IN",
+        "monitoring_strategy_runs": "CHECK (status IN",
+        "monitoring_stock_monitors": "CHECK (state IN",
+        "monitoring_stock_events": "CHECK (status IN",
+    }
+    definitions = {
+        "monitoring_strategy_monitors": """
+            CREATE TABLE monitoring_strategy_monitors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                strategy_class TEXT NOT NULL,
+                filepath TEXT NOT NULL,
+                params TEXT NOT NULL DEFAULT '{}',
+                market TEXT NOT NULL,
+                frequency TEXT NOT NULL CHECK (frequency IN ('daily', 'weekly', 'monthly', 'quarterly')),
+                symbols TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                next_run_date TEXT,
+                last_run_at TEXT,
+                last_run_status TEXT NOT NULL DEFAULT 'pending' CHECK (last_run_status IN ('pending', 'running', 'success', 'failed')),
+                last_error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """,
+        "monitoring_strategy_runs": """
+            CREATE TABLE monitoring_strategy_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                monitor_id INTEGER NOT NULL REFERENCES monitoring_strategy_monitors(id),
+                scheduled_date TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed')),
+                task_id TEXT,
+                result TEXT,
+                error TEXT
+            )
+        """,
+        "monitoring_stock_monitors": """
+            CREATE TABLE monitoring_stock_monitors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                market TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                name TEXT,
+                threshold_price REAL NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                state TEXT NOT NULL DEFAULT 'armed' CHECK (state IN ('armed', 'triggered', 'paused')),
+                last_price REAL,
+                last_price_date TEXT,
+                last_triggered_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """,
+        "monitoring_stock_events": """
+            CREATE TABLE monitoring_stock_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                monitor_id INTEGER NOT NULL REFERENCES monitoring_stock_monitors(id),
+                market TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                observed_price REAL NOT NULL,
+                threshold_price REAL NOT NULL,
+                observed_date TEXT NOT NULL,
+                triggered_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'recorded' CHECK (status IN ('recorded', 'notified'))
+            )
+        """,
+    }
+    tables = tuple(markers)
+    existing = {
+        row[0]: row[1]
+        for row in conn.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name IN (?, ?, ?, ?)",
+            tables,
+        ).fetchall()
+    }
+    if all(markers[table] in (existing.get(table) or "") for table in tables):
+        return
+
+    columns = {
+        "monitoring_strategy_monitors": "id, name, strategy_class, filepath, params, market, frequency, symbols, is_active, next_run_date, last_run_at, last_run_status, last_error, created_at, updated_at",
+        "monitoring_strategy_runs": "id, monitor_id, scheduled_date, started_at, finished_at, status, task_id, result, error",
+        "monitoring_stock_monitors": "id, market, symbol, name, threshold_price, is_active, state, last_price, last_price_date, last_triggered_at, created_at, updated_at",
+        "monitoring_stock_events": "id, monitor_id, market, symbol, observed_price, threshold_price, observed_date, triggered_at, status",
+    }
+    foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.execute("BEGIN")
+        for table in tables:
+            conn.execute(f"ALTER TABLE {table} RENAME TO {table}__legacy")
+        for table in tables:
+            conn.execute(definitions[table])
+        for table in tables:
+            column_list = columns[table]
+            conn.execute(
+                f"INSERT INTO {table} ({column_list}) SELECT {column_list} FROM {table}__legacy"
+            )
+        for table in tables:
+            conn.execute(f"DROP TABLE {table}__legacy")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.execute(f"PRAGMA foreign_keys = {'ON' if foreign_keys else 'OFF'}")

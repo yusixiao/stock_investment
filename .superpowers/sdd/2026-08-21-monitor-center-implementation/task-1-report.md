@@ -48,3 +48,22 @@
 
 - 未运行后端全量测试。
 - 工作区原有 `frontend/package-lock.json` 修改未触碰、未纳入本次提交。
+
+## Scoped Re-review 修复（旧数据库 CHECK 约束迁移）
+
+- 根因：`CREATE TABLE IF NOT EXISTS` 不会修改已存在的无约束 monitoring 表，repository 之外的 SQL 仍可写入非法枚举值。
+- 新增幂等 `_ensure_monitoring_constraints`：检测四张 `monitoring_*` 表的 CHECK 约束；旧表缺失约束时，在事务中临时改名、创建带约束同名表、显式复制全部列和主键、删除临时旧表，并恢复外键设置。
+- 迁移不删除业务行；正常既有策略监控、策略运行、股票监控和事件行均保留。迁移失败回滚，不静默丢弃数据。
+- 新增回归测试，模拟四张无 CHECK 的旧表，验证初始化后四类非法 SQL 均被 SQLite 拒绝，且既有主键行保留；同时覆盖无 `row_factory` 的 SQLite 连接。
+
+### 修复验证
+
+- TDD 红灯：旧表迁移测试首次运行 `6 passed, 1 failed`，确认旧表初始化后非法值仍可写入。
+- `rtk pytest backend/tests/test_monitoring_repository.py -q`：7 passed
+- `rtk pytest backend/tests/test_monitoring_repository.py backend/tests/test_portfolio_account_service.py backend/tests/test_portfolio_migration.py -q`：39 passed
+- `rtk git diff --check`：通过
+
+### Scoped Re-review Concerns
+
+- 未运行后端全量测试。
+- 工作区原有 `frontend/package-lock.json` 修改未触碰、未纳入本次提交。
