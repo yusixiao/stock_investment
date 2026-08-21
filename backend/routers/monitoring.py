@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 import re
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -11,7 +12,11 @@ from services.monitoring.repository import FREQUENCIES, MonitoringRepository
 from services.monitoring.strategy_monitor import (
     execute_strategy_current_date,
     get_monitoring_connection,
+    initial_run_date,
 )
+from config import DEPLOYED_STRATEGY_DIR
+from services.backtest.strategy_loader import load_strategy_from_file
+from services.market_data.duckdb_store import get_store as get_monitoring_store
 
 
 router = APIRouter(prefix="/api/v1/monitoring", tags=["monitoring"])
@@ -127,6 +132,7 @@ class StrategyMonitorCreate(BaseModel):
 
 
 class StrategyMonitorPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None, min_length=1)
     strategy_class: str | None = Field(default=None, min_length=1)
     filepath: str | None = Field(default=None, min_length=1)
@@ -164,6 +170,7 @@ class StockMonitorCreate(BaseModel):
 
 
 class StockMonitorPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     market: Market | None = None
     symbol: str | None = Field(default=None, min_length=1)
     threshold_price: float | None = Field(default=None, gt=0)
@@ -232,6 +239,28 @@ def _commit(conn) -> None:
     conn.commit()
 
 
+def _validate_strategy_definition(filepath: str, strategy_class: str, params: dict[str, Any]) -> None:
+    root = DEPLOYED_STRATEGY_DIR.resolve()
+    path = Path(filepath).expanduser().resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("strategy filepath must be inside the deployed strategy directory") from exc
+    if path.suffix != ".py" or not path.is_file():
+        raise ValueError("strategy filepath is not a published file")
+    try:
+        classes = load_strategy_from_file(path)
+    except Exception as exc:
+        raise ValueError(f"published strategy cannot be loaded: {exc}") from exc
+    strategy_cls = next((cls for cls in classes if cls.__name__ == strategy_class), None)
+    if strategy_cls is None:
+        raise ValueError(f"strategy class not found: {strategy_class}")
+    try:
+        strategy_cls(param_overrides=params)
+    except Exception as exc:
+        raise ValueError(f"strategy config invalid: {exc}") from exc
+
+
 def _not_found(message: str) -> HTTPException:
     return HTTPException(status_code=404, detail=message)
 
@@ -258,7 +287,13 @@ def list_strategy_monitors(include_inactive: bool = False, limit: int = Query(50
 def create_strategy_monitor(payload: StrategyMonitorCreate):
     conn, repo = _repo()
     try:
-        result = repo.create_strategy_monitor(**payload.model_dump())
+        values = payload.model_dump()
+        _validate_strategy_definition(values["filepath"], values["strategy_class"], values["params"])
+        if values["next_run_date"] is None:
+            values["next_run_date"] = initial_run_date(
+                values["frequency"], values["market"], get_monitoring_store()
+            )
+        result = repo.create_strategy_monitor(**values)
         _commit(conn)
         return _dump(result)
     except ValueError as exc:
@@ -276,6 +311,11 @@ def update_strategy_monitor(monitor_id: int, payload: StrategyMonitorPatch):
         if current is None:
             raise _not_found("strategy monitor not found")
         _validate_symbols(changes.get("market", current.market), changes.get("symbols", current.symbols))
+        _validate_strategy_definition(
+            changes.get("filepath", current.filepath),
+            changes.get("strategy_class", current.strategy_class),
+            changes.get("params", current.params),
+        )
         result = repo.update_strategy_monitor(monitor_id, **changes)
         _commit(conn)
         return _dump(result)

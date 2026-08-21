@@ -1,4 +1,5 @@
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
@@ -111,10 +112,59 @@ def test_failed_run_keeps_previous_success_result(store, monkeypatch):
     assert runs[0].status == "failed"
     assert "current-date data unavailable" in runs[0].error
     assert runs[1].result == {"task_id": "task-1", "value": 3}
-    assert repo.get_strategy_monitor(monitor.id).next_run_date == "2026-08-24"
+    assert repo.get_strategy_monitor(monitor.id).next_run_date == "2026-08-25"
 
 
-def test_default_execution_seam_records_unexecuted_instead_of_fake_success(store):
+def test_failed_run_is_processed_only_once(store, monkeypatch):
+    conn = make_connection()
+    repo = MonitoringRepository(conn)
+    monitor = repo.create_strategy_monitor(
+        "strategy", "Strategy", "strategy.py", {}, "A", "daily", next_run_date="2026-08-21"
+    )
+    monkeypatch.setattr(
+        "services.monitoring.strategy_monitor.execute_strategy_current_date",
+        lambda monitor, as_of_date, store: (_ for _ in ()).throw(RuntimeError("down")),
+    )
+
+    assert run_due_strategy_monitors("2026-08-21", connection=conn, store=store) == 1
+    assert run_due_strategy_monitors("2026-08-21", connection=conn, store=store) == 0
+    assert len(repo.list_strategy_runs(monitor.id)) == 1
+
+
+def test_current_date_execution_uses_loaded_snapshot(monkeypatch):
+    class FakeStrategy:
+        def __init__(self, param_overrides=None):
+            self.frequency = "daily"
+
+    engine = SimpleNamespace(run_scan=lambda: {"events": {"600000": [("2026-08-21", {})]}, "all_symbols_count": 1})
+    monkeypatch.setattr(strategy_monitor, "load_strategy_from_file", lambda path: [FakeStrategy])
+    monkeypatch.setattr(strategy_monitor, "create_snapshot", lambda *args, **kwargs: "snapshot")
+    monkeypatch.setattr(strategy_monitor, "BacktestEngine", lambda **kwargs: engine)
+    monkeypatch.setattr(
+        strategy_monitor.data_cache,
+        "get_market",
+        lambda market: SimpleNamespace(stock_data={"600000": object()}),
+    )
+    monitor = SimpleNamespace(
+        filepath="/trusted/deployed.py",
+        strategy_class="FakeStrategy",
+        params={},
+        market="A",
+        symbols=["600000"],
+    )
+
+    outcome = strategy_monitor.execute_strategy_current_date(monitor, "2026-08-21", object())
+
+    assert outcome["status"] == "success"
+    assert outcome["as_of_date"] == "2026-08-21"
+    assert outcome["hits"] == ["600000"]
+
+
+def test_initial_run_date_is_next_available_frequency_date(store):
+    assert strategy_monitor.initial_run_date("weekly", "A", store, today="2026-08-21") == "2026-08-24"
+
+
+def test_default_execution_failure_is_recorded_as_failed(store):
     conn = make_connection()
     repo = MonitoringRepository(conn)
     monitor = repo.create_strategy_monitor(

@@ -66,6 +66,7 @@ def evaluate_stock_price_monitors(
                 close = _close_for_symbol(market, monitor.symbol, closes)
                 if close is None:
                     continue
+                repo.update_stock_price(monitor.id, close, valuation_date)
                 if close >= monitor.threshold_price:
                     if monitor.state == "triggered":
                         repo.rearm_price_monitor(monitor.id)

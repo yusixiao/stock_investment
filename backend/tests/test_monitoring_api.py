@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from services.db_schema import init_portfolio_v1_tables
+from config import DEPLOYED_STRATEGY_DIR
 
 
 @pytest.fixture
@@ -23,9 +24,9 @@ def client():
 def strategy_payload(**overrides):
     payload = {
         "name": "价值策略",
-        "strategy_class": "ValueStrategy",
-        "filepath": "strategies/value.py",
-        "params": {"pe": 15},
+        "strategy_class": "LynchSlowGrowersStrategy",
+        "filepath": str(DEPLOYED_STRATEGY_DIR / "lynch_slow_growers_strategy.py"),
+        "params": {},
         "market": "A",
         "frequency": "weekly",
         "symbols": ["600000"],
@@ -40,7 +41,7 @@ def test_strategy_monitor_crud_paginates_and_soft_deletes(client):
     first = http.post("/api/v1/monitoring/strategy-monitors", json=strategy_payload()).json()
     second = http.post(
         "/api/v1/monitoring/strategy-monitors",
-        json=strategy_payload(name="成长策略", strategy_class="GrowthStrategy"),
+        json=strategy_payload(name="成长策略"),
     ).json()
 
     listed = http.get("/api/v1/monitoring/strategy-monitors", params={"limit": 1, "offset": 1})
@@ -138,6 +139,63 @@ def test_monitoring_validation_and_missing_entities_map_to_http_errors(client):
     assert http.post(
         "/api/v1/monitoring/strategy-monitors/999/run", json={"as_of_date": "2026-08-21"}
     ).status_code == 404
+
+
+def test_strategy_filepath_must_be_published_and_loadable(client, tmp_path):
+    http, conn = client
+    outside = tmp_path / "evil.py"
+    outside.write_text("raise RuntimeError('executed')")
+    rejected = http.post(
+        "/api/v1/monitoring/strategy-monitors",
+        json=strategy_payload(filepath=str(outside)),
+    )
+    assert rejected.status_code in {409, 422}
+    assert conn.execute("SELECT COUNT(*) FROM monitoring_strategy_monitors").fetchone()[0] == 0
+
+
+def test_invalid_strategy_update_is_rejected_without_partial_write(client, tmp_path):
+    http, conn = client
+    monitor = http.post("/api/v1/monitoring/strategy-monitors", json=strategy_payload()).json()
+    outside = tmp_path / "evil.py"
+    outside.write_text("raise RuntimeError('executed')")
+
+    response = http.patch(
+        f"/api/v1/monitoring/strategy-monitors/{monitor['id']}",
+        json={"filepath": str(outside), "name": "should not persist"},
+    )
+
+    assert response.status_code in {409, 422}
+    stored = conn.execute(
+        "SELECT filepath, name FROM monitoring_strategy_monitors WHERE id = ?", (monitor["id"],)
+    ).fetchone()
+    assert tuple(stored) == (monitor["filepath"], monitor["name"])
+
+
+def test_strategy_monitor_defaults_next_run_date_from_trading_calendar(client):
+    http, _ = client
+    with patch("routers.monitoring.get_monitoring_store") as get_store:
+        get_store.return_value.get_trading_dates.return_value = [
+            "2026-08-21", "2026-08-24", "2026-08-25"
+        ]
+        response = http.post(
+            "/api/v1/monitoring/strategy-monitors",
+            json=strategy_payload(next_run_date=None),
+        )
+    assert response.status_code == 201
+    assert response.json()["next_run_date"] == "2026-08-24"
+
+
+def test_stock_monitor_patch_forbids_unknown_fields(client):
+    http, _ = client
+    monitor = http.post(
+        "/api/v1/monitoring/stock-monitors",
+        json={"market": "HK", "symbol": "00005", "threshold_price": 100},
+    ).json()
+    response = http.patch(
+        f"/api/v1/monitoring/stock-monitors/{monitor['id']}",
+        json={"unknown": "field"},
+    )
+    assert response.status_code == 422
     assert http.get("/api/v1/monitoring/stock-monitors", params={"limit": 0}).status_code == 422
 
 

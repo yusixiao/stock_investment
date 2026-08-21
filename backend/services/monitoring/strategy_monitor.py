@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from services.backtest.strategy_loader import load_strategy_from_file
+from services.backtest import data_cache
+from services.backtest.data_snapshot import create_snapshot
+from services.backtest.engine import BacktestEngine
 from services.monitoring.models import StrategyMonitor
 from services.monitoring.repository import FREQUENCIES, MonitoringRepository
 
@@ -81,13 +84,24 @@ def next_run_date(frequency: str, market: str, after_date: str, store: Any) -> s
     return None
 
 
-def execute_strategy_current_date(monitor: StrategyMonitor, as_of_date: str, store: Any) -> dict[str, Any]:
-    """Validate/load a strategy, but never pretend the historical engine is current-date safe.
+def initial_run_date(
+    frequency: str, market: str, store: Any, today: str | None = None
+) -> str | None:
+    """Choose the first calendar date on which a new monitor can run."""
+    if frequency not in FREQUENCIES:
+        raise ValueError(f"invalid frequency: {frequency}")
+    anchor = today or date.today().isoformat()
+    dates = _dates(store, market)
+    comparison = (lambda value: value >= anchor) if frequency == "daily" else (lambda value: value > anchor)
+    candidates = [value for value in dates if comparison(value) and _is_due_from_dates(frequency, value, dates)]
+    if candidates:
+        return candidates[0]
+    due_dates = [value for value in dates if _is_due_from_dates(frequency, value, dates)]
+    return due_dates[-1] if due_dates else None
 
-    A future live execution implementation can replace this service seam. Until
-    it can establish a real current-date data snapshot, returning ``unexecuted``
-    is safer than feeding a fabricated historical window to BacktestEngine.
-    """
+
+def execute_strategy_current_date(monitor: StrategyMonitor, as_of_date: str, store: Any) -> dict[str, Any]:
+    """Run only the latest loaded bar, never a fabricated historical window."""
     try:
         classes = load_strategy_from_file(Path(monitor.filepath))
     except Exception as exc:
@@ -100,13 +114,30 @@ def execute_strategy_current_date(monitor: StrategyMonitor, as_of_date: str, sto
             "as_of_date": as_of_date,
         }
     try:
-        strategy_cls(param_overrides=monitor.params)
+        strategy = strategy_cls(param_overrides=monitor.params)
     except Exception as exc:
         return {"status": "unexecuted", "reason": f"strategy config invalid: {exc}", "as_of_date": as_of_date}
+    if store is None:
+        from services.market_data.duckdb_store import get_store
+
+        store = get_store()
+    from services.backtest import data_cache
+
+    bundle = data_cache.get_market(monitor.market)
+    if bundle is None:
+        return {"status": "unexecuted", "reason": "market data is not loaded", "as_of_date": as_of_date}
+    try:
+        snapshot = create_snapshot(bundle, monitor.market, monitor.symbols, as_of_date, as_of_date)
+        result = BacktestEngine(
+            strategy=strategy, snapshot=snapshot, enable_decision_log=False
+        ).run_scan()
+    except Exception as exc:
+        return {"status": "unexecuted", "reason": f"current-date execution unavailable: {exc}", "as_of_date": as_of_date}
     return {
-        "status": "unexecuted",
-        "reason": "current-date strategy execution is not safely available",
+        "status": "success",
         "as_of_date": as_of_date,
+        "hits": sorted(result["events"]),
+        "total_scanned": result["all_symbols_count"],
     }
 
 
@@ -182,16 +213,16 @@ def run_due_strategy_monitors(
                 outcome = execute_strategy_current_date(monitor, as_of_date, store)
                 if outcome.get("status") == "unexecuted":
                     repo.finish_strategy_run(run.id, "failed", result=outcome, error=outcome["reason"])
-                    continue
-                task_id = outcome.get("task_id")
-                if owns_claim_transaction:
-                    connection.execute("BEGIN IMMEDIATE")
-                if task_id is not None:
-                    connection.execute(
-                        "UPDATE monitoring_strategy_runs SET task_id = ? WHERE id = ? AND status = 'running'",
-                        (str(task_id), run.id),
-                    )
-                repo.finish_strategy_run(run.id, "success", result=outcome)
+                else:
+                    task_id = outcome.get("task_id")
+                    if owns_claim_transaction:
+                        connection.execute("BEGIN IMMEDIATE")
+                    if task_id is not None:
+                        connection.execute(
+                            "UPDATE monitoring_strategy_runs SET task_id = ? WHERE id = ? AND status = 'running'",
+                            (str(task_id), run.id),
+                        )
+                    repo.finish_strategy_run(run.id, "success", result=outcome)
                 following = next_run_date(monitor.frequency, monitor.market, as_of_date, store)
                 repo.update_strategy_monitor(monitor.id, next_run_date=following)
                 if owns_claim_transaction:
@@ -200,6 +231,10 @@ def run_due_strategy_monitors(
                 if owns_claim_transaction and connection.in_transaction:
                     connection.rollback()
                 repo.finish_strategy_run(run.id, "failed", error=str(exc))
+                following = next_run_date(monitor.frequency, monitor.market, as_of_date, store)
+                repo.update_strategy_monitor(monitor.id, next_run_date=following)
+                if owns_claim_transaction and connection.in_transaction:
+                    connection.commit()
     finally:
         if owned_connection:
             connection.close()

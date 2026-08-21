@@ -243,6 +243,22 @@ class MonitoringRepository:
                 self.conn.rollback()
             raise
 
+    def update_stock_price(self, monitor_id: int, observed_price: float, observed_date: str) -> None:
+        started = not self.conn.in_transaction
+        try:
+            if started:
+                self.conn.execute("BEGIN IMMEDIATE")
+            self.conn.execute(
+                "UPDATE monitoring_stock_monitors SET last_price = ?, last_price_date = ?, updated_at = ? WHERE id = ? AND is_active = 1",
+                (observed_price, observed_date, _now(), monitor_id),
+            )
+            if started:
+                self.conn.commit()
+        except Exception:
+            if started:
+                self.conn.rollback()
+            raise
+
     def list_stock_events(self, monitor_id: int) -> list[dict[str, Any]]:
-        rows = self.conn.execute("SELECT * FROM monitoring_stock_events WHERE monitor_id = ? ORDER BY observed_date, id", (monitor_id,)).fetchall()
+        rows = self.conn.execute("SELECT * FROM monitoring_stock_events WHERE monitor_id = ? ORDER BY observed_date DESC, id DESC", (monitor_id,)).fetchall()
         return [dict(row) for row in rows]

@@ -75,6 +75,18 @@ def test_initial_armed_monitor_at_threshold_does_not_trigger():
     assert repo.list_stock_events(monitor.id) == []
 
 
+def test_successful_close_always_refreshes_last_price():
+    connection = make_connection()
+    repo = MonitoringRepository(connection)
+    monitor = repo.create_stock_monitor("A", "600004", 10.0)
+    store = FakeStore(dates={"A": "2026-08-20"}, closes={"A": {"600004.SH": 12.0}})
+
+    assert evaluate_stock_price_monitors("2026-08-21", connection=connection, store=store) == 0
+    refreshed = repo.get_stock_monitor(monitor.id)
+    assert refreshed.last_price == 12.0
+    assert refreshed.last_price_date == "2026-08-20"
+
+
 def test_rearm_persists_with_passed_connection(tmp_path):
     db_path = tmp_path / "monitoring.db"
     seed = sqlite3.connect(db_path)
