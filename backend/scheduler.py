@@ -106,6 +106,10 @@ def _evaluate_buy_opportunities_after_refresh(record, markets):
 
 def _on_market_refresh_complete(record):
     if getattr(record, "status", None) == "completed":
+        import logging
+        from datetime import date
+
+        logger = logging.getLogger(__name__)
         markets = {
             market for market, stages in record.market_states.items()
             if stages.get("update", {}).get("status") == "success"
@@ -115,6 +119,37 @@ def _on_market_refresh_complete(record):
         }
         if markets:
             _evaluate_buy_opportunities_after_refresh(record, markets)
+            as_of_date = date.today().isoformat()
+            for market in sorted(markets):
+                try:
+                    from services.monitoring.strategy_monitor import run_due_strategy_monitors
+
+                    count = run_due_strategy_monitors(as_of_date, markets={market})
+                    logger.info(
+                        "strategy monitor scheduling completed: market=%s date=%s count=%s",
+                        market, as_of_date, count,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "strategy monitor scheduling failed for market=%s date=%s: %s",
+                        market, as_of_date, exc,
+                    )
+
+                try:
+                    from services.monitoring.stock_price_monitor import (
+                        evaluate_stock_price_monitors,
+                    )
+
+                    count = evaluate_stock_price_monitors(as_of_date, markets={market})
+                    logger.info(
+                        "stock price monitor evaluation completed: market=%s date=%s count=%s",
+                        market, as_of_date, count,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "stock price monitor evaluation failed for market=%s date=%s: %s",
+                        market, as_of_date, exc,
+                    )
 
 
 def _refresh_circulating_shares(_markets):

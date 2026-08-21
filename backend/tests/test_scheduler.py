@@ -126,3 +126,93 @@ def test_evaluator_import_failure_isolated_to_market_iteration(monkeypatch, capl
     )
 
     assert caplog.text.count("buy opportunity evaluation failed for market=") == 3
+
+
+def test_completed_refresh_runs_both_monitor_callbacks_for_ready_markets(monkeypatch):
+    strategy = MagicMock(return_value=2)
+    stock = MagicMock(return_value=3)
+    monkeypatch.setattr(
+        "services.monitoring.strategy_monitor.run_due_strategy_monitors", strategy
+    )
+    monkeypatch.setattr(
+        "services.monitoring.stock_price_monitor.evaluate_stock_price_monitors", stock
+    )
+    monkeypatch.setattr(scheduler, "_evaluate_buy_opportunities_after_refresh", MagicMock())
+
+    record = MagicMock(status="completed", market_states={
+        "A": {"update": {"status": "success"}, "view": {"status": "success"}, "cache": {"status": "success"}},
+        "HK": {"update": {"status": "success"}, "view": {"status": "success"}, "cache": {"status": "success"}, "result": {"status": "ready"}},
+        "US": {"update": {"status": "failed"}, "view": {"status": "success"}, "cache": {"status": "success"}},
+    })
+
+    scheduler._on_market_refresh_complete(record)
+
+    assert {frozenset(call.kwargs["markets"]) for call in strategy.call_args_list} == {
+        frozenset({market}) for market in ("A", "HK")
+    }
+    assert {frozenset(call.kwargs["markets"]) for call in stock.call_args_list} == {
+        frozenset({market}) for market in ("A", "HK")
+    }
+    assert all(call.args[0] for call in strategy.call_args_list)
+    assert all(call.args[0] for call in stock.call_args_list)
+
+
+def test_strategy_monitor_failure_does_not_prevent_stock_monitor_evaluation(monkeypatch, caplog):
+    strategy = MagicMock(side_effect=RuntimeError("strategy failed"))
+    stock = MagicMock(return_value=1)
+    monkeypatch.setattr(
+        "services.monitoring.strategy_monitor.run_due_strategy_monitors", strategy
+    )
+    monkeypatch.setattr(
+        "services.monitoring.stock_price_monitor.evaluate_stock_price_monitors", stock
+    )
+    monkeypatch.setattr(scheduler, "_evaluate_buy_opportunities_after_refresh", MagicMock())
+
+    record = MagicMock(status="completed", market_states={
+        "A": {"update": {"status": "success"}, "view": {"status": "success"}, "cache": {"status": "success"}},
+    })
+
+    scheduler._on_market_refresh_complete(record)
+
+    strategy.assert_called_once()
+    stock.assert_called_once()
+    assert "strategy monitor scheduling failed for market=A" in caplog.text
+
+
+def test_monitor_failure_isolated_to_market(monkeypatch, caplog):
+    strategy_calls = []
+    stock_calls = []
+
+    def run_strategy(as_of_date, *, markets):
+        strategy_calls.append(markets)
+        if markets == {"A"}:
+            raise RuntimeError("A strategy failed")
+
+    def evaluate_stock(as_of_date, *, markets):
+        stock_calls.append(markets)
+        if markets == {"HK"}:
+            raise RuntimeError("HK stock failed")
+
+    monkeypatch.setattr(
+        "services.monitoring.strategy_monitor.run_due_strategy_monitors", run_strategy
+    )
+    monkeypatch.setattr(
+        "services.monitoring.stock_price_monitor.evaluate_stock_price_monitors", evaluate_stock
+    )
+    monkeypatch.setattr(scheduler, "_evaluate_buy_opportunities_after_refresh", MagicMock())
+
+    record = MagicMock(status="completed", market_states={
+        market: {"update": {"status": "success"}, "view": {"status": "success"}, "cache": {"status": "success"}}
+        for market in ("A", "HK", "US")
+    })
+
+    scheduler._on_market_refresh_complete(record)
+
+    assert {frozenset(markets) for markets in strategy_calls} == {
+        frozenset({"A"}), frozenset({"HK"}), frozenset({"US"})
+    }
+    assert {frozenset(markets) for markets in stock_calls} == {
+        frozenset({"A"}), frozenset({"HK"}), frozenset({"US"})
+    }
+    assert "strategy monitor scheduling failed for market=A" in caplog.text
+    assert "stock price monitor evaluation failed for market=HK" in caplog.text
