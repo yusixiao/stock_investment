@@ -109,6 +109,25 @@ class MonitoringRepository:
         row = self.conn.execute("SELECT * FROM monitoring_strategy_runs WHERE id = ?", (cur.lastrowid,)).fetchone()
         return self._run(row)
 
+    def get_strategy_run(self, monitor_id: int, scheduled_date: str) -> StrategyRun | None:
+        row = self.conn.execute(
+            "SELECT * FROM monitoring_strategy_runs WHERE monitor_id = ? AND scheduled_date = ?",
+            (monitor_id, scheduled_date),
+        ).fetchone()
+        return self._run(row) if row else None
+
+    def reclaim_strategy_run(self, run_id: int) -> StrategyRun:
+        self.conn.execute(
+            "UPDATE monitoring_strategy_runs "
+            "SET started_at = ?, finished_at = NULL, status = 'running', task_id = NULL, result = NULL, error = NULL "
+            "WHERE id = ? AND status = 'running'",
+            (_now(), run_id),
+        )
+        row = self.conn.execute("SELECT * FROM monitoring_strategy_runs WHERE id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise ValueError("strategy run not found")
+        return self._run(row)
+
     def finish_strategy_run(self, run_id: int, status: str, result: dict | None = None,
                             error: str | None = None, finished_at: str | None = None) -> StrategyRun:
         _validate(status, RUN_FINISH_STATUSES, "strategy run finish status")

@@ -45,6 +45,20 @@ def store():
     })
 
 
+@pytest.fixture(autouse=True)
+def inline_strategy_dispatch(monkeypatch):
+    def submit(monitor, run, as_of_date, **kwargs):
+        strategy_monitor._execute_claimed_strategy_run(
+            monitor,
+            run.id,
+            as_of_date,
+            connection=kwargs["connection"],
+            store=kwargs["store"],
+        )
+
+    monkeypatch.setattr(strategy_monitor, "_submit_strategy_run", submit)
+
+
 def test_schedule_due_dates_for_all_supported_frequencies(store):
     assert is_due("daily", "A", "2026-08-21", store)
     assert is_due("weekly", "A", "2026-08-24", store)
@@ -197,6 +211,90 @@ def test_current_date_execution_uses_loaded_snapshot(monkeypatch):
 
 def test_initial_run_date_is_next_available_frequency_date(store):
     assert strategy_monitor.initial_run_date("weekly", "A", store, today="2026-08-21") == "2026-08-24"
+
+
+@pytest.mark.parametrize("frequency", ["weekly", "monthly", "quarterly"])
+def test_initial_run_date_does_not_fall_back_to_historical_due_date(frequency):
+    calendar = TradingDateStore({"A": ["2026-01-02", "2026-01-05"]})
+
+    assert strategy_monitor.initial_run_date(frequency, "A", calendar, today="2026-01-06") is None
+
+
+def test_running_run_for_previous_date_does_not_block_current_date(store, monkeypatch):
+    conn = make_connection()
+    repo = MonitoringRepository(conn)
+    monitor = repo.create_strategy_monitor(
+        "strategy", "Strategy", "strategy.py", {}, "A", "daily", next_run_date="2026-08-24"
+    )
+    previous = repo.create_strategy_run(monitor.id, "2026-08-21")
+    submitted = []
+    monkeypatch.setattr(
+        strategy_monitor,
+        "_submit_strategy_run",
+        lambda monitor, run, as_of_date, **kwargs: submitted.append((monitor.id, run.id, as_of_date)),
+    )
+
+    assert run_due_strategy_monitors("2026-08-24", connection=conn, store=store) == 1
+    assert submitted == [(monitor.id, previous.id + 1, "2026-08-24")]
+    assert repo.list_strategy_runs(monitor.id)[0].status == "running"
+
+
+def test_stale_run_is_reclaimed_for_same_date_without_creating_duplicate(store, monkeypatch):
+    conn = make_connection()
+    repo = MonitoringRepository(conn)
+    monitor = repo.create_strategy_monitor(
+        "strategy", "Strategy", "strategy.py", {}, "A", "daily", next_run_date="2026-08-21"
+    )
+    stale = repo.create_strategy_run(monitor.id, "2026-08-21")
+    conn.execute(
+        "UPDATE monitoring_strategy_runs SET started_at = ? WHERE id = ?",
+        ("2020-01-01T00:00:00", stale.id),
+    )
+    conn.commit()
+    submitted = []
+    monkeypatch.setattr(
+        strategy_monitor,
+        "_submit_strategy_run",
+        lambda monitor, run, as_of_date, **kwargs: submitted.append((run.id, as_of_date)),
+    )
+
+    assert run_due_strategy_monitors("2026-08-21", connection=conn, store=store) == 1
+    assert submitted == [(stale.id, "2026-08-21")]
+    assert len(repo.list_strategy_runs(monitor.id)) == 1
+
+
+def test_dispatch_failure_finishes_run_and_advances_schedule(store, monkeypatch):
+    conn = make_connection()
+    repo = MonitoringRepository(conn)
+    monitor = repo.create_strategy_monitor(
+        "strategy", "Strategy", "strategy.py", {}, "A", "daily", next_run_date="2026-08-21"
+    )
+    monkeypatch.setattr(
+        strategy_monitor,
+        "_submit_strategy_run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("executor unavailable")),
+    )
+
+    assert run_due_strategy_monitors("2026-08-21", connection=conn, store=store) == 1
+    run = repo.list_strategy_runs(monitor.id)[0]
+    assert run.status == "failed"
+    assert run.error == "executor unavailable"
+    assert repo.get_strategy_monitor(monitor.id).next_run_date == "2026-08-24"
+
+
+def test_older_date_completion_does_not_overwrite_newer_schedule(store):
+    conn = make_connection()
+    repo = MonitoringRepository(conn)
+    monitor = repo.create_strategy_monitor(
+        "strategy", "Strategy", "strategy.py", {}, "A", "daily", next_run_date="2026-08-25"
+    )
+    older = repo.create_strategy_run(monitor.id, "2026-08-21")
+
+    strategy_monitor._finish_claimed_run(
+        conn, repo, monitor, older.id, "2026-08-21", outcome={"status": "success"}, store=store
+    )
+
+    assert repo.get_strategy_monitor(monitor.id).next_run_date == "2026-08-25"
 
 
 def test_default_execution_failure_is_recorded_as_failed(store):

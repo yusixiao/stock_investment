@@ -246,17 +246,15 @@ def test_monitoring_routes_publish_typed_response_contracts(client):
 def test_manual_strategy_run_persists_run_and_strategy_endpoint_has_no_stock_import(client):
     http, conn = client
     monitor = http.post("/api/v1/monitoring/strategy-monitors", json=strategy_payload()).json()
-    with patch(
-        "routers.monitoring.execute_strategy_current_date",
-        return_value={"status": "unexecuted", "reason": "test", "as_of_date": "2026-08-21"},
-    ):
+    with patch("routers.monitoring.submit_strategy_run") as submit:
         response = http.post(
             f"/api/v1/monitoring/strategy-monitors/{monitor['id']}/run",
             json={"as_of_date": "2026-08-21"},
         )
     assert response.status_code == 201
-    assert response.json()["status"] == "failed"
+    assert response.json()["status"] == "running"
     assert response.json()["monitor_id"] == monitor["id"]
+    submit.assert_called_once()
     assert conn.execute("SELECT COUNT(*) FROM monitoring_strategy_runs").fetchone()[0] == 1
     assert "stock" not in response.json()
     history = http.get(f"/api/v1/monitoring/strategy-monitors/{monitor['id']}/runs")
@@ -267,18 +265,18 @@ def test_manual_strategy_run_persists_run_and_strategy_endpoint_has_no_stock_imp
 def test_manual_strategy_run_marks_unexpected_execution_error_as_failed(client):
     http, conn = client
     monitor = http.post("/api/v1/monitoring/strategy-monitors", json=strategy_payload()).json()
-    with patch("routers.monitoring.execute_strategy_current_date", side_effect=RuntimeError("adapter down")):
+    with patch("routers.monitoring.submit_strategy_run", side_effect=RuntimeError("executor down")):
         response = http.post(
             f"/api/v1/monitoring/strategy-monitors/{monitor['id']}/run",
             json={"as_of_date": "2026-08-21"},
         )
 
     assert response.status_code == 500
-    assert response.json()["detail"] == "strategy execution failed: adapter down"
+    assert response.json()["detail"] == "strategy execution dispatch failed: executor down"
     run = conn.execute(
         "SELECT status, error FROM monitoring_strategy_runs WHERE monitor_id = ?", (monitor["id"],)
     ).fetchone()
-    assert tuple(run) == ("failed", "strategy execution failed: adapter down")
+    assert tuple(run) == ("failed", "strategy execution dispatch failed: executor down")
 
 
 def test_monitoring_writes_are_committed_for_a_new_connection(client):

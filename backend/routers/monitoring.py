@@ -10,9 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from services.monitoring.repository import FREQUENCIES, MonitoringRepository
 from services.monitoring.strategy_monitor import (
-    execute_strategy_current_date,
     get_monitoring_connection,
     initial_run_date,
+    submit_strategy_run,
 )
 from config import DEPLOYED_STRATEGY_DIR
 from services.backtest.strategy_loader import load_strategy_from_file
@@ -347,21 +347,19 @@ def run_strategy_monitor(monitor_id: int, payload: ManualRun):
             raise _not_found("strategy monitor not found")
         if not monitor.is_active:
             raise HTTPException(status_code=409, detail="strategy monitor is inactive")
+        if repo.get_strategy_run(monitor_id, payload.as_of_date) is not None:
+            raise HTTPException(status_code=409, detail="strategy run already exists for scheduled date")
         run = repo.create_strategy_run(monitor_id, payload.as_of_date)
         try:
             # This seam is deliberately a bounded, current-date snapshot scan.
             # Historical/full backtests must not be wired into this HTTP handler.
-            outcome = execute_strategy_current_date(monitor, payload.as_of_date, None)
+            _commit(conn)
+            submit_strategy_run(monitor, run, payload.as_of_date)
         except Exception as exc:  # noqa: BLE001
-            error = f"strategy execution failed: {exc}"
+            error = f"strategy execution dispatch failed: {exc}"
             repo.finish_strategy_run(run.id, "failed", error=error)
             _commit(conn)
             raise HTTPException(status_code=500, detail=error) from exc
-        if outcome.get("status") == "unexecuted":
-            run = repo.finish_strategy_run(run.id, "failed", result=outcome, error=outcome.get("reason"))
-        else:
-            run = repo.finish_strategy_run(run.id, "success", result=outcome)
-        _commit(conn)
         return _dump(run)
     except HTTPException:
         raise

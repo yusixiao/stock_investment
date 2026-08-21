@@ -15,6 +15,23 @@
 - 前端 Vitest：`416 passed, 13 skipped`
 - 前端 TypeScript：`npx tsc --noEmit`，退出码 0
 - 前端 ESLint：`npm run lint`，退出码 0
+
+## 最终复审裁决追加
+
+- `initial_run_date()` 无未来交易日时严格返回 `None`，不回退历史 due 日期；scheduler 在 `None` 状态按当前交易日重新评估。
+- 策略运行通过有界后台执行器（最多 4 个 worker）dispatch；scheduler/API 不同步执行扫描。dispatch 或 worker 失败均持久化为 `failed`，并推进本轮调度状态。
+- 幂等键为 `monitor_id + scheduled_date`，数据库增加唯一索引；不同 scheduled date 的 running run 不互相阻塞。
+- 同日 stale running run 原地 reclaim，保持同一 run ID；新日期不受旧日期 stale/run 状态阻塞。
+
+本轮定向验证：监控、scheduler、repository、API 测试 `53 passed`。
+
+并行完成顺序回归后最终验证：
+
+- 监控、scheduler、repository、API：`54 passed`
+- 全量后端：`1502 passed, 1 skipped`
+- 前端 Vitest：`416 passed, 13 skipped`
+- 前端 TypeScript：`npx tsc --noEmit`，退出码 0
+- 前端 ESLint：`npm run lint`，退出码 0
 - `git diff --check`：通过
 
 ## 已知 Concern

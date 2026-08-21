@@ -376,6 +376,8 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             WHERE archived_at IS NULL;
         CREATE INDEX IF NOT EXISTS idx_monitoring_strategy_runs_monitor
             ON monitoring_strategy_runs(monitor_id, scheduled_date DESC, id DESC);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_monitoring_strategy_run_date
+            ON monitoring_strategy_runs(monitor_id, scheduled_date);
         CREATE INDEX IF NOT EXISTS idx_monitoring_stock_events_monitor
             ON monitoring_stock_events(monitor_id, observed_date DESC, id DESC);
         """

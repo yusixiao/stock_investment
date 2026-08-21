@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime, timedelta
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,11 @@ from services.backtest.data_snapshot import create_snapshot
 from services.backtest.engine import BacktestEngine
 from services.monitoring.models import StrategyMonitor
 from services.monitoring.repository import FREQUENCIES, MonitoringRepository
+
+
+logger = logging.getLogger(__name__)
+STRATEGY_RUN_STALE_AFTER = timedelta(hours=1)
+_STRATEGY_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="strategy-monitor")
 
 
 def get_monitoring_connection() -> sqlite3.Connection:
@@ -96,8 +103,7 @@ def initial_run_date(
     candidates = [value for value in dates if comparison(value) and _is_due_from_dates(frequency, value, dates)]
     if candidates:
         return candidates[0]
-    due_dates = [value for value in dates if _is_due_from_dates(frequency, value, dates)]
-    return due_dates[-1] if due_dates else None
+    return None
 
 
 def execute_strategy_current_date(monitor: StrategyMonitor, as_of_date: str, store: Any) -> dict[str, Any]:
@@ -141,6 +147,96 @@ def execute_strategy_current_date(monitor: StrategyMonitor, as_of_date: str, sto
     }
 
 
+def _is_stale_run(started_at: str) -> bool:
+    try:
+        started = datetime.fromisoformat(started_at)
+    except ValueError:
+        return True
+    if started.tzinfo is not None:
+        started = started.replace(tzinfo=None)
+    return datetime.now() - started > STRATEGY_RUN_STALE_AFTER
+
+
+def _finish_claimed_run(
+    connection: sqlite3.Connection,
+    repo: MonitoringRepository,
+    monitor: StrategyMonitor,
+    run_id: int,
+    as_of_date: str,
+    outcome: dict[str, Any] | None = None,
+    error: str | None = None,
+    store: Any = None,
+    commit: bool = True,
+) -> None:
+    if error is not None:
+        repo.finish_strategy_run(run_id, "failed", error=error)
+    elif outcome is not None and outcome.get("status") == "unexecuted":
+        repo.finish_strategy_run(run_id, "failed", result=outcome, error=outcome["reason"])
+    else:
+        task_id = outcome.get("task_id") if outcome else None
+        if task_id is not None:
+            connection.execute(
+                "UPDATE monitoring_strategy_runs SET task_id = ? WHERE id = ? AND status = 'running'",
+                (str(task_id), run_id),
+            )
+        repo.finish_strategy_run(run_id, "success", result=outcome or {})
+    following = next_run_date(monitor.frequency, monitor.market, as_of_date, store)
+    current = repo.get_strategy_monitor(monitor.id)
+    if current is not None and current.next_run_date in {None, as_of_date}:
+        repo.update_strategy_monitor(monitor.id, next_run_date=following)
+    if commit:
+        connection.commit()
+
+
+def _execute_claimed_strategy_run(
+    monitor: StrategyMonitor,
+    run_id: int,
+    as_of_date: str,
+    connection: sqlite3.Connection | None = None,
+    store: Any = None,
+) -> None:
+    owned_connection = connection is None
+    if connection is None:
+        connection = get_monitoring_connection()
+    if store is None:
+        from services.market_data.duckdb_store import DuckDBStore
+
+        store = DuckDBStore()
+    repo = MonitoringRepository(connection)
+    try:
+        try:
+            outcome = execute_strategy_current_date(monitor, as_of_date, store)
+            _finish_claimed_run(
+                connection, repo, monitor, run_id, as_of_date,
+                outcome=outcome, store=store, commit=owned_connection,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("strategy monitor run failed: monitor=%s date=%s", monitor.id, as_of_date)
+            _finish_claimed_run(
+                connection, repo, monitor, run_id, as_of_date,
+                error=str(exc), store=store, commit=owned_connection,
+            )
+    finally:
+        if owned_connection:
+            connection.close()
+
+
+def _submit_strategy_run(
+    monitor: StrategyMonitor,
+    run: Any,
+    as_of_date: str,
+    *,
+    connection: sqlite3.Connection | None = None,
+    store: Any = None,
+) -> None:
+    """Dispatch work to a bounded executor; scheduler/API only claim and return."""
+    _STRATEGY_EXECUTOR.submit(_execute_claimed_strategy_run, monitor, run.id, as_of_date)
+
+
+def submit_strategy_run(monitor: StrategyMonitor, run: Any, as_of_date: str) -> None:
+    _submit_strategy_run(monitor, run, as_of_date)
+
+
 def _claim(repo: MonitoringRepository, monitor: StrategyMonitor, scheduled_date: str):
     conn = repo.conn
     owns_transaction = not conn.in_transaction
@@ -155,22 +251,29 @@ def _claim(repo: MonitoringRepository, monitor: StrategyMonitor, scheduled_date:
             "WHERE id = ? AND is_active = 1 AND (next_run_date = ? OR next_run_date IS NULL)",
             (monitor.id, scheduled_date),
         ).fetchone()
-        running = conn.execute(
-            "SELECT 1 FROM monitoring_strategy_runs WHERE monitor_id = ? AND status = 'running' LIMIT 1",
-            (monitor.id,),
-        ).fetchone()
-        processed = conn.execute(
-            "SELECT 1 FROM monitoring_strategy_runs WHERE monitor_id = ? AND scheduled_date = ? LIMIT 1",
+        existing = conn.execute(
+            "SELECT * FROM monitoring_strategy_runs WHERE monitor_id = ? AND scheduled_date = ?",
             (monitor.id, scheduled_date),
         ).fetchone()
-        if current is None or running is not None or processed is not None:
+        if current is None:
             if owns_transaction:
                 conn.rollback()
             else:
                 conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
                 conn.execute(f"RELEASE SAVEPOINT {savepoint}")
             return None
-        run = repo.create_strategy_run(monitor.id, scheduled_date)
+        if existing is not None:
+            if existing["status"] == "running" and _is_stale_run(existing["started_at"]):
+                run = repo.reclaim_strategy_run(existing["id"])
+            else:
+                if owns_transaction:
+                    conn.rollback()
+                else:
+                    conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                    conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                return None
+        else:
+            run = repo.create_strategy_run(monitor.id, scheduled_date)
         if owns_transaction:
             conn.commit()
         else:
@@ -217,31 +320,13 @@ def run_due_strategy_monitors(
             run, owns_claim_transaction = claimed_run
             claimed += 1
             try:
-                outcome = execute_strategy_current_date(monitor, as_of_date, store)
-                if outcome.get("status") == "unexecuted":
-                    repo.finish_strategy_run(run.id, "failed", result=outcome, error=outcome["reason"])
-                else:
-                    task_id = outcome.get("task_id")
-                    if owns_claim_transaction:
-                        connection.execute("BEGIN IMMEDIATE")
-                    if task_id is not None:
-                        connection.execute(
-                            "UPDATE monitoring_strategy_runs SET task_id = ? WHERE id = ? AND status = 'running'",
-                            (str(task_id), run.id),
-                        )
-                    repo.finish_strategy_run(run.id, "success", result=outcome)
-                following = next_run_date(monitor.frequency, monitor.market, as_of_date, store)
-                repo.update_strategy_monitor(monitor.id, next_run_date=following)
-                if owns_claim_transaction:
-                    connection.commit()
-            except Exception as exc:
-                if owns_claim_transaction and connection.in_transaction:
-                    connection.rollback()
-                repo.finish_strategy_run(run.id, "failed", error=str(exc))
-                following = next_run_date(monitor.frequency, monitor.market, as_of_date, store)
-                repo.update_strategy_monitor(monitor.id, next_run_date=following)
-                if owns_claim_transaction and connection.in_transaction:
-                    connection.commit()
+                _submit_strategy_run(monitor, run, as_of_date, connection=connection, store=store)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("strategy monitor dispatch failed: monitor=%s date=%s", monitor.id, as_of_date)
+                _finish_claimed_run(
+                    connection, repo, monitor, run.id, as_of_date,
+                    error=str(exc), store=store, commit=owns_claim_transaction,
+                )
     finally:
         if owned_connection:
             connection.close()
