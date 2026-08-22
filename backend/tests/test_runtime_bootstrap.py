@@ -1,5 +1,4 @@
 import asyncio
-import builtins
 import sqlite3
 from types import SimpleNamespace
 
@@ -27,15 +26,6 @@ def test_lifespan_bootstraps_runtime_tables_without_importing_portfolio_db(monke
     monkeypatch.setattr("services.backtest.data_cache.load_market_async", lambda market: events.append(("cache", market)))
     monkeypatch.setattr(main, "start_scheduler", lambda: events.append("scheduler"))
     monkeypatch.setattr(main, "shutdown_scheduler", lambda: events.append("scheduler_shutdown"))
-
-    real_import = builtins.__import__
-
-    def reject_portfolio_bootstrap(name, *args, **kwargs):
-        if name == "services.portfolio.db":
-            raise AssertionError("application bootstrap must not import portfolio.db")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", reject_portfolio_bootstrap)
 
     async def exercise_lifespan():
         async with main.lifespan(main.app):

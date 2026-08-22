@@ -5,7 +5,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import app
-from services.db_schema import init_portfolio_v1_tables
 from config import DEPLOYED_STRATEGY_DIR
 
 
@@ -13,7 +12,6 @@ from config import DEPLOYED_STRATEGY_DIR
 def client():
     conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    init_portfolio_v1_tables(conn)
     with patch("routers.monitoring.get_monitoring_connection", return_value=conn), patch(
         "routers.monitoring._close_connection"
     ):
