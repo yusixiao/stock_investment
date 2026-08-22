@@ -89,6 +89,45 @@ describe('BacktestHistory execution ordering', () => {
     expect(rowIds()).toEqual(['active-task', 'inactive-task']);
   });
 
+  it('labels monitor-triggered tasks in history', async () => {
+    listTasks.mockResolvedValue([
+      {
+        ...tasks[0],
+        task_id: 'monitor-task',
+        task_type: 'monitor',
+        pipeline_info: {
+          strategy_name: '监控策略',
+          trigger_source: 'monitor',
+          symbols: ['000001.SZ'],
+        },
+      },
+    ]);
+
+    render(<BacktestHistory />);
+
+    const row = await screen.findByText('monitor-task');
+    expect(within(row.closest('tr') as HTMLElement).getByText('监控触发')).toBeInTheDocument();
+  });
+
+  it('uses the monitor strategy name when the task name field is absent', async () => {
+    listTasks.mockResolvedValue([
+      {
+        ...tasks[0],
+        task_id: 'monitor-name-fallback',
+        task_type: 'monitor',
+        pipeline_info: {
+          strategy_class: 'LynchSlowGrowersStrategy',
+          monitor_name: '彼得林奇缓慢增长策略',
+          trigger_source: 'monitor',
+        },
+      },
+    ]);
+
+    render(<BacktestHistory />);
+
+    expect(await screen.findByText('彼得林奇缓慢增长策略')).toBeInTheDocument();
+  });
+
   it('binds a successful history task to an existing account', async () => {
     getAccounts.mockResolvedValue({ accounts: [{ id: 7 }] });
     getSnapshot.mockResolvedValue({ accounts: [{ positions: [] }] });

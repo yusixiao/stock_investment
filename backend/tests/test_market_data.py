@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from services.backtest.market_data import MarketData
+from services.backtest.market_data import MarketData, _build_static_table
 
 
 def _make_daily(dates: list[str], base: float = 10.0) -> pd.DataFrame:
@@ -154,6 +154,31 @@ def test_get_history_idx_out_of_range_returns_empty(stock_data):
 def test_get_history_unknown_symbol_returns_empty(stock_data):
     md = MarketData(stock_data=stock_data, frequency="daily")
     assert md.get_history("999999", n=5, period="daily", idx=0) == []
+
+
+def test_extract_indicators_accepts_nullable_numeric_columns():
+    frame = pd.DataFrame({"ma20": pd.Series([pd.NA, 12.5], dtype="Float64")})
+
+    indicators = MarketData._extract_indicators(frame)
+
+    assert indicators["ma20"].dtype == np.dtype(float)
+    assert np.isnan(indicators["ma20"][0])
+    assert indicators["ma20"][1] == pytest.approx(12.5)
+
+
+def test_static_table_accepts_nullable_numeric_columns():
+    frame = pd.DataFrame(
+        {
+            "date": ["2026-01-01", "2026-02-01"],
+            "pe": pd.Series([pd.NA, 12.5], dtype="Float64"),
+        }
+    )
+
+    table = _build_static_table(frame, date_col="date")
+
+    assert table.num_cols["pe"].dtype == np.dtype(float)
+    assert np.isnan(table.num_cols["pe"][0])
+    assert table.num_cols["pe"][1] == pytest.approx(12.5)
 
 
 def test_get_history_monthly(stock_data):

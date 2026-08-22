@@ -54,7 +54,8 @@ class TaskManager:
         # merge-strategies 单策略模型: 显式传 strategy_class/params 时
         # 覆盖/构造 pipeline_info = {strategy_class, strategy_name?, params, frequency?, symbols?, market?}
         if strategy_class is not None:
-            pipeline_info = {"strategy_class": strategy_class, "params": params or {}}
+            pipeline_info = dict(pipeline_info or {})
+            pipeline_info.update({"strategy_class": strategy_class, "params": params or {}})
             if strategy_name:
                 pipeline_info["strategy_name"] = strategy_name
             if frequency is not None:
@@ -93,6 +94,36 @@ class TaskManager:
         with self._lock:
             self._progress[task_id] = None
         return task_id
+
+    def update_task_metadata(
+        self,
+        task_id: str,
+        *,
+        strategy_name: str | None = None,
+        params: dict | None = None,
+        frequency: str | None = None,
+    ) -> None:
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT pipeline_info FROM backtest_tasks WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            if row is None:
+                return
+            info = json.loads(row["pipeline_info"] or "{}")
+            if strategy_name is not None:
+                info["strategy_name"] = strategy_name
+            if params is not None:
+                info["params"] = params
+            if frequency is not None:
+                info["frequency"] = frequency
+            conn.execute(
+                "UPDATE backtest_tasks SET pipeline_info = ? WHERE task_id = ?",
+                (json.dumps(info, ensure_ascii=False), task_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def update_progress(self, task_id: str, current: int, total: int, phase: str = ""):
         with self._lock:

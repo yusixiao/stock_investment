@@ -37,12 +37,17 @@ function extractStrategyName(item: TaskListItem): string {
   const pi = item.pipeline_info;
   if (!pi) return '旧版任务';
   if (pi.strategy_name) return pi.strategy_name as string;
+  if (pi.monitor_name) return pi.monitor_name as string;
   if (pi.strategy_class) return pi.strategy_class;
   if (pi.strategies && pi.strategies.length > 0) {
     const first = pi.strategies[0];
     return (first.name as string) || (first.class_name as string) || '未知策略';
   }
   return '旧版任务';
+}
+
+function isMonitorTask(item: TaskListItem): boolean {
+  return item.task_type === 'monitor' || item.pipeline_info?.trigger_source === 'monitor';
 }
 
 // 市场展示:单只股票 → 显示代码;否则 A/HK/HK_CONNECT/US → 中文标签
@@ -385,6 +390,11 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                         {task.execution_status === 'active' && (
                           <Badge variant="success" className="ml-2">
                             执行中
+                          </Badge>
+                        )}
+                        {isMonitorTask(task) && (
+                          <Badge variant="default" className="ml-2">
+                            监控触发
                           </Badge>
                         )}
                       </td>

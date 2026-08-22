@@ -78,7 +78,7 @@ def _build_static_table(
             continue
         series = df[col]
         if pd.api.types.is_numeric_dtype(series):
-            arr = series.to_numpy(dtype=float, copy=True)
+            arr = series.to_numpy(dtype=float, na_value=np.nan, copy=True)
             if ffill:
                 mask = np.isnan(arr)
                 if mask.any():
@@ -313,7 +313,7 @@ class MarketData:
         out: dict[str, np.ndarray] = {}
         for col in candidate_cols:
             if col in df.columns:
-                out[col] = df[col].to_numpy(dtype=float)
+                out[col] = df[col].to_numpy(dtype=float, na_value=np.nan)
         return out
 
     def _build_period_cache(self, period: str) -> None:

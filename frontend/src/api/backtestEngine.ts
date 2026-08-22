@@ -92,6 +92,9 @@ export interface TaskPipelineInfo {
   market?: string;
   // 旧任务可能存 {strategies: [...]} 嵌套结构
   strategies?: Array<Record<string, unknown>>;
+  monitor_id?: number;
+  monitor_name?: string;
+  trigger_source?: string;
 }
 
 export interface TaskListItem {

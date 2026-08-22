@@ -92,6 +92,26 @@ class TestExecutionMetadata:
             inactive_old,
         ]
 
+    def test_monitor_task_preserves_trigger_metadata(self, isolated_task_manager):
+        task_id = isolated_task_manager.create_task(
+            task_type="monitor",
+            pipeline_info={
+                "strategy_class": "ExampleStrategy",
+                "trigger_source": "monitor",
+                "monitor_id": 7,
+            },
+            start_date="2026-02-20",
+            end_date="2026-08-21",
+        )
+
+        task = isolated_task_manager.list_tasks()[0]
+
+        assert task["task_id"] == task_id
+        assert task["task_type"] == "monitor"
+        assert task["pipeline_info"]["trigger_source"] == "monitor"
+        assert task["start_date"] == "2026-02-20"
+        assert task["end_date"] == "2026-08-21"
+
     @pytest.mark.parametrize("descending", [True, False])
     def test_list_tasks_keeps_created_order_inside_each_execution_group(self, isolated_task_manager, descending):
         older = isolated_task_manager.create_task(strategy_class="Older", params={})
