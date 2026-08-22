@@ -166,6 +166,24 @@ def test_extract_indicators_accepts_nullable_numeric_columns():
     assert indicators["ma20"][1] == pytest.approx(12.5)
 
 
+def test_extract_indicators_accepts_object_columns_with_pd_na():
+    frame = pd.DataFrame({"ma20": pd.Series([pd.NA, 12.5], dtype="object")})
+
+    indicators = MarketData._extract_indicators(frame)
+
+    assert np.isnan(indicators["ma20"][0])
+    assert indicators["ma20"][1] == pytest.approx(12.5)
+
+
+def test_market_data_initialization_accepts_missing_close_values(stock_data):
+    frame = stock_data["000001"].copy()
+    frame["close"] = pd.Series([pd.NA, *frame["close"].iloc[1:]], dtype="object")
+
+    market_data = MarketData(stock_data={"000001": frame}, frequency="daily")
+
+    assert market_data.get_price("000001", period="daily", idx=1) is not None
+
+
 def test_static_table_accepts_nullable_numeric_columns():
     frame = pd.DataFrame(
         {

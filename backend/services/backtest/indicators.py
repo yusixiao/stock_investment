@@ -66,7 +66,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     # 不破坏原始 df:浅拷贝列指针即可
     out = df.copy(deep=False)
-    closes = out["close"].to_numpy(dtype=float)
+    closes = out["close"].to_numpy(dtype=float, na_value=np.nan)
 
     # ---- MA(简单移动平均,close)----
     close_series = pd.Series(closes)

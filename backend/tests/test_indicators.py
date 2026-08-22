@@ -70,6 +70,16 @@ def test_volume_ma_only_when_volume_present():
     assert df_with_vol["vol_ma5"].iloc[-1] == pytest.approx(100.0)
 
 
+def test_compute_indicators_accepts_missing_close_values():
+    frame = _make_df([1.0, 2.0, 3.0])
+    frame["close"] = pd.Series([pd.NA, 2.0, 3.0], dtype="object")
+
+    result = compute_indicators(frame)
+
+    assert "ma5" in result.columns
+    assert result["ema12"].dtype == np.dtype(float)
+
+
 def test_ret_1_and_vol_20d():
     closes = [10.0, 11.0, 12.1]
     df = compute_indicators(_make_df(closes))
