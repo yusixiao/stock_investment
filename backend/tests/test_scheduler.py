@@ -107,6 +107,17 @@ def test_scheduler_has_no_duplicate_refresh_path():
     assert "data_cache.load_market_async" not in source
 
 
+def test_scheduler_does_not_register_daily_snapshot(monkeypatch):
+    add_job = MagicMock()
+    monkeypatch.setattr(scheduler.scheduler, "add_job", add_job)
+    monkeypatch.setattr(scheduler.scheduler, "start", MagicMock())
+
+    scheduler.start_scheduler()
+
+    registered_ids = {call.kwargs["id"] for call in add_job.call_args_list}
+    assert "daily_snapshot" not in registered_ids
+
+
 def test_completed_refresh_excludes_non_ready_result_from_subscribers(monkeypatch):
     strategy = MagicMock()
     stock = MagicMock()

@@ -20,3 +20,17 @@
 
 - 未运行完整 `backend/tests/` 全量套件；本次仅运行 brief 指定和受影响模块的必要回归集。
 - `services.portfolio.db.init_db` 仍由 portfolio 路由及 portfolio 测试使用，按要求未删除 portfolio 路由或产品代码。
+
+## Reviewer 修复
+
+- 在 `backend/tests/test_scheduler.py` 新增 `test_scheduler_does_not_register_daily_snapshot`，拦截 `scheduler.add_job` 并断言注册 id 集合不包含 `daily_snapshot`。
+- 未修改 schema migration，也未涉及路由或前端文件。
+
+## 修复验证
+
+- `python -m pytest backend/tests/test_scheduler.py -q`：通过，9 passed。
+- `python -m pytest backend/tests/test_scheduler_market_retry.py -q`：通过，9 passed。
+
+## 修复 Concerns
+
+- 仅运行 scheduler focused tests，未重复完整 backend 全量套件。
