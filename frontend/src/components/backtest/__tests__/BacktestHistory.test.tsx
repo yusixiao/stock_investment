@@ -1,8 +1,13 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BacktestHistory from '../BacktestHistory';
+import BacktestDetail from '../BacktestDetail';
 
-const { listTasks, deleteTask } = vi.hoisted(() => ({ listTasks: vi.fn(), deleteTask: vi.fn() }));
+const { listTasks, getResult, deleteTask } = vi.hoisted(() => ({
+  listTasks: vi.fn(),
+  getResult: vi.fn(),
+  deleteTask: vi.fn(),
+}));
 const { getAccounts, getSnapshot, bindStrategy, createAccount } = vi.hoisted(() => ({
   getAccounts: vi.fn(),
   getSnapshot: vi.fn(),
@@ -14,7 +19,7 @@ vi.mock('../../../api/backtestEngine', async () => {
   const actual = await vi.importActual<typeof import('../../../api/backtestEngine')>(
     '../../../api/backtestEngine',
   );
-  return { ...actual, backtestEngineApi: { ...actual.backtestEngineApi, listTasks, deleteTask } };
+  return { ...actual, backtestEngineApi: { ...actual.backtestEngineApi, listTasks, getResult, deleteTask } };
 });
 
 vi.mock('../../../api/portfolio', () => ({
@@ -210,5 +215,82 @@ describe('BacktestHistory execution ordering', () => {
     fireEvent.click(bindButtonFor('inactive-task'));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('task is already active');
+  });
+
+  it('opens monitor history with its metadata and radar hits', async () => {
+    const monitorTask = {
+      task_id: 'monitor-task',
+      status: 'success',
+      task_type: 'monitor',
+      pipeline_info: {
+        strategy_name: '监控策略',
+        params: { frequency: 'weekly' },
+        symbols: ['000001.SZ'],
+        market: 'A',
+      },
+      start_date: '2026-02-20',
+      end_date: '2026-08-21',
+      summary: {},
+      created_at: '2026-08-21T10:00:00',
+      deleted: false,
+      execution_status: 'inactive' as const,
+      execution_account_id: null,
+    };
+    const radarPayload = {
+      hits: [{
+        symbol: '000001.SZ',
+        name: '平安银行',
+        current_price: 12.3,
+        signal_close: 12,
+        change_pct_since_signal: 0.025,
+        last_match_date: '2026-08-20',
+        match_count: 2,
+        factors: { score: 1 },
+      }],
+      total_scanned: 1,
+      lookback_used: 'custom' as const,
+      date_range: { start: '2026-02-20', end: '2026-08-21' },
+      data_latest_date: '2026-08-21',
+      strategy_class: 'MonitorStrategy',
+      strategy_name: '监控策略',
+      frequency: 'weekly',
+    };
+    listTasks.mockResolvedValue([monitorTask]);
+    getResult.mockResolvedValue({
+      task_id: 'monitor-task',
+      status: 'success',
+      task_type: 'monitor',
+      pipeline_info: monitorTask.pipeline_info,
+      start_date: monitorTask.start_date,
+      end_date: monitorTask.end_date,
+      result: radarPayload,
+      created_at: monitorTask.created_at,
+      execution_status: 'inactive',
+      execution_account_id: null,
+    });
+    const selected = vi.fn();
+
+    const { unmount } = render(<BacktestHistory onSelect={selected} />);
+    fireEvent.click(await screen.findByText('监控策略'));
+
+    const task = await waitFor(() => {
+      const selectedTask = selected.mock.calls[0]?.[0];
+      expect(selectedTask).toBeDefined();
+      return selectedTask;
+    });
+    expect(task).toMatchObject({
+      taskType: 'monitor',
+      strategyName: '监控策略',
+      startDate: '2026-02-20',
+      endDate: '2026-08-21',
+      radarPayload,
+    });
+
+    unmount();
+    render(<BacktestDetail task={task} onBack={vi.fn()} />);
+    expect(screen.getByText('监控策略')).toBeInTheDocument();
+    expect(screen.getByText('监控触发')).toBeInTheDocument();
+    expect(screen.getByText('2026-02-20 ~ 2026-08-21')).toBeInTheDocument();
+    expect(screen.getAllByText('000001.SZ')).toHaveLength(2);
   });
 });

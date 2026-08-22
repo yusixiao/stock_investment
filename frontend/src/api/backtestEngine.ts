@@ -33,10 +33,10 @@ export interface TaskResult {
   task_id: string;
   status: string;
   task_type: string;
-  pipeline_info: unknown;
+  pipeline_info: TaskPipelineInfo | null;
   start_date: string;
   end_date: string;
-  result: BacktestResultPayload | null;
+  result: BacktestResultPayload | ScanRadarPayload | null;
   error?: string;
   created_at: string;
   execution_status: 'inactive' | 'active';
@@ -184,7 +184,8 @@ export interface ScanRadarHit {
 export interface ScanRadarPayload {
   hits: ScanRadarHit[];
   total_scanned: number;
-  lookback_used: RadarLookback;
+  // Monitor tasks use a calendar-day window (for example, "182d").
+  lookback_used: string;
   date_range: { start: string; end: string };
   data_latest_date: string;
   strategy_class: string;

@@ -91,6 +91,7 @@ const BacktestDetail: React.FC<Props> = ({ task, onBack }) => {
               >
                 {task.status === 'completed' ? '完成' : task.status === 'failed' ? '失败' : '运行中'}
               </Badge>
+              {task.taskType === 'monitor' && <Badge variant="default">监控触发</Badge>}
               {task.period && task.period !== '--' && (
                 <span className="text-xs text-muted-text">{task.period}</span>
               )}
@@ -150,7 +151,7 @@ const BacktestDetail: React.FC<Props> = ({ task, onBack }) => {
 
       {/* Right: scan-radar 任务展示 hits 表,其余复用 BacktestResult */}
       <main className="min-h-0 flex-1 overflow-y-auto">
-        {task.taskType === 'scan-radar' ? (
+        {task.taskType === 'scan-radar' || task.taskType === 'monitor' ? (
           <RadarResultView
             payload={task.radarPayload}
             strategyName={task.strategyName}

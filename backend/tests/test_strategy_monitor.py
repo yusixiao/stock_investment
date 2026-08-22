@@ -1,6 +1,5 @@
 import sqlite3
-from types import SimpleNamespace
-
+from datetime import date, timedelta
 import pytest
 
 from services.db_schema import init_portfolio_v1_tables
@@ -104,6 +103,116 @@ def test_successful_run_persists_result_task_and_advances_schedule(store, monkey
     assert repo.get_strategy_monitor(monitor.id).next_run_date == "2026-08-24"
 
 
+def test_monitor_submits_six_month_scan_and_keeps_only_compatibility_summary(store, monkeypatch):
+    conn = make_connection()
+    repo = MonitoringRepository(conn)
+    monitor = repo.create_strategy_monitor(
+        "strategy", "Strategy", "strategy.py", {}, "A", "daily", ["600000"],
+        next_run_date="2026-08-21",
+    )
+    submitted = []
+
+    def submit(spec):
+        submitted.append(spec)
+        return "monitor-task"
+
+    monkeypatch.setattr(strategy_monitor.execution, "submit_backtest", submit)
+
+    assert run_due_strategy_monitors("2026-08-21", connection=conn, store=store) == 1
+    run = repo.list_strategy_runs(monitor.id)[0]
+    assert run.status == "success"
+    assert run.task_id == "monitor-task"
+    assert run.result == {"status": "submitted", "task_id": "monitor-task"}
+    assert submitted[0].mode is strategy_monitor.execution.ExecutionMode.SCAN
+    assert submitted[0].start_date == (date.fromisoformat("2026-08-21") - timedelta(days=182)).isoformat()
+    assert submitted[0].end_date == "2026-08-21"
+    assert submitted[0].task_type == "monitor"
+    assert submitted[0].trigger_source == "monitor"
+
+
+def test_monitor_submission_failure_still_has_task_link_and_failed_task(isolated_task_manager, store, monkeypatch):
+    conn = sqlite3.connect(isolated_task_manager._db_path)
+    conn.row_factory = sqlite3.Row
+    init_portfolio_v1_tables(conn)
+    repo = MonitoringRepository(conn)
+    monitor = repo.create_strategy_monitor(
+        "strategy", "MissingStrategy", "missing.py", {}, "A", "daily", next_run_date="2026-08-21"
+    )
+    conn.commit()
+
+    monkeypatch.setattr(strategy_monitor.execution, "task_manager", isolated_task_manager)
+
+    class InlineThread:
+        def __init__(self, *, target, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(strategy_monitor.execution.threading, "Thread", InlineThread)
+
+    assert run_due_strategy_monitors("2026-08-21", connection=conn, store=store) == 1
+    run = repo.list_strategy_runs(monitor.id)[0]
+    assert run.task_id
+    assert conn.execute("SELECT task_type, status, error FROM backtest_tasks WHERE task_id = ?", (run.task_id,)).fetchone()[0:2] == ("monitor", "failed")
+    assert conn.execute("SELECT pipeline_info FROM backtest_tasks WHERE task_id = ?", (run.task_id,)).fetchone()[0]
+    conn.close()
+
+
+def test_monitor_real_task_lifecycle_links_success_and_failure(isolated_task_manager, store, monkeypatch):
+    conn = sqlite3.connect(isolated_task_manager._db_path)
+    conn.row_factory = sqlite3.Row
+    init_portfolio_v1_tables(conn)
+    repo = MonitoringRepository(conn)
+    success_monitor = repo.create_strategy_monitor(
+        "success", "GoodStrategy", "good.py", {}, "A", "daily", next_run_date="2026-08-21"
+    )
+    failure_monitor = repo.create_strategy_monitor(
+        "failure", "BadStrategy", "bad.py", {}, "A", "daily", next_run_date="2026-08-21"
+    )
+    conn.commit()
+    monkeypatch.setattr(strategy_monitor.execution, "task_manager", isolated_task_manager)
+
+    class InlineThread:
+        def __init__(self, *, target, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(strategy_monitor.execution.threading, "Thread", InlineThread)
+    monkeypatch.setattr(
+        strategy_monitor.execution,
+        "execute_backtest",
+        lambda spec, **kwargs: {"events": {}} if spec.strategy_class == "GoodStrategy" else (_ for _ in ()).throw(FileNotFoundError("bad strategy")),
+    )
+
+    success_run = repo.create_strategy_run(success_monitor.id, "2026-08-21")
+    failure_run = repo.create_strategy_run(failure_monitor.id, "2026-08-21")
+    conn.commit()
+    strategy_monitor._execute_claimed_strategy_run(
+        success_monitor, success_run.id, "2026-08-21", connection=conn, store=store
+    )
+    conn.commit()
+    strategy_monitor._execute_claimed_strategy_run(
+        failure_monitor, failure_run.id, "2026-08-21", connection=conn, store=store
+    )
+    runs = {run.monitor_id: run for run in repo.list_strategy_runs(success_monitor.id) + repo.list_strategy_runs(failure_monitor.id)}
+    assert runs[success_monitor.id].status == "success"
+    assert runs[failure_monitor.id].status == "success"
+    assert runs[success_monitor.id].task_id
+    assert runs[failure_monitor.id].task_id
+    tasks = conn.execute(
+        "SELECT task_id, task_type, trigger_source, status, error FROM backtest_tasks ORDER BY created_at"
+    ).fetchall()
+    assert [(row[1], row[2], row[3]) for row in tasks] == [
+        ("monitor", "monitor", "success"),
+        ("monitor", "monitor", "failed"),
+    ]
+    assert {runs[success_monitor.id].task_id, runs[failure_monitor.id].task_id} == {row[0] for row in tasks}
+    conn.close()
+
+
 def test_failed_run_keeps_previous_success_result(store, monkeypatch):
     conn = make_connection()
     repo = MonitoringRepository(conn)
@@ -178,35 +287,6 @@ def test_latest_data_date_without_next_run_is_retried_once_then_waits_for_new_da
     dates.append(next_date)
     assert run_due_strategy_monitors(next_date, connection=conn, store=calendar) == 1
     assert calls == [latest_date, next_date]
-
-
-def test_current_date_execution_uses_loaded_snapshot(monkeypatch):
-    class FakeStrategy:
-        def __init__(self, param_overrides=None):
-            self.frequency = "daily"
-
-    engine = SimpleNamespace(run_scan=lambda: {"events": {"600000": [("2026-08-21", {})]}, "all_symbols_count": 1})
-    monkeypatch.setattr(strategy_monitor, "load_strategy_from_file", lambda path: [FakeStrategy])
-    monkeypatch.setattr(strategy_monitor, "create_snapshot", lambda *args, **kwargs: "snapshot")
-    monkeypatch.setattr(strategy_monitor, "BacktestEngine", lambda **kwargs: engine)
-    monkeypatch.setattr(
-        strategy_monitor.data_cache,
-        "get_market",
-        lambda market: SimpleNamespace(stock_data={"600000": object()}),
-    )
-    monitor = SimpleNamespace(
-        filepath="/trusted/deployed.py",
-        strategy_class="FakeStrategy",
-        params={},
-        market="A",
-        symbols=["600000"],
-    )
-
-    outcome = strategy_monitor.execute_strategy_current_date(monitor, "2026-08-21", object())
-
-    assert outcome["status"] == "success"
-    assert outcome["as_of_date"] == "2026-08-21"
-    assert outcome["hits"] == ["600000"]
 
 
 def test_initial_run_date_is_next_available_frequency_date(store):
@@ -321,20 +401,6 @@ def test_older_date_completion_does_not_overwrite_newer_schedule(store):
     )
 
     assert repo.get_strategy_monitor(monitor.id).next_run_date == "2026-08-25"
-
-
-def test_default_execution_failure_is_recorded_as_failed(store):
-    conn = make_connection()
-    repo = MonitoringRepository(conn)
-    monitor = repo.create_strategy_monitor(
-        "strategy", "MissingStrategy", "missing.py", {}, "A", "daily", next_run_date="2026-08-21"
-    )
-
-    assert run_due_strategy_monitors("2026-08-21", connection=conn, store=store) == 1
-    run = repo.list_strategy_runs(monitor.id)[0]
-    assert run.status == "failed"
-    assert run.result["status"] == "unexecuted"
-    assert run.error
 
 
 def test_existing_caller_transaction_is_not_committed(store, monkeypatch):

@@ -4,7 +4,6 @@
 Strategy class — 前端仍以 pipeline=[item] 形式提交,后端取首项实例化为 Strategy。
 """
 
-import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -12,15 +11,15 @@ from pathlib import Path
 from fastapi import APIRouter, Body, HTTPException
 
 from config import DEPLOYED_STRATEGY_DIR, LOG_DIR
-from services.api_utils import safe_json
 from services.backtest import data_cache
-from services.backtest.data_snapshot import create_snapshot
-from services.backtest.engine import BacktestEngine
+from services.backtest.execution import (
+    ExecutionMode,
+    ExecutionSpec,
+    submit_backtest,
+)
 from services.backtest.market_filter import apply_market_filter, resolve_data_market
 from services.backtest.strategy_loader import load_strategy_from_file, scan_strategies
 from services.backtest.task_manager import task_manager
-from services.market_data.stock_index import get_name as get_stock_name
-from services.backtest.strategy_base import Strategy
 
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
@@ -50,7 +49,7 @@ def api_run_backtest(body: dict = Body(...)):
     target_symbols = body.get("symbols")
     # market = 展示侧标识(可能含虚拟市场 HK_CONNECT);data_market = 物理数据市场
     market = (body.get("market") or "A").upper()
-    data_market = resolve_data_market(market)
+    resolve_data_market(market)
     # HK_CONNECT 时把 symbols 收敛到港股通成分股交集
     target_symbols = apply_market_filter(market, target_symbols)
 
@@ -81,16 +80,15 @@ def api_run_backtest(body: dict = Body(...)):
             status_code=400,
             detail=f"Strategy class {class_name} not found in {filepath}",
         )
-    strategy: Strategy = cls(param_overrides=overrides)
-
     # 扁平 pipeline_info: {strategy_class, params}(由 task_manager 内部构造)
     defaults = {k: v["default"] for k, v in getattr(cls, "params", {}).items()}
     merged_params = {**defaults, **overrides}
     # 持久化策略 intrinsic frequency / 中文 name,供前端结果头部 / 历史列表显示
     intrinsic_frequency = getattr(cls, "frequency", None)
     intrinsic_name = getattr(cls, "name", None) or class_name
-    task_id = task_manager.create_task(
-        task_type="backtest",
+    spec = ExecutionSpec(
+        mode=ExecutionMode.FULL,
+        filepath=filepath,
         strategy_class=class_name,
         strategy_name=intrinsic_name,
         params=merged_params,
@@ -99,58 +97,13 @@ def api_run_backtest(body: dict = Body(...)):
         market=market,
         start_date=start_date,
         end_date=end_date,
+        task_type="backtest",
+        log_dir=LOG_DIR / "backtest",
     )
-
-    def on_progress(current, total, phase=""):
-        task_manager.update_progress(task_id, current, total, phase)
-
-    def run_task():
-        try:
-            # 数据必须事先通过 /api/backtest/cache/load 显式加载,
-            # 这里只做内存切片,不走任何 IO。
-            bundle = data_cache.get_market(data_market)
-            if bundle is None:
-                raise RuntimeError(
-                    f"{data_market} 市场数据未加载,请先在「策略回测」页点击「加载数据」"
-                )
-            cache_status = data_cache.get_status(data_market)
-            snapshot = create_snapshot(
-                bundle,
-                data_market,
-                target_symbols,
-                start_date,
-                end_date,
-                generation=cache_status.get("generation"),
-                refresh_id=cache_status.get("refresh_id"),
-                market_version=cache_status.get("market_version"),
-                stale=cache_status.get("stale", False),
-            )
-            task_manager.update_progress(task_id, 0, 0, "切片数据中...")
-            sliced = snapshot.sliced
-            if not sliced.stock_data:
-                raise RuntimeError("切片后无可用 K 线数据,检查日期范围/股票代码")
-            task_manager.update_progress(
-                task_id,
-                len(sliced.stock_data),
-                len(sliced.stock_data),
-                f"数据就绪 ({len(sliced.stock_data)} 只)",
-            )
-            # 决策日志目录:每个 task 独立子目录,与 task_manager 内部默认路径一致
-            task_log_dir = LOG_DIR / "backtest" / task_id
-            engine = BacktestEngine(
-                strategy=strategy,
-                snapshot=snapshot,
-                on_progress=lambda cur, total: on_progress(cur, total, "回测中..."),
-                log_dir=task_log_dir,
-            )
-            result = engine.run()
-            result = safe_json(result)
-            task_manager.complete_task(task_id, result)
-        except Exception as e:
-            task_manager.fail_task(task_id, str(e))
-
-    t = threading.Thread(target=run_task, daemon=True)
-    t.start()
+    task_id = submit_backtest(
+        spec,
+        task_manager=task_manager,
+    )
     return {"task_id": task_id, "status": "running"}
 
 
@@ -228,50 +181,6 @@ def _wait_for_data(market: str, timeout: float = 600.0) -> None:
     raise RuntimeError("数据加载超时")
 
 
-def _aggregate_scan_hits(
-    events: dict[str, list[tuple[str, dict]]],
-    stock_data: dict,
-    market: str,
-) -> list[dict]:
-    """events {symbol: [(date, factors), ...]} → 每股一行的 hits 列表。"""
-    hits: list[dict] = []
-    for sym, evs in events.items():
-        if not evs:
-            continue
-        # 取最近一次命中作为信号点
-        last_date, last_factors = evs[-1]
-        df = stock_data.get(sym)
-        if df is None or df.empty:
-            continue
-        # 当前价 = qfq 最新 close
-        current_price = float(df["close"].iloc[-1])
-        # 信号日 close:精确匹配 last_date(若 missing,跳过)
-        match = df.loc[df["date"] == last_date]
-        if match.empty:
-            signal_close = None
-            change_pct = None
-        else:
-            signal_close = float(match["close"].iloc[0])
-            change_pct = (
-                (current_price - signal_close) / signal_close if signal_close else None
-            )
-        hits.append(
-            {
-                "symbol": sym,
-                "name": get_stock_name(sym, market),
-                "current_price": current_price,
-                "signal_close": signal_close,
-                "change_pct_since_signal": change_pct,
-                "last_match_date": last_date,
-                "match_count": len(evs),
-                "factors": last_factors,
-            }
-        )
-    # 按命中次数倒序、再按最近命中日倒序
-    hits.sort(key=lambda h: (h["match_count"], h["last_match_date"]), reverse=True)
-    return hits
-
-
 @router.post("/scan-radar")
 def api_scan_radar(body: dict = Body(...)):
     """策略雷达全市场扫描 — 选股回测,在 lookback 窗口内每根 bar 评估 screen()。
@@ -295,7 +204,8 @@ def api_scan_radar(body: dict = Body(...)):
             detail=f"lookback 非法: {lookback},可选 {list(_LOOKBACK_DAYS.keys())}",
         )
 
-    classes = load_strategy_from_file(Path(filepath_str))
+    filepath = Path(filepath_str)
+    classes = load_strategy_from_file(filepath)
     cls = next((c for c in classes if c.__name__ == class_name), None)
     if cls is None:
         raise HTTPException(
@@ -311,91 +221,30 @@ def api_scan_radar(body: dict = Body(...)):
             detail=f"策略频率为 {intrinsic_frequency},「最新交易日」仅适用于日频策略",
         )
 
-    strategy: Strategy = cls(param_overrides=overrides)
     intrinsic_name = getattr(cls, "name", None) or class_name
     defaults = {k: v["default"] for k, v in getattr(cls, "params", {}).items()}
     merged_params = {**defaults, **overrides}
+    bundle = data_cache.get_market(data_market)
+    start_date = end_date = None
+    if bundle is not None:
+        start_date, end_date = _resolve_scan_dates(bundle, lookback)
 
-    task_id = task_manager.create_task(
-        task_type="scan-radar",
+    spec = ExecutionSpec(
+        mode=ExecutionMode.SCAN,
+        filepath=filepath,
         strategy_class=class_name,
         strategy_name=intrinsic_name,
         params=merged_params,
         frequency=intrinsic_frequency,
+        symbols=apply_market_filter(market, None),
         market=market,
+        start_date=start_date,
+        end_date=end_date,
+        lookback_used=lookback,
+        task_type="scan-radar",
+        log_dir=LOG_DIR / "scan_radar",
     )
-
-    def on_progress(current, total, phase=""):
-        task_manager.update_progress(task_id, current, total, phase)
-
-    def run_task():
-        try:
-            on_progress(0, 0, "等待数据加载...")
-            bundle = data_cache.get_market(data_market)
-            if bundle is None:
-                raise RuntimeError(
-                    f"{data_market} 市场数据未加载,请先在「策略雷达」页点击「加载数据」"
-                )
-            start_date, end_date = _resolve_scan_dates(bundle, lookback)
-            on_progress(0, 0, f"切片数据 {start_date}~{end_date}...")
-            # HK_CONNECT:把扫描全集收敛到港股通成分股
-            scan_symbols = apply_market_filter(market, None)
-            cache_status = data_cache.get_status(data_market)
-            snapshot = create_snapshot(
-                bundle,
-                data_market,
-                scan_symbols,
-                start_date,
-                end_date,
-                generation=cache_status.get("generation"),
-                refresh_id=cache_status.get("refresh_id"),
-                market_version=cache_status.get("market_version"),
-                stale=cache_status.get("stale", False),
-            )
-            sliced = snapshot.sliced
-            if not sliced.stock_data:
-                raise RuntimeError("切片后无 K 线数据")
-
-            engine = BacktestEngine(
-                strategy=strategy,
-                snapshot=snapshot,
-                on_progress=lambda cur, total: on_progress(cur, total, "扫描中..."),
-                log_dir=LOG_DIR / "scan_radar" / task_id,
-            )
-            scan_result = engine.run_scan()
-            hits = _aggregate_scan_hits(
-                scan_result["events"], sliced.stock_data, market
-            )
-
-            # 数据最新日:bundle 内任一 df 的最大 date
-            data_latest_date = ""
-            for df in bundle.stock_data.values():
-                if df is not None and not df.empty:
-                    d = str(df["date"].iloc[-1])
-                    if d > data_latest_date:
-                        data_latest_date = d
-
-            result = {
-                "hits": hits,
-                "total_scanned": scan_result["all_symbols_count"],
-                "lookback_used": lookback,
-                "date_range": {"start": start_date, "end": end_date},
-                "data_latest_date": data_latest_date,
-                "strategy_class": class_name,
-                "strategy_name": intrinsic_name,
-                "frequency": intrinsic_frequency,
-                "data_context": snapshot.data_context(),
-                "data_provenance": {
-                    "refresh_id": snapshot.refresh_id,
-                    "generation": snapshot.generation,
-                    "market_version": snapshot.market_version,
-                },
-            }
-            task_manager.complete_task(task_id, safe_json(result))
-        except Exception as e:
-            task_manager.fail_task(task_id, str(e))
-
-    threading.Thread(target=run_task, daemon=True).start()
+    task_id = submit_backtest(spec, task_manager=task_manager)
     return {"task_id": task_id, "status": "running"}
 
 

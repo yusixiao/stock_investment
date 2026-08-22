@@ -4,6 +4,32 @@ import pytest
 
 
 class TestExecutionMetadata:
+    def test_old_schema_migrates_nullable_trigger_source(self, tmp_path):
+        db_path = tmp_path / "old-backtest.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            """
+            CREATE TABLE backtest_tasks (
+                task_id TEXT PRIMARY KEY, status TEXT NOT NULL,
+                task_type TEXT NOT NULL DEFAULT 'screener', pipeline_info TEXT,
+                start_date TEXT, end_date TEXT, summary TEXT, result TEXT,
+                error TEXT, created_at TEXT NOT NULL, source_task_id TEXT,
+                deleted INTEGER NOT NULL DEFAULT 0, is_deleted INTEGER NOT NULL DEFAULT 0,
+                log_dir TEXT, execution_account_id INTEGER,
+                execution_status TEXT NOT NULL DEFAULT 'inactive'
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        from services.backtest.task_manager import TaskManager
+
+        manager = TaskManager(db_path=str(db_path))
+        task_id = manager.create_task(strategy_class="OldStrategy", params={})
+
+        assert manager.get_result(task_id)["trigger_source"] is None
+
     def test_migration_adds_inactive_execution_columns(self, isolated_task_manager):
         conn = sqlite3.connect(isolated_task_manager._db_path)
         columns = {

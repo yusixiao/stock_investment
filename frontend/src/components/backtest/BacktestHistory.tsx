@@ -161,9 +161,11 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
     setOpeningId(item.task_id);
     try {
       const detail = await backtestEngineApi.getResult(item.task_id);
-      const isRadar = (detail.task_type || item.task_type) === 'scan-radar';
+      const isRadar = ['scan-radar', 'monitor'].includes(detail.task_type || item.task_type);
       const result = !isRadar && detail.result ? mapPayloadToResultData(detail.result) : null;
-      const radarPayload = isRadar ? (detail.result as unknown as import('../../api/backtestEngine').ScanRadarPayload) : null;
+      const radarPayload = isRadar
+        ? (detail.result as import('../../api/backtestEngine').ScanRadarPayload | null)
+        : null;
       // pipeline_info 兼容扁平 / 旧嵌套两种结构,提取 frequency 作 period 显示
       const pi = detail.pipeline_info as Record<string, unknown> | null | undefined;
       const params = (pi?.params as Record<string, unknown> | undefined) || {};

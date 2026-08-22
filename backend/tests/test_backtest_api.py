@@ -41,6 +41,95 @@ class TestBacktestRun:
         resp = client.post("/api/backtest/run", json={"pipeline": []})
         assert resp.status_code == 400
 
+    @patch("routers.backtest.submit_backtest", return_value="full-task")
+    @patch("routers.backtest.load_strategy_from_file")
+    def test_run_submits_full_execution_with_legacy_payload(
+        self, mock_loader, mock_submit
+    ):
+        from pathlib import Path
+        from services.backtest.strategy_base import Strategy
+
+        class _FullStrategy(Strategy):
+            name = "Full strategy"
+            frequency = "weekly"
+            params = {"threshold": {"default": 3}}
+
+        mock_loader.return_value = [_FullStrategy]
+        strategy_path = Path("/tmp/full_strategy.py")
+        resp = client.post(
+            "/api/backtest/run",
+            json={
+                "pipeline": [{
+                    "filepath": str(strategy_path),
+                    "class_name": "_FullStrategy",
+                }],
+                "param_overrides": {"_FullStrategy": {"threshold": 5}},
+                "start_date": "2024-01-01",
+                "end_date": "2024-02-01",
+                "symbols": ["TEST.SH"],
+                "market": "A",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"task_id": "full-task", "status": "running"}
+        spec = mock_submit.call_args.args[0]
+        assert spec.mode.value == "full"
+        assert spec.filepath == strategy_path
+        assert spec.strategy_class == "_FullStrategy"
+        assert spec.params == {"threshold": 5}
+        assert spec.symbols == ["TEST.SH"]
+        assert spec.start_date == "2024-01-01"
+        assert spec.end_date == "2024-02-01"
+        from config import LOG_DIR
+        assert spec.log_dir == LOG_DIR / "backtest"
+
+    @patch("routers.backtest.submit_backtest", return_value="scan-task")
+    @patch("routers.backtest.data_cache.get_market")
+    @patch("routers.backtest.load_strategy_from_file")
+    def test_scan_submits_scan_execution_with_resolved_dates(
+        self, mock_loader, mock_load, mock_submit
+    ):
+        import pandas as pd
+        from pathlib import Path
+        from services.backtest.strategy_base import Strategy
+
+        class _ScanStrategy(Strategy):
+            name = "Scan strategy"
+            frequency = "daily"
+            params = {"threshold": {"default": 3}}
+
+        dates = pd.date_range("2024-01-01", periods=3, freq="B").strftime(
+            "%Y-%m-%d"
+        ).tolist()
+        frame = pd.DataFrame({"date": dates})
+        mock_loader.return_value = [_ScanStrategy]
+        mock_load.return_value = _make_test_bundle({"TEST.SH": frame})
+
+        resp = client.post(
+            "/api/backtest/scan-radar",
+            json={
+                "strategy_class": "_ScanStrategy",
+                "filepath": "/tmp/scan_strategy.py",
+                "params": {"threshold": 5},
+                "lookback": "1m",
+                "market": "A",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"task_id": "scan-task", "status": "running"}
+        spec = mock_submit.call_args.args[0]
+        assert spec.mode.value == "scan"
+        assert spec.filepath == Path("/tmp/scan_strategy.py")
+        assert spec.strategy_class == "_ScanStrategy"
+        assert spec.params == {"threshold": 5}
+        assert spec.start_date == "2023-12-04"
+        assert spec.end_date == "2024-01-03"
+        assert spec.lookback_used == "1m"
+        from config import LOG_DIR
+        assert spec.log_dir == LOG_DIR / "scan_radar"
+
     @patch("services.backtest.data_cache.get_market")
     def test_run_returns_task_id(self, mock_load):
         import pandas as pd
@@ -85,8 +174,8 @@ class TestBacktestRun:
         assert resp.status_code == 200
         assert "task_id" in resp.json()
 
-    @patch("routers.backtest.BacktestEngine")
-    @patch("routers.backtest.create_snapshot", wraps=create_snapshot)
+    @patch("services.backtest.execution.BacktestEngine")
+    @patch("services.backtest.execution.create_snapshot", wraps=create_snapshot)
     @patch("services.backtest.data_cache.get_status")
     @patch("services.backtest.data_cache.get_market")
     def test_run_passes_data_snapshot_to_engine(
@@ -201,15 +290,19 @@ class TestBacktestRun:
             "stale": True,
         }
 
-        from routers import backtest as backtest_router
-
         fake_engine = MagicMock()
         fake_engine.run_scan.return_value = {
             "events": {},
             "dates": dates,
             "all_symbols_count": 1,
         }
-        with patch.object(backtest_router, "BacktestEngine", return_value=fake_engine):
+        from services.backtest import execution
+
+        with patch.object(
+            execution,
+            "load_strategy_from_file",
+            return_value=[_ScanStrategy],
+        ), patch.object(execution, "BacktestEngine", return_value=fake_engine):
             resp = client.post(
                 "/api/backtest/scan-radar",
                 json={
@@ -231,6 +324,23 @@ class TestBacktestRun:
                 break
             time.sleep(0.05)
         payload = result["result"]
+        assert payload["hits"] == []
+        assert payload["date_range"] == {
+            "start": "2023-12-04",
+            "end": "2024-01-03",
+        }
+        assert list(payload) == [
+            "hits",
+            "total_scanned",
+            "lookback_used",
+            "date_range",
+            "data_latest_date",
+            "strategy_class",
+            "strategy_name",
+            "frequency",
+            "data_context",
+            "data_provenance",
+        ]
         assert payload["data_context"] == {
             "market": "A",
             "data_as_of": dates[-1],
@@ -255,15 +365,22 @@ class TestBacktestRun:
         mock_loader.return_value = [_ScanStrategy]
         mock_wait.side_effect = AssertionError("implicit cache loading")
 
-        resp = client.post(
-            "/api/backtest/scan-radar",
-            json={
-                "strategy_class": "_ScanStrategy",
-                "filepath": "ignored.py",
-                "lookback": "1m",
-                "market": "A",
-            },
-        )
+        from services.backtest import execution
+
+        with patch.object(
+            execution,
+            "load_strategy_from_file",
+            return_value=[_ScanStrategy],
+        ):
+            resp = client.post(
+                "/api/backtest/scan-radar",
+                json={
+                    "strategy_class": "_ScanStrategy",
+                    "filepath": "ignored.py",
+                    "lookback": "1m",
+                    "market": "A",
+                },
+            )
 
         assert resp.status_code == 200
         task_id = resp.json()["task_id"]

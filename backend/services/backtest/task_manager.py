@@ -3,6 +3,7 @@ import sqlite3
 import threading
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from config import PORTFOLIO_DB
 
@@ -47,6 +48,7 @@ class TaskManager:
         symbols: list[str] | None = None,
         market: str | None = None,
         log_dir: str | None = None,
+        trigger_source: str | None = None,
     ) -> str:
         task_id = str(uuid.uuid4())[:8]
         # merge-strategies 单策略模型: 显式传 strategy_class/params 时
@@ -65,11 +67,13 @@ class TaskManager:
             json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
         )
         # log_dir 默认按 task_id 派生(可外部覆盖)
-        effective_log_dir = log_dir or f"logs/backtest/{task_id}/"
+        effective_log_dir = (
+            str(Path(log_dir) / task_id) if log_dir else f"logs/backtest/{task_id}/"
+        )
         conn = self._get_conn()
         try:
             conn.execute(
-                "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, start_date, end_date, source_task_id, created_at, log_dir) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, start_date, end_date, source_task_id, created_at, log_dir, trigger_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     task_id,
                     "running",
@@ -80,6 +84,7 @@ class TaskManager:
                     source_task_id,
                     datetime.now().isoformat(),
                     effective_log_dir,
+                    trigger_source,
                 ),
             )
             conn.commit()
@@ -211,7 +216,7 @@ class TaskManager:
         conn = connection or self._get_conn()
         try:
             row = conn.execute(
-                "SELECT status, result, error, pipeline_info, start_date, end_date, source_task_id, log_dir, execution_status, execution_account_id FROM backtest_tasks WHERE task_id = ?",
+                "SELECT status, result, error, pipeline_info, start_date, end_date, source_task_id, log_dir, trigger_source, execution_status, execution_account_id FROM backtest_tasks WHERE task_id = ?",
                 (task_id,),
             ).fetchone()
         finally:
@@ -227,6 +232,7 @@ class TaskManager:
             "error": row["error"],
             "execution_status": row["execution_status"],
             "execution_account_id": row["execution_account_id"],
+            "trigger_source": row["trigger_source"],
         }
         if row["pipeline_info"]:
             try:
@@ -318,7 +324,7 @@ class TaskManager:
         effective_include = bool(show_deleted) or bool(include_deleted)
         conn = self._get_conn()
         try:
-            base_cols = "task_id, status, task_type, summary, created_at, source_task_id, is_deleted, pipeline_info, start_date, end_date, execution_status, execution_account_id"
+            base_cols = "task_id, status, task_type, summary, created_at, source_task_id, is_deleted, pipeline_info, start_date, end_date, trigger_source, execution_status, execution_account_id"
             # 旧版/测试任务: pipeline_info 为空(NULL 或 '') → 不在历史页展示
             # show_deleted=True 时仍返回全部以便 debug
             if effective_include:
@@ -345,6 +351,7 @@ class TaskManager:
                 "end_date": r["end_date"],
                 "execution_status": r["execution_status"],
                 "execution_account_id": r["execution_account_id"],
+                "trigger_source": r["trigger_source"],
             }
             if r["source_task_id"]:
                 item["source_task_id"] = r["source_task_id"]

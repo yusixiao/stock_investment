@@ -54,7 +54,8 @@ def init_backtest_tables(conn: sqlite3.Connection):
             is_deleted INTEGER NOT NULL DEFAULT 0,
             log_dir TEXT,
             execution_account_id INTEGER,
-            execution_status TEXT NOT NULL DEFAULT 'inactive'
+            execution_status TEXT NOT NULL DEFAULT 'inactive',
+            trigger_source TEXT
         );
 
         CREATE TABLE IF NOT EXISTS stock_exclusions (
@@ -107,6 +108,8 @@ def run_merge_strategies_migration(conn: sqlite3.Connection):
         conn.execute(
             "ALTER TABLE backtest_tasks ADD COLUMN execution_status TEXT NOT NULL DEFAULT 'inactive'"
         )
+    if not _column_exists(conn, "backtest_tasks", "trigger_source"):
+        conn.execute("ALTER TABLE backtest_tasks ADD COLUMN trigger_source TEXT")
     conn.execute(
         """
         UPDATE backtest_tasks

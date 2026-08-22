@@ -9,10 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from services.backtest.strategy_loader import load_strategy_from_file
-from services.backtest import data_cache
-from services.backtest.data_snapshot import create_snapshot
-from services.backtest.engine import BacktestEngine
+from services.backtest import execution
 from services.monitoring.models import StrategyMonitor
 from services.monitoring.repository import FREQUENCIES, MonitoringRepository
 
@@ -107,43 +104,27 @@ def initial_run_date(
 
 
 def execute_strategy_current_date(monitor: StrategyMonitor, as_of_date: str, store: Any) -> dict[str, Any]:
-    """Run only the latest loaded bar, never a fabricated historical window."""
-    try:
-        classes = load_strategy_from_file(Path(monitor.filepath))
-    except Exception as exc:
-        return {"status": "unexecuted", "reason": f"strategy unavailable: {exc}", "as_of_date": as_of_date}
-    strategy_cls = next((cls for cls in classes if cls.__name__ == monitor.strategy_class), None)
-    if strategy_cls is None:
-        return {
-            "status": "unexecuted",
-            "reason": f"strategy class not found: {monitor.strategy_class}",
-            "as_of_date": as_of_date,
-        }
-    try:
-        strategy = strategy_cls(param_overrides=monitor.params)
-    except Exception as exc:
-        return {"status": "unexecuted", "reason": f"strategy config invalid: {exc}", "as_of_date": as_of_date}
-    if store is None:
-        from services.market_data.duckdb_store import get_store
-
-        store = get_store()
-    from services.backtest import data_cache
-
-    bundle = data_cache.get_market(monitor.market)
-    if bundle is None:
-        return {"status": "unexecuted", "reason": "market data is not loaded", "as_of_date": as_of_date}
-    try:
-        snapshot = create_snapshot(bundle, monitor.market, monitor.symbols, as_of_date, as_of_date)
-        result = BacktestEngine(
-            strategy=strategy, snapshot=snapshot, enable_decision_log=False
-        ).run_scan()
-    except Exception as exc:
-        return {"status": "unexecuted", "reason": f"current-date execution unavailable: {exc}", "as_of_date": as_of_date}
+    """Submit a six-month scan; the execution seam owns all task details."""
+    end = date.fromisoformat(as_of_date)
+    spec = execution.ExecutionSpec(
+        mode=execution.ExecutionMode.SCAN,
+        filepath=Path(monitor.filepath),
+        strategy_class=monitor.strategy_class,
+        strategy_name=monitor.name,
+        params=monitor.params,
+        frequency=monitor.frequency,
+        market=monitor.market,
+        symbols=monitor.symbols,
+        start_date=(end - timedelta(days=182)).isoformat(),
+        end_date=as_of_date,
+        lookback_used="182d",
+        task_type="monitor",
+        trigger_source="monitor",
+    )
+    task_id = execution.submit_backtest(spec)
     return {
-        "status": "success",
-        "as_of_date": as_of_date,
-        "hits": sorted(result["events"]),
-        "total_scanned": result["all_symbols_count"],
+        "status": "submitted",
+        "task_id": task_id,
     }
 
 
