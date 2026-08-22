@@ -108,3 +108,62 @@ def test_retry_exception_counts_as_aborted(monkeypatch, mock_add_job):
     sched._market_retry_job(["A"], attempt=1)
 
     assert mock_add_job.call_count == 1  # 异常视为仍失败 → 继续重排
+
+
+def test_main_and_retry_use_same_refresh_contract(monkeypatch, tmp_path):
+    calls = []
+
+    class FakeRunner:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        def start(self, source, markets=None):
+            return MagicMock(refresh_id="refresh-id")
+
+        def run(self, refresh_id, markets):
+            return None
+
+    monkeypatch.setattr(sched, "_make_refresh_runner", FakeRunner)
+    monkeypatch.setattr(mu, "update_all_markets", lambda parallel=True: _results())
+    monkeypatch.setattr(mu, "update_single_market", lambda market: mu.MarketUpdateResult(market=market))
+
+    sched._market_update_job()
+    sched._market_retry_job(["A"], attempt=1)
+
+    assert calls[0]["refresh_before_cache"] is sched._refresh_circulating_shares
+    assert calls[1]["refresh_before_cache"] is sched._refresh_circulating_shares
+    assert calls[0]["on_complete"] is calls[1]["on_complete"]
+
+
+@pytest.mark.parametrize("source", ["scheduler_retry_bad", "scheduler_retry_not-a-number"])
+def test_malformed_retry_source_still_notifies_ready_markets(
+    monkeypatch, mock_add_job, source
+):
+    buy = MagicMock()
+    strategy = MagicMock()
+    stock = MagicMock()
+    monkeypatch.setattr(sched, "_evaluate_buy_opportunities_after_refresh", buy)
+    monkeypatch.setattr("services.monitoring.strategy_monitor.run_due_strategy_monitors", strategy)
+    monkeypatch.setattr("services.monitoring.stock_price_monitor.evaluate_stock_price_monitors", stock)
+
+    record = MagicMock(source=source, status="partial", market_states={
+        "A": {
+            "update": {"status": "failed", "detail": {"aborted": True}},
+            "view": {"status": "failed"},
+            "cache": {"status": "failed"},
+            "result": {"status": "stale"},
+        },
+        "HK": {
+            "update": {"status": "success"},
+            "view": {"status": "success"},
+            "cache": {"status": "success"},
+            "result": {"status": "ready"},
+        },
+    })
+
+    sched._on_market_refresh_complete(record)
+
+    mock_add_job.assert_not_called()
+    buy.assert_called_once_with(record, {"HK"})
+    assert [call.kwargs["markets"] for call in strategy.call_args_list] == [{"HK"}]
+    assert [call.kwargs["markets"] for call in stock.call_args_list] == [{"HK"}]

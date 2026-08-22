@@ -49,6 +49,14 @@ def _default_refresh_cache(market: str, refresh_id: str | None = None) -> dict[s
     return {"status": "failed", "stale": True, "error": "cache rebuild timeout"}
 
 
+def _default_set_market_metadata(
+    market: str, refresh_id: str | None, market_version: int | None, stale: bool
+) -> None:
+    from services.backtest import data_cache
+
+    data_cache.set_market_metadata(market, refresh_id, market_version, stale)
+
+
 def _result_detail(result: Any) -> dict[str, Any]:
     if is_dataclass(result):
         return asdict(result)
@@ -68,7 +76,9 @@ class RefreshRunner:
         update_markets: Callable[[], list[Any]] | None = None,
         refresh_view: Callable[[str], dict[str, Any]] = _default_refresh_view,
         refresh_cache: Callable[[str, str | None], dict[str, Any]] = _default_refresh_cache,
-        refresh_before_cache: Callable[[list[str]], None] | None = None,
+        refresh_before_cache: Callable[[list[str]], Any] | None = None,
+        set_market_metadata: Callable[[str, str | None, int | None, bool], None]
+        = _default_set_market_metadata,
         auto_start: bool = True,
         on_complete: Callable[[Any], None] | None = None,
     ):
@@ -78,6 +88,7 @@ class RefreshRunner:
         self.refresh_view = refresh_view
         self.refresh_cache = refresh_cache
         self.refresh_before_cache = refresh_before_cache
+        self.set_market_metadata = set_market_metadata
         self.auto_start = auto_start
         self.on_complete = on_complete
 
@@ -126,7 +137,14 @@ class RefreshRunner:
 
         if self.refresh_before_cache and successes:
             try:
-                self.refresh_before_cache(sorted(successes))
+                precache_successes = self.refresh_before_cache(sorted(successes))
+                if precache_successes is not None:
+                    precache_successes = set(precache_successes)
+                    precache_failures = successes - precache_successes
+                    for market in precache_failures:
+                        failures[market] = "pre-cache failed"
+                        self._record_stale(refresh_id, market, failures[market])
+                    successes.intersection_update(precache_successes)
             except Exception as exc:  # noqa: BLE001
                 for market in successes:
                     failures[market] = f"pre-cache: {exc}"
@@ -242,9 +260,6 @@ class RefreshRunner:
                 self._record_stale(refresh_id, market, cache_detail.get("error"))
                 return
             version = self.store.advance_market_version(market)
-            from services.backtest import data_cache
-
-            data_cache.set_market_metadata(market, refresh_id, version, False)
             self.store.record_market_stage(
                 refresh_id,
                 market,
@@ -253,6 +268,7 @@ class RefreshRunner:
                 {**cache_detail, "market_version": version},
             )
             self.store.finish_market(refresh_id, market, version, "ready", False)
+            self._set_market_metadata_best_effort(market, refresh_id, version, False)
         except Exception as exc:  # noqa: BLE001
             failures[market] = f"cache: {exc}"
             self.store.record_market_stage(
@@ -262,7 +278,14 @@ class RefreshRunner:
 
     def _record_stale(self, refresh_id: str, market: str, error: Any) -> None:
         version = self.store.get_market_version(market)
-        from services.backtest import data_cache
 
-        data_cache.set_market_metadata(market, refresh_id, version, True)
         self.store.finish_market(refresh_id, market, version, "stale", True)
+        self._set_market_metadata_best_effort(market, refresh_id, version, True)
+
+    def _set_market_metadata_best_effort(
+        self, market: str, refresh_id: str, version: int, stale: bool
+    ) -> None:
+        try:
+            self.set_market_metadata(market, refresh_id, version, stale)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to write cache metadata for market %s", market)

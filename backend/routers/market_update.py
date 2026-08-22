@@ -21,11 +21,12 @@ def trigger_update(req: UpdateRequest = UpdateRequest()):
     from services.market_data.refresh_runner import RefreshRunner
     from services.market_data.refresh_state import RefreshAlreadyRunning
 
-    if req.market and req.market not in ("A", "HK", "US"):
+    market = req.market.strip().upper() if req.market is not None else None
+    if market not in (None, "A", "HK", "US"):
         raise HTTPException(status_code=400, detail=f"Invalid market: {req.market}")
     try:
         record = RefreshRunner().start(
-            "manual", [req.market] if req.market else None
+            source="manual", markets=[market] if market else None
         )
     except RefreshAlreadyRunning as exc:
         raise HTTPException(
@@ -34,7 +35,7 @@ def trigger_update(req: UpdateRequest = UpdateRequest()):
         ) from exc
     return {
         "message": "Market refresh started",
-        "market": req.market or "ALL",
+        "market": market or "ALL",
         "refresh_id": record.refresh_id,
     }
 

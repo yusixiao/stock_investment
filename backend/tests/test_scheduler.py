@@ -1,4 +1,5 @@
 import builtins
+import inspect
 from unittest.mock import MagicMock
 
 import pandas as pd
@@ -181,6 +182,44 @@ def test_completed_refresh_runs_both_monitor_callbacks_for_ready_markets(monkeyp
     }
     assert all(call.args[0] for call in strategy.call_args_list)
     assert all(call.args[0] for call in stock.call_args_list)
+
+
+def test_scheduler_has_no_duplicate_refresh_path():
+    source = inspect.getsource(scheduler)
+
+    assert not hasattr(scheduler, "_post_market_update_refresh")
+    assert "data_cache.invalidate" not in source
+    assert "data_cache.load_market_async" not in source
+
+
+def test_completed_refresh_excludes_non_ready_result_from_subscribers(monkeypatch):
+    buy = MagicMock()
+    strategy = MagicMock()
+    stock = MagicMock()
+    monkeypatch.setattr(scheduler, "_evaluate_buy_opportunities_after_refresh", buy)
+    monkeypatch.setattr("services.monitoring.strategy_monitor.run_due_strategy_monitors", strategy)
+    monkeypatch.setattr("services.monitoring.stock_price_monitor.evaluate_stock_price_monitors", stock)
+
+    record = MagicMock(status="partial", market_states={
+        "A": {
+            "update": {"status": "success"},
+            "view": {"status": "success"},
+            "cache": {"status": "success"},
+            "result": {"status": "stale"},
+        },
+        "HK": {
+            "update": {"status": "success"},
+            "view": {"status": "success"},
+            "cache": {"status": "success"},
+            "result": {"status": "ready"},
+        },
+    })
+
+    scheduler._on_market_refresh_complete(record)
+
+    buy.assert_called_once_with(record, {"HK"})
+    assert [call.kwargs["markets"] for call in strategy.call_args_list] == [{"HK"}]
+    assert [call.kwargs["markets"] for call in stock.call_args_list] == [{"HK"}]
 
 
 def test_strategy_monitor_failure_does_not_prevent_stock_monitor_evaluation(monkeypatch, caplog):
