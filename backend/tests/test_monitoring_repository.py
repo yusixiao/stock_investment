@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from services.db_schema import init_portfolio_v1_tables
+from services.db_schema import init_monitoring_tables
 from services.monitoring.models import StockPriceMonitor, StrategyMonitor
 from services.monitoring.repository import MonitoringRepository
 
@@ -12,7 +12,7 @@ from services.monitoring.repository import MonitoringRepository
 def make_repository() -> MonitoringRepository:
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
-    init_portfolio_v1_tables(conn)
+    init_monitoring_tables(conn)
     return MonitoringRepository(conn)
 
 
@@ -153,7 +153,7 @@ def test_claim_price_trigger_is_idempotent_across_two_connections(tmp_path: Path
     db_path = tmp_path / "monitoring.db"
     seed = sqlite3.connect(db_path)
     seed.row_factory = sqlite3.Row
-    init_portfolio_v1_tables(seed)
+    init_monitoring_tables(seed)
     monitor = MonitoringRepository(seed).create_stock_monitor("US", "AAPL", 100)
     seed.commit()
     seed.close()
@@ -179,7 +179,7 @@ def test_claim_price_trigger_is_idempotent_across_two_connections(tmp_path: Path
 
 def test_init_migrates_existing_monitoring_tables_and_preserves_rows():
     conn = sqlite3.connect(":memory:")
-    init_portfolio_v1_tables(conn)
+    init_monitoring_tables(conn)
     conn.execute("PRAGMA foreign_keys = OFF")
     for table in (
         "monitoring_strategy_monitors",
@@ -239,7 +239,7 @@ def test_init_migrates_existing_monitoring_tables_and_preserves_rows():
     conn.commit()
     conn.execute("PRAGMA foreign_keys = ON")
 
-    init_portfolio_v1_tables(conn)
+    init_monitoring_tables(conn)
 
     assert conn.execute("SELECT id FROM monitoring_strategy_monitors").fetchone()[0] == 7
     assert conn.execute("SELECT id FROM monitoring_strategy_runs").fetchone()[0] == 8

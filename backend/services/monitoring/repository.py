@@ -3,6 +3,8 @@ import sqlite3
 from datetime import datetime
 from typing import Any, cast
 
+from services.db_schema import init_monitoring_tables
+
 from .models import StockPriceMonitor, StrategyMonitor, StrategyRun
 
 FREQUENCIES = {"daily", "weekly", "monthly", "quarterly"}
@@ -26,6 +28,7 @@ def _validate(value: str, allowed: set[str], field: str) -> None:
 class MonitoringRepository:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+        init_monitoring_tables(conn)
 
     @staticmethod
     def _strategy(row: sqlite3.Row) -> StrategyMonitor:

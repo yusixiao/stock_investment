@@ -84,4 +84,7 @@ def _get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(str(PORTFOLIO_DB))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    from services.db_schema import init_monitoring_tables
+
+    init_monitoring_tables(conn)
     return conn

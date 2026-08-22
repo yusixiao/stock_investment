@@ -22,13 +22,13 @@ _STRATEGY_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="strat
 def get_monitoring_connection() -> sqlite3.Connection:
     """Open the shared SQLite file without depending on the Portfolio domain."""
     from config import PORTFOLIO_DB
-    from services.db_schema import init_portfolio_v1_tables
+    from services.db_schema import init_monitoring_tables
 
     connection = sqlite3.connect(str(PORTFOLIO_DB))
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA foreign_keys=ON")
-    init_portfolio_v1_tables(connection)
+    init_monitoring_tables(connection)
     return connection
 
 

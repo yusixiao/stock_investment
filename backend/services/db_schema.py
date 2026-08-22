@@ -155,6 +155,57 @@ def run_merge_strategies_migration(conn: sqlite3.Connection):
     conn.commit()
 
 
+def init_monitoring_tables(conn: sqlite3.Connection) -> None:
+    """创建监控表，并对早期无 CHECK 约束的表执行保数据迁移。"""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS monitoring_strategy_monitors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, strategy_class TEXT NOT NULL, filepath TEXT NOT NULL,
+            params TEXT NOT NULL DEFAULT '{}', market TEXT NOT NULL,
+            frequency TEXT NOT NULL CHECK (frequency IN ('daily', 'weekly', 'monthly', 'quarterly')),
+            symbols TEXT, is_active INTEGER NOT NULL DEFAULT 1, next_run_date TEXT,
+            last_run_at TEXT,
+            last_run_status TEXT NOT NULL DEFAULT 'pending' CHECK (last_run_status IN ('pending', 'running', 'success', 'failed')),
+            last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS monitoring_strategy_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            monitor_id INTEGER NOT NULL REFERENCES monitoring_strategy_monitors(id),
+            scheduled_date TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT,
+            status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed')),
+            task_id TEXT, result TEXT, error TEXT
+        );
+        CREATE TABLE IF NOT EXISTS monitoring_stock_monitors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, market TEXT NOT NULL, symbol TEXT NOT NULL,
+            name TEXT, threshold_price REAL NOT NULL, is_active INTEGER NOT NULL DEFAULT 1,
+            state TEXT NOT NULL DEFAULT 'armed' CHECK (state IN ('armed', 'triggered', 'paused')),
+            last_price REAL, last_price_date TEXT, last_triggered_at TEXT,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS monitoring_stock_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            monitor_id INTEGER NOT NULL REFERENCES monitoring_stock_monitors(id),
+            market TEXT NOT NULL, symbol TEXT NOT NULL, observed_price REAL NOT NULL,
+            threshold_price REAL NOT NULL, observed_date TEXT NOT NULL, triggered_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'recorded' CHECK (status IN ('recorded', 'notified'))
+        );
+        """
+    )
+    _ensure_monitoring_constraints(conn)
+    conn.executescript(
+        """
+        CREATE INDEX IF NOT EXISTS idx_monitoring_strategy_runs_monitor
+            ON monitoring_strategy_runs(monitor_id, scheduled_date DESC, id DESC);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_monitoring_strategy_run_date
+            ON monitoring_strategy_runs(monitor_id, scheduled_date);
+        CREATE INDEX IF NOT EXISTS idx_monitoring_stock_events_monitor
+            ON monitoring_stock_events(monitor_id, observed_date DESC, id DESC);
+        """
+    )
+    conn.commit()
+
+
 def init_chat_tables(conn: sqlite3.Connection):
     """问股期 1 (Task 1):创建 chat_sessions / chat_messages 两表 + 索引。
 
@@ -299,66 +350,8 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
             UNIQUE(account_id, date)
         );
 
-        CREATE TABLE IF NOT EXISTS monitoring_strategy_monitors (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            strategy_class TEXT NOT NULL,
-            filepath TEXT NOT NULL,
-            params TEXT NOT NULL DEFAULT '{}',
-            market TEXT NOT NULL,
-            frequency TEXT NOT NULL CHECK (frequency IN ('daily', 'weekly', 'monthly', 'quarterly')),
-            symbols TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            next_run_date TEXT,
-            last_run_at TEXT,
-            last_run_status TEXT NOT NULL DEFAULT 'pending' CHECK (last_run_status IN ('pending', 'running', 'success', 'failed')),
-            last_error TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS monitoring_strategy_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            monitor_id INTEGER NOT NULL REFERENCES monitoring_strategy_monitors(id),
-            scheduled_date TEXT NOT NULL,
-            started_at TEXT NOT NULL,
-            finished_at TEXT,
-            status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed')),
-            task_id TEXT,
-            result TEXT,
-            error TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS monitoring_stock_monitors (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            market TEXT NOT NULL,
-            symbol TEXT NOT NULL,
-            name TEXT,
-            threshold_price REAL NOT NULL,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            state TEXT NOT NULL DEFAULT 'armed' CHECK (state IN ('armed', 'triggered', 'paused')),
-            last_price REAL,
-            last_price_date TEXT,
-            last_triggered_at TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS monitoring_stock_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            monitor_id INTEGER NOT NULL REFERENCES monitoring_stock_monitors(id),
-            market TEXT NOT NULL,
-            symbol TEXT NOT NULL,
-            observed_price REAL NOT NULL,
-            threshold_price REAL NOT NULL,
-            observed_date TEXT NOT NULL,
-            triggered_at TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'recorded' CHECK (status IN ('recorded', 'notified'))
-        );
-
         """
     )
-    _ensure_monitoring_constraints(conn)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(portfolio_account_trades)")}
     for name, definition in (("fee", "REAL NOT NULL DEFAULT 0"), ("tax", "REAL NOT NULL DEFAULT 0"), ("realized_pnl", "REAL NOT NULL DEFAULT 0")):
         if name not in columns:
@@ -377,12 +370,6 @@ def init_portfolio_v1_tables(conn: sqlite3.Connection):
         CREATE UNIQUE INDEX IF NOT EXISTS uq_portfolio_current_alert
             ON portfolio_strategy_alerts(account_id, symbol)
             WHERE archived_at IS NULL;
-        CREATE INDEX IF NOT EXISTS idx_monitoring_strategy_runs_monitor
-            ON monitoring_strategy_runs(monitor_id, scheduled_date DESC, id DESC);
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_monitoring_strategy_run_date
-            ON monitoring_strategy_runs(monitor_id, scheduled_date);
-        CREATE INDEX IF NOT EXISTS idx_monitoring_stock_events_monitor
-            ON monitoring_stock_events(monitor_id, observed_date DESC, id DESC);
         """
     )
     conn.commit()

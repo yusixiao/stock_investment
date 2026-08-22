@@ -1,6 +1,6 @@
 import sqlite3
 
-from services.db_schema import init_portfolio_v1_tables
+from services.db_schema import init_monitoring_tables
 from services.monitoring import stock_price_monitor
 from services.monitoring.repository import MonitoringRepository
 from services.monitoring.stock_price_monitor import evaluate_stock_price_monitors
@@ -26,7 +26,7 @@ class FakeStore:
 def make_connection():
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
-    init_portfolio_v1_tables(connection)
+    init_monitoring_tables(connection)
     return connection
 
 
@@ -91,7 +91,7 @@ def test_rearm_persists_with_passed_connection(tmp_path):
     db_path = tmp_path / "monitoring.db"
     seed = sqlite3.connect(db_path)
     seed.row_factory = sqlite3.Row
-    init_portfolio_v1_tables(seed)
+    init_monitoring_tables(seed)
     monitor = MonitoringRepository(seed).create_stock_monitor("US", "MSFT", 100.0)
     seed.commit()
     seed.close()
@@ -112,7 +112,7 @@ def test_default_connection_rearms_and_allows_a_second_event(tmp_path, monkeypat
     db_path = tmp_path / "monitoring.db"
     seed = sqlite3.connect(db_path)
     seed.row_factory = sqlite3.Row
-    init_portfolio_v1_tables(seed)
+    init_monitoring_tables(seed)
     monitor = MonitoringRepository(seed).create_stock_monitor("A", "600000", 10.0)
     seed.commit()
     seed.close()

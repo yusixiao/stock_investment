@@ -2,7 +2,7 @@ import sqlite3
 from datetime import date, timedelta
 import pytest
 
-from services.db_schema import init_portfolio_v1_tables
+from services.db_schema import init_backtest_tables, init_monitoring_tables
 from services.monitoring.repository import MonitoringRepository
 from services.monitoring import strategy_monitor
 from services.monitoring.strategy_monitor import (
@@ -28,7 +28,8 @@ class TradingDateStore:
 def make_connection():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
-    init_portfolio_v1_tables(conn)
+    init_backtest_tables(conn)
+    init_monitoring_tables(conn)
     return conn
 
 
@@ -133,7 +134,8 @@ def test_monitor_submits_six_month_scan_and_keeps_only_compatibility_summary(sto
 def test_monitor_submission_failure_still_has_task_link_and_failed_task(isolated_task_manager, store, monkeypatch):
     conn = sqlite3.connect(isolated_task_manager._db_path)
     conn.row_factory = sqlite3.Row
-    init_portfolio_v1_tables(conn)
+    init_backtest_tables(conn)
+    init_monitoring_tables(conn)
     repo = MonitoringRepository(conn)
     monitor = repo.create_strategy_monitor(
         "strategy", "MissingStrategy", "missing.py", {}, "A", "daily", next_run_date="2026-08-21"
@@ -162,7 +164,8 @@ def test_monitor_submission_failure_still_has_task_link_and_failed_task(isolated
 def test_monitor_real_task_lifecycle_links_success_and_failure(isolated_task_manager, store, monkeypatch):
     conn = sqlite3.connect(isolated_task_manager._db_path)
     conn.row_factory = sqlite3.Row
-    init_portfolio_v1_tables(conn)
+    init_backtest_tables(conn)
+    init_monitoring_tables(conn)
     repo = MonitoringRepository(conn)
     success_monitor = repo.create_strategy_monitor(
         "success", "GoodStrategy", "good.py", {}, "A", "daily", next_run_date="2026-08-21"
