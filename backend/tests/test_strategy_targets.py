@@ -104,25 +104,6 @@ def test_raw_trade_contract_rejects_invalid_values(target_context, bad_trade):
         materialize_targets(target_context[1].id, TASK_ID, connection=target_context[0])
 
 
-def test_account_binding_uses_production_materializer(target_context):
-    conn, account = target_context
-
-    class TaskManager:
-        def get_result(self, task_id, connection=None):
-            return {"task_id": task_id, "status": "success", "execution_status": "inactive"}
-
-        def set_execution_account(self, task_id, account_id, connection=None):
-            return None
-
-    from routers.portfolio_v1 import _get_materializer
-
-    service = AccountService(AccountRepository(conn), TaskManager(), _get_materializer())
-    bound = service.bind_strategy(account.id, TASK_ID)
-
-    assert bound.strategy_task_id == TASK_ID
-    assert len(get_current_targets(account.id, "2026-08-20", connection=conn)) == 5
-
-
 def test_raw_trade_contract_orders_same_day_trades_and_zeroes_partial_sell(target_context):
     conn, account = target_context
     from services.portfolio import strategy_targets

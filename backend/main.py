@@ -44,18 +44,10 @@ logging.basicConfig(level=logging.DEBUG, handlers=[_file_handler, _console_handl
 logging.getLogger("uvicorn").setLevel(logging.INFO)
 logging.getLogger("watchfiles").setLevel(logging.WARNING)
 
-from routers.stock import router as stock_router
 from routers.backtest import router as backtest_router
 from routers.backtest_cache import router as backtest_cache_router
-from routers.screener import router as screener_router
-from routers.portfolio_v1 import router as portfolio_v1_router
 from routers.meta import router as meta_router
 from routers.market_update import router as market_update_router
-from routers.stock_search import router as stock_search_router
-from routers.market_kline import router as market_kline_router
-from routers.auth_stub import router as auth_stub_router
-from routers.system_config import router as system_config_router
-from routers.agent import router as agent_router
 from routers.hk_connect import router as hk_connect_router
 from routers.monitoring import router as monitoring_router
 from scheduler import start_scheduler, shutdown_scheduler
@@ -104,18 +96,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(stock_router)
 app.include_router(backtest_router)
 app.include_router(backtest_cache_router)
-app.include_router(screener_router)
-app.include_router(portfolio_v1_router)
 app.include_router(meta_router)
 app.include_router(market_update_router)
-app.include_router(stock_search_router)
-app.include_router(market_kline_router)
-app.include_router(auth_stub_router)
-app.include_router(system_config_router)
-app.include_router(agent_router)
 app.include_router(hk_connect_router)
 app.include_router(monitoring_router)
 

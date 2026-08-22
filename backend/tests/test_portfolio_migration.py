@@ -7,10 +7,10 @@ from services.portfolio.repository import AccountRepository
 from services.db_schema import run_merge_strategies_migration
 
 
-def test_production_app_only_exposes_portfolio_v1():
+def test_production_app_does_not_expose_removed_portfolio_route():
     paths = {route.path for route in app.routes}
 
-    assert "/api/v1/portfolio/accounts" in paths
+    assert "/api/v1/portfolio/accounts" not in paths
     assert not any(path == "/api/portfolio/" or path.startswith("/api/portfolio/") for path in paths)
 
 
