@@ -45,6 +45,43 @@ describe('MarketMonitor', () => {
     expect(screen.queryByText(/从策略选择股票/)).not.toBeInTheDocument();
   });
 
+  it('loads the three monitor lists and binds strategy and stock errors independently', async () => {
+    let rejectStrategies!: (reason: unknown) => void;
+    let resolveStocks!: (value: typeof emptyPage) => void;
+    monitoringApi.listStrategyMonitors.mockReturnValueOnce(new Promise((_, reject) => { rejectStrategies = reject; }));
+    monitoringApi.listStockMonitors.mockReturnValueOnce(new Promise((resolve) => { resolveStocks = resolve; }));
+
+    render(<MarketMonitor />);
+
+    await waitFor(() => {
+      expect(monitoringApi.listStrategyMonitors).toHaveBeenCalledTimes(1);
+      expect(monitoringApi.listStockMonitors).toHaveBeenCalledTimes(1);
+      expect(backtestEngineApi.listStrategies).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByText('加载策略监控…')).toBeInTheDocument();
+    expect(screen.getByText('加载股票监控…')).toBeInTheDocument();
+    rejectStrategies(new Error('strategy unavailable'));
+    resolveStocks(emptyPage);
+    expect(await screen.findByRole('alert')).toHaveTextContent('策略监控加载失败，请稍后重试');
+    expect(await screen.findByText('暂无股票价格监控')).toBeInTheDocument();
+
+    expect(monitoringApi.listStrategyMonitors).toHaveBeenCalledTimes(1);
+    expect(monitoringApi.listStockMonitors).toHaveBeenCalledTimes(1);
+    expect(backtestEngineApi.listStrategies).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes only strategy and stock monitor lists', async () => {
+    render(<MarketMonitor />);
+    await screen.findByRole('heading', { name: '策略监控' });
+    fireEvent.click(screen.getByRole('button', { name: '刷新监控' }));
+
+    await waitFor(() => {
+      expect(monitoringApi.listStrategyMonitors).toHaveBeenCalledTimes(2);
+      expect(monitoringApi.listStockMonitors).toHaveBeenCalledTimes(2);
+    });
+    expect(backtestEngineApi.listStrategies).toHaveBeenCalledTimes(1);
+  });
+
   it('requires market, symbol, and a positive threshold before creating stock monitor', async () => {
     render(<MarketMonitor />);
     await screen.findByRole('heading', { name: '股票价格监控' });
@@ -56,6 +93,21 @@ describe('MarketMonitor', () => {
     expect(screen.getByText('请输入股票代码')).toBeInTheDocument();
     expect(screen.getByText('请输入正数阈值')).toBeInTheDocument();
     expect(monitoringApi.createStockMonitor).not.toHaveBeenCalled();
+  });
+
+  it('shows stock creation failures as action errors without replacing the load error', async () => {
+    monitoringApi.createStockMonitor.mockRejectedValueOnce(new Error('create failed'));
+    render(<MarketMonitor />);
+    await screen.findByRole('heading', { name: '股票价格监控' });
+
+    fireEvent.click(screen.getByRole('button', { name: '添加股票监控' }));
+    fireEvent.change(screen.getByLabelText('股票代码'), { target: { value: '600000' } });
+    fireEvent.change(screen.getByLabelText('阈值价格'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('市场'), { target: { value: 'A' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存股票监控' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('股票价格监控创建失败，请检查配置');
+    expect(screen.queryByText('股票价格监控加载失败，请稍后重试')).not.toBeInTheDocument();
   });
 
   it('shows stock state and confirms pause and delete actions', async () => {
@@ -108,6 +160,19 @@ describe('MarketMonitor', () => {
     await waitFor(() => expect(monitoringApi.createStrategyMonitor).toHaveBeenCalled());
     expect(monitoringApi.createStrategyMonitor.mock.calls[0][0].symbols).toBeUndefined();
     expect(monitoringApi.createStrategyMonitor.mock.calls[0][0]).toMatchObject({ name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'strategies/value.py' });
+  });
+
+  it('renders strategy creation failures in a separate action error slot', async () => {
+    monitoringApi.createStrategyMonitor.mockRejectedValueOnce(new Error('create failed'));
+    render(<MarketMonitor />);
+    await screen.findByRole('heading', { name: '策略监控' });
+    fireEvent.click(screen.getByRole('button', { name: '添加策略监控' }));
+    fireEvent.change(screen.getByLabelText('策略名称'), { target: { value: '价值策略' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存策略监控' }));
+
+    const actionError = await screen.findByText('策略监控创建失败，请检查配置');
+    expect(actionError).toHaveClass('mb-3', 'text-xs', 'text-danger');
+    expect(screen.getByText('暂无策略监控')).toBeInTheDocument();
   });
 
   it('blocks strategy creation when the executable strategy directory fails to load', async () => {
