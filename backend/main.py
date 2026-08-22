@@ -1,3 +1,4 @@
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import LOG_DIR
+from config import LOG_DIR, PORTFOLIO_DB
 
 # 日志配置：同时输出到 stdout 和文件（按天轮转，保留90天）
 _log_file = LOG_DIR / "app.log"
@@ -62,11 +63,16 @@ from scheduler import start_scheduler, shutdown_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from services.portfolio.db import init_db
+    from services.db_schema import init_runtime_tables
     from services.market_data.duckdb_store import init_duckdb_with_health_check, shutdown_duckdb
     from services.market_data.stock_index import init_stock_index
 
-    init_db()
+    conn = sqlite3.connect(str(PORTFOLIO_DB))
+    try:
+        init_runtime_tables(conn)
+    finally:
+        conn.close()
+
     from services.market_data.refresh_state import RefreshStateStore
 
     RefreshStateStore().recover_interrupted()

@@ -139,10 +139,8 @@ def test_main_and_retry_use_same_refresh_contract(monkeypatch, tmp_path):
 def test_malformed_retry_source_still_notifies_ready_markets(
     monkeypatch, mock_add_job, source
 ):
-    buy = MagicMock()
     strategy = MagicMock()
     stock = MagicMock()
-    monkeypatch.setattr(sched, "_evaluate_buy_opportunities_after_refresh", buy)
     monkeypatch.setattr("services.monitoring.strategy_monitor.run_due_strategy_monitors", strategy)
     monkeypatch.setattr("services.monitoring.stock_price_monitor.evaluate_stock_price_monitors", stock)
 
@@ -164,6 +162,5 @@ def test_malformed_retry_source_still_notifies_ready_markets(
     sched._on_market_refresh_complete(record)
 
     mock_add_job.assert_not_called()
-    buy.assert_called_once_with(record, {"HK"})
     assert [call.kwargs["markets"] for call in strategy.call_args_list] == [{"HK"}]
     assert [call.kwargs["markets"] for call in stock.call_args_list] == [{"HK"}]

@@ -3,6 +3,13 @@
 import sqlite3
 
 
+def init_runtime_tables(conn: sqlite3.Connection) -> None:
+    """创建应用运行所需表，不触碰 portfolio 或 chat 产品表。"""
+    init_backtest_tables(conn)
+    init_market_refresh_tables(conn)
+    init_monitoring_tables(conn)
+
+
 def init_market_refresh_tables(conn: sqlite3.Connection):
     """创建市场数据 refresh 生命周期表。"""
     conn.executescript(

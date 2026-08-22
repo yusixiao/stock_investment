@@ -1,5 +1,4 @@
 from apscheduler.schedulers.background import BackgroundScheduler
-from config import SCHEDULER_HOUR, SCHEDULER_MINUTE
 
 scheduler = BackgroundScheduler()
 
@@ -14,64 +13,6 @@ def _make_refresh_runner(**kwargs):
     from services.market_data.refresh_runner import RefreshRunner
 
     return RefreshRunner(**kwargs)
-
-
-def _snapshot_job():
-    """每日收盘快照:从 DuckDB 按市场取最新收盘价 → 持仓估值。"""
-    from services.market_data.duckdb_store import get_store
-    from services.portfolio.db import get_connection, init_db
-    from services.portfolio.holdings_service import take_all_snapshots
-
-    store = get_store()
-    market_quotes = {}
-    for market in ("A", "HK", "US"):
-        try:
-            df = store.query(
-                f"""
-                SELECT _symbol, date, close
-                FROM v_{market.lower()}_daily
-                QUALIFY row_number() OVER (PARTITION BY _symbol ORDER BY date DESC) = 1
-                """
-            )
-            if not df.empty:
-                market_quotes[market] = (
-                    str(df["date"].max()),
-                    {row["_symbol"]: float(row["close"]) for _, row in df.iterrows()},
-                )
-        except Exception as exc:  # noqa: BLE001
-            import logging
-            logging.getLogger(__name__).warning("snapshot quote query failed for market=%s: %s", market, exc)
-    if not market_quotes:
-        return
-
-    conn = get_connection()
-    try:
-        init_db(conn)
-        take_all_snapshots(market_quotes, connection=conn)
-    finally:
-        conn.close()
-
-
-def _evaluate_buy_opportunities_after_refresh(record, markets):
-    """按市场隔离提醒评估，单个市场失败不影响其它市场。"""
-    import logging
-    from datetime import date
-
-    class _NullSink:
-        def emit(self, alert):
-            logging.getLogger(__name__).info("buy opportunity emitted: %s", alert)
-
-    for market in sorted(markets):
-        try:
-            from services.portfolio.buy_opportunity import evaluate_buy_opportunities
-
-            evaluate_buy_opportunities(
-                date.today().isoformat(), _NullSink(), markets={market}
-            )
-        except Exception as exc:  # noqa: BLE001
-            logging.getLogger(__name__).warning(
-                "buy opportunity evaluation failed for market=%s: %s", market, exc
-            )
 
 
 def _on_market_refresh_complete(record):
@@ -113,7 +54,6 @@ def _on_market_refresh_complete(record):
             and stages.get("result", {}).get("status", "ready") == "ready"
         }
         if markets:
-            _evaluate_buy_opportunities_after_refresh(record, markets)
             as_of_date = date.today().isoformat()
             for market in sorted(markets):
                 try:
@@ -358,16 +298,6 @@ def start_scheduler():
         hour=6,
         minute=0,
         id="daily_market_update",
-        replace_existing=True,
-        misfire_grace_time=3600,
-    )
-    scheduler.add_job(
-        _snapshot_job,
-        "cron",
-        day_of_week="mon-fri",
-        hour=SCHEDULER_HOUR,
-        minute=SCHEDULER_MINUTE,
-        id="daily_snapshot",
         replace_existing=True,
         misfire_grace_time=3600,
     )
