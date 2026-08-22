@@ -17,9 +17,9 @@ describe('DataCacheModal', () => {
       <DataCacheModal
         isOpen
         status={{
-          A: { status: 'loaded', loaded: true, symbols: 10, valuation_count: 1, dividend_count: 1, financial_count: 1 },
-          HK: { status: 'idle', loaded: false, symbols: 0, valuation_count: 0, dividend_count: 0, financial_count: 0 },
-          US: { status: 'idle', loaded: false, symbols: 0, valuation_count: 0, dividend_count: 0, financial_count: 0 },
+           A: { market: 'A', status: 'loaded', loaded: true, symbols: 10, valuation_count: 1, dividend_count: 1, financial_count: 1, loaded_at: 0, last_date: '2026-08-21', progress: { current: 1, total: 1, phase: 'done' }, error: null, elapsed: 1 },
+           HK: { market: 'HK', status: 'idle', loaded: false, symbols: 0, valuation_count: 0, dividend_count: 0, financial_count: 0, loaded_at: 0, last_date: null, progress: { current: 0, total: 0, phase: '' }, error: null, elapsed: 0 },
+           US: { market: 'US', status: 'idle', loaded: false, symbols: 0, valuation_count: 0, dividend_count: 0, financial_count: 0, loaded_at: 0, last_date: null, progress: { current: 0, total: 0, phase: '' }, error: null, elapsed: 0 },
         }}
         onClose={vi.fn()}
         onRefresh={vi.fn()}

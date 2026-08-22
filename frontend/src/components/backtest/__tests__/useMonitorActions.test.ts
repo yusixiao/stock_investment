@@ -16,8 +16,8 @@ const monitoringApi = vi.hoisted(() => ({
 
 vi.mock('../../../api/monitoring', () => ({ monitoringApi }));
 
-const strategy = { filepath: 'value.py', className: 'ValueStrategy', name: '价值策略' };
-const stock = { id: 2, market: 'A' as const, symbol: '600000', threshold_price: 10, state: 'armed' as const };
+const strategy = { filepath: 'value.py', className: 'ValueStrategy', name: '价值策略', strategyType: 'deployed', frequency: 'daily', frequencyOverridable: true };
+const stock = { id: 2, market: 'A' as const, symbol: '600000', name: null, threshold_price: 10, is_active: true, state: 'armed' as const, last_price: null, last_price_date: null, last_triggered_at: null, created_at: '2026-08-21T00:00:00Z', updated_at: '2026-08-21T00:00:00Z' };
 
 function setup() {
   return renderHook(() => useMonitorActions({

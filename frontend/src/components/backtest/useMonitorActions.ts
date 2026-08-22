@@ -105,7 +105,7 @@ export const useMonitorActions = ({ onStrategyChanged, onStockChanged }: {
       } else if (action.kind === 'delete-stock') {
         await monitoringApi.deleteStockMonitor(action.id);
         onStockChanged({ deletedStockId: action.id });
-      } else {
+      } else if (action.kind === 'delete-strategy') {
         await monitoringApi.deleteStrategyMonitor(action.id);
         onStrategyChanged({ deletedStrategyId: action.id });
       }

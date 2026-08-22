@@ -37,3 +37,24 @@
 ## 提交
 
 - 实现提交：`086dff2` (`refactor: prune retired platform modules`)
+
+## 最终审查修复波次
+
+- `BacktestConfig` 仅在 payload 含 `metrics` 时调用回测结果 mapper，避免把 `ScanRadarPayload` 当作回测结果，未改变后端 payload schema。
+- 修正 `MarketMonitor` 和 `useMonitorActions` 的 discriminated union narrowing；补齐缓存、策略和股票监控测试 fixture 的接口字段。
+- 删除无 retained import 的 `frontend/src/api/history.ts`；保留 `buildPositionSummary` 与 `buildMergedTradeRows`。
+- 新增 `frontend/playwright.config.ts` 和 `frontend/tests/smoke/app.spec.ts`，Playwright 只扫描专用 smoke 目录并自动启动 Vite 3001；Vite Vitest include 限定为 `src/**/*.test|spec.*`，避免反向扫描 smoke spec。
+
+## 最终审查验证
+
+- `cd frontend && npm run build`：通过；Vite bundle 构建成功，仅有 chunk 大小提示。
+- `cd frontend && npm test`：29 个 test files、244 tests 全部通过。
+- `cd frontend && npx tsc --noEmit`：通过，无 TypeScript 错误。
+- `cd frontend && npm run lint`：通过。
+- `cd frontend && npm run test:smoke`：1 个真实 smoke test 通过；验证 `/` 进入 `/backtest` 且“回测平台”和“策略回测”可见。
+- 为本机 smoke 环境安装了 Playwright Chromium；测试不依赖后端真实数据。
+
+## 最终 concerns
+
+- Vite build 有现有 bundle 超过 500 kB 的性能提示，未改变本次产品范围。
+- Playwright webServer 输出既有 PostCSS `from` 警告，但 smoke 已通过。

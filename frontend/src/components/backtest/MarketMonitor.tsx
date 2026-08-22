@@ -72,6 +72,8 @@ const MarketMonitor: React.FC = () => {
     if (saved) { setStockMarket(''); setStockSymbol(''); setThreshold(''); setShowStockForm(false); }
   };
   const confirmAction = async () => { setPendingAction(null); await confirmMonitorAction(pendingAction); };
+  const isDeleteAction = pendingAction?.kind === 'delete-stock' || pendingAction?.kind === 'delete-strategy';
+  const pendingLabel = pendingAction && 'label' in pendingAction ? pendingAction.label : null;
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
@@ -136,7 +138,7 @@ const MarketMonitor: React.FC = () => {
         </Card>
       </div>
 
-      <ConfirmDialog isOpen={pendingAction !== null} title={pendingAction?.kind.startsWith('delete') ? '确认删除监控' : '确认变更监控状态'} message={pendingAction?.kind.startsWith('delete') ? `将删除“${pendingAction.label}”，历史记录会保留但监控不再生效。` : `确认${pendingAction?.kind === 'pause' ? '暂停' : '恢复'}该股票价格监控吗？`} confirmText="确认" isDanger={pendingAction?.kind.startsWith('delete')} onConfirm={() => void confirmAction()} onCancel={() => setPendingAction(null)} />
+       <ConfirmDialog isOpen={pendingAction !== null} title={isDeleteAction ? '确认删除监控' : '确认变更监控状态'} message={isDeleteAction ? `将删除“${pendingLabel}”，历史记录会保留但监控不再生效。` : `确认${pendingAction?.kind === 'pause' ? '暂停' : '恢复'}该股票价格监控吗？`} confirmText="确认" isDanger={isDeleteAction} onConfirm={() => void confirmAction()} onCancel={() => setPendingAction(null)} />
     </div>
   );
 };

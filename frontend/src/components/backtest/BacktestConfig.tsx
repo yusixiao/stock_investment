@@ -147,7 +147,7 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
             if (status.status === 'success') {
               const result = await backtestEngineApi.getResult(realTaskId);
               const payload = result.result;
-              const mapped = payload ? mapPayloadToResultData(payload) : null;
+               const mapped = payload && 'metrics' in payload ? mapPayloadToResultData(payload) : null;
               if (mapped) {
                 onTaskUpdate(realTaskId, {
                   status: 'completed',
