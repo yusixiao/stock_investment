@@ -37,19 +37,14 @@ function makeTask(status: BacktestTask['status']): BacktestTask {
   };
 }
 
-describe('BacktestResult strategy binding action', () => {
-  it('does not show the bind action for an already execution-bound task', () => {
+describe('BacktestResult', () => {
+  it('does not offer account binding for a completed backtest', () => {
     const task = { ...makeTask('completed'), executionStatus: 'active' as const };
     render(<BacktestResult task={task} />);
 
-    expect(screen.queryByRole('button', { name: '创建并绑定策略账户' })).not.toBeInTheDocument();
-    expect(screen.getByText('已绑定策略账户')).toBeInTheDocument();
-  });
-
-  it('shows the bind action for backend success status', () => {
-    render(<BacktestResult task={makeTask('success' as BacktestTask['status'])} />);
-
-    expect(screen.getByRole('button', { name: '创建并绑定策略账户' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /绑定账户/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /解除绑定/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('已绑定策略账户')).not.toBeInTheDocument();
   });
 
   it.each(['pending', 'running', 'failed'] as const)(
@@ -57,7 +52,7 @@ describe('BacktestResult strategy binding action', () => {
     (status) => {
       render(<BacktestResult task={makeTask(status)} />);
 
-      expect(screen.queryByRole('button', { name: '创建并绑定策略账户' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /绑定账户/ })).not.toBeInTheDocument();
     },
   );
 });

@@ -7,7 +7,7 @@ import {
   RiRefreshLine,
 } from '@remixicon/react';
 import { cn } from '../../utils/cn';
-import { ApiErrorAlert, Badge, Button, ConfirmDialog, Tooltip } from '../common';
+import { Badge, Button, ConfirmDialog, Tooltip } from '../common';
 import { backtestEngineApi, type TaskListItem } from '../../api/backtestEngine';
 import type { BacktestTask } from './BacktestAnalysis';
 import {
@@ -17,7 +17,6 @@ import {
   extractStrategyName,
   isMonitorTask,
 } from './historyTaskAdapter';
-import { useStrategyAccountBinding } from './useStrategyAccountBinding';
 
 interface Props {
   // 点击行加载详情后回调,父级用 BacktestTask 切换到 BacktestResult 视图
@@ -101,8 +100,6 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
     }
   }, [showDeleted]);
 
-  const { bindingId, bindingError, clearBindingError, bindTask } = useStrategyAccountBinding({ refresh });
-
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
@@ -162,14 +159,6 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
           </button>
         </div>
       </div>
-      {bindingError ? (
-        <ApiErrorAlert
-          error={bindingError}
-          onDismiss={clearBindingError}
-          className="mx-4 mt-3"
-        />
-      ) : null}
-
       <ConfirmDialog
         isOpen={deleteConfirmId !== null}
         title="删除回测记录"
@@ -312,20 +301,6 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                         </td>
                         <td className="px-3 py-2 text-right">
                           <div className="flex flex-wrap items-center justify-end gap-2">
-                            {!isDeleted && task.status === 'success' && task.execution_status !== 'active' && (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                   void bindTask(task);
-                                }}
-                                disabled={bindingId === task.task_id}
-                              >
-                                {bindingId === task.task_id ? '绑定中...' : '绑定账户'}
-                              </Button>
-                            )}
                             {!isDeleted && (
                               <Button
                                 type="button"
