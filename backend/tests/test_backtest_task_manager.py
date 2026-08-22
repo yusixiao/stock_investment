@@ -1,6 +1,211 @@
 import sqlite3
+import inspect
 
 import pytest
+
+
+def test_task_manager_facade_delegates_to_isolated_collaborators():
+    from services.backtest.task_manager import TaskManager
+
+    class Repository:
+        def __init__(self):
+            self.calls = []
+            self.result_row = {
+                "status": "success",
+                "result": "encoded-result",
+                "error": None,
+                "summary": "encoded-summary",
+                "pipeline_info": "encoded-pipeline",
+                "start_date": "2026-01-01",
+                "end_date": "2026-01-02",
+                "source_task_id": None,
+                "log_dir": "logs/task-1",
+                "trigger_source": "manual",
+                "execution_status": "inactive",
+                "execution_account_id": None,
+            }
+
+        def create_task_row(self, **kwargs):
+            self.calls.append(("create_task_row", kwargs))
+
+        def update_task_result(self, *args, **kwargs):
+            self.calls.append(("update_task_result", args, kwargs))
+
+        def fail_task(self, *args):
+            self.calls.append(("fail_task", args))
+
+        def get_status(self, *args):
+            self.calls.append(("get_status", args))
+            return "running"
+
+        def get_result_row(self, *args, **kwargs):
+            self.calls.append(("get_result_row", args, kwargs))
+            return self.result_row
+
+        def list_task_rows(self, **kwargs):
+            self.calls.append(("list_task_rows", kwargs))
+            return [self.result_row | {"task_id": "task-1", "task_type": "full", "created_at": "now", "is_deleted": 0}]
+
+        def set_execution_account(self, *args, **kwargs):
+            self.calls.append(("set_execution_account", args, kwargs))
+            return {"task_id": "task-1", "execution_status": "active", "execution_account_id": 7}
+
+        def clear_execution_account(self, *args, **kwargs):
+            self.calls.append(("clear_execution_account", args, kwargs))
+            return {"task_id": "task-1", "execution_status": "inactive", "execution_account_id": None}
+
+        def delete_task(self, *args):
+            self.calls.append(("delete_task", args))
+
+    class Codec:
+        def encode(self, value):
+            return f"encoded-{value}"
+
+        def build_summary(self, result):
+            return "encoded-summary"
+
+        def date_range(self, result):
+            return "2026-01-01", "2026-01-02"
+
+        def decode(self, value):
+            return {"decoded": value}
+
+        def decode_with_status(self, value):
+            return True, {"decoded": value}
+
+    class Progress:
+        def __init__(self):
+            self.calls = []
+
+        def update(self, *args):
+            self.calls.append(("update", args))
+
+        def get(self, *args):
+            self.calls.append(("get", args))
+            return {"current": 1, "total": 2, "phase": "running"}
+
+        def remove(self, *args):
+            self.calls.append(("remove", args))
+
+    repository = Repository()
+    codec = Codec()
+    progress = Progress()
+    manager = TaskManager._from_collaborators(repository, codec, progress)
+
+    task_id = manager.create_task(task_type="full", pipeline_info={"market": "A"})
+    manager.complete_task(task_id, {"metrics": {}})
+    manager.fail_task(task_id, "failed")
+    assert manager.get_status(task_id) == {
+        "task_id": task_id,
+        "status": "running",
+        "progress": {"current": 1, "total": 2, "phase": "running"},
+    }
+    assert manager.get_result(task_id)["result"] == {"decoded": "encoded-result"}
+    assert manager.list_tasks() == [
+        {
+            "task_id": "task-1",
+            "status": "success",
+            "task_type": "full",
+            "created_at": "now",
+            "deleted": False,
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-02",
+            "execution_status": "inactive",
+            "execution_account_id": None,
+            "trigger_source": "manual",
+            "summary": {"decoded": "encoded-summary"},
+            "pipeline_info": {"decoded": "encoded-pipeline"},
+        }
+    ]
+    manager.set_execution_account(task_id, 7)
+    manager.clear_execution_account(task_id)
+
+    assert [call[0] for call in repository.calls] == [
+        "create_task_row",
+        "update_task_result",
+        "fail_task",
+        "get_status",
+        "get_result_row",
+        "list_task_rows",
+        "set_execution_account",
+        "clear_execution_account",
+    ]
+
+
+def test_progress_store_isolated_and_cleanup():
+    from services.backtest.task_progress import TaskProgressStore
+
+    first = TaskProgressStore()
+    second = TaskProgressStore()
+    first.update("task-1", 2, 10, "扫描中")
+
+    assert first.get("task-1") == {
+        "current": 2,
+        "total": 10,
+        "phase": "扫描中",
+    }
+    assert second.get("task-1") is None
+
+    first.remove("task-1")
+    assert first.get("task-1") is None
+
+
+def test_progress_store_get_returns_copy():
+    from services.backtest.task_progress import TaskProgressStore
+
+    store = TaskProgressStore()
+    store.update("task-1", 2, 10, "扫描中")
+
+    progress = store.get("task-1")
+    progress["current"] = 9
+
+    assert store.get("task-1")["current"] == 2
+
+
+def test_task_manager_progress_facade_preserves_status_shape_and_lifecycle(
+    isolated_task_manager,
+):
+    from services.backtest.task_manager import TaskManager
+
+    assert list(inspect.signature(TaskManager.__init__).parameters) == [
+        "self",
+        "db_path",
+    ]
+
+    task_id = isolated_task_manager.create_task(strategy_class="Example", params={})
+    isolated_task_manager.update_progress(task_id, 2, 10, "扫描中")
+
+    assert isolated_task_manager.get_status(task_id) == {
+        "task_id": task_id,
+        "status": "running",
+        "progress": {"current": 2, "total": 10, "phase": "扫描中"},
+    }
+
+    isolated_task_manager.complete_task(task_id, {})
+    assert isolated_task_manager.get_status(task_id) == {
+        "task_id": task_id,
+        "status": "success",
+    }
+
+
+def test_task_manager_progress_facade_cleans_up_failed_and_deleted_tasks(
+    isolated_task_manager,
+):
+    failed_id = isolated_task_manager.create_task(strategy_class="Failed", params={})
+    isolated_task_manager.update_progress(failed_id, 1, 3, "失败中")
+    isolated_task_manager.fail_task(failed_id, "failed")
+    assert isolated_task_manager.get_status(failed_id) == {
+        "task_id": failed_id,
+        "status": "failed",
+    }
+
+    deleted_id = isolated_task_manager.create_task(strategy_class="Deleted", params={})
+    isolated_task_manager.update_progress(deleted_id, 1, 3, "删除中")
+    isolated_task_manager.delete_task(deleted_id)
+    assert isolated_task_manager.get_status(deleted_id) == {
+        "task_id": deleted_id,
+        "status": "running",
+    }
 
 
 class TestExecutionMetadata:
@@ -128,3 +333,87 @@ class TestExecutionMetadata:
 
         ordered = isolated_task_manager.list_tasks()
         assert [task["task_id"] for task in ordered] == ([newer, older] if descending else [older, newer])
+
+
+def test_get_result_preserves_null_pipeline_info_and_omits_malformed_json(
+    isolated_task_manager,
+):
+    null_id = isolated_task_manager.create_task(strategy_class="NullPipeline", params={})
+    malformed_id = isolated_task_manager.create_task(
+        strategy_class="MalformedPipeline", params={}
+    )
+    conn = sqlite3.connect(isolated_task_manager._db_path)
+    conn.execute(
+        "UPDATE backtest_tasks SET pipeline_info = CASE task_id WHEN ? THEN 'null' ELSE '{' END",
+        (null_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    null_result = isolated_task_manager.get_result(null_id)
+    malformed_result = isolated_task_manager.get_result(malformed_id)
+
+    assert "pipeline_info" in null_result
+    assert null_result["pipeline_info"] is None
+    assert "pipeline_info" not in malformed_result
+
+
+def test_list_tasks_preserves_null_summary_and_omits_malformed_json(
+    isolated_task_manager,
+):
+    null_id = isolated_task_manager.create_task(strategy_class="NullSummary", params={})
+    malformed_id = isolated_task_manager.create_task(
+        strategy_class="MalformedSummary", params={}
+    )
+    conn = sqlite3.connect(isolated_task_manager._db_path)
+    conn.execute(
+        "UPDATE backtest_tasks SET summary = CASE task_id WHEN ? THEN 'null' ELSE '{' END",
+        (null_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    tasks = {task["task_id"]: task for task in isolated_task_manager.list_tasks()}
+
+    assert "summary" in tasks[null_id]
+    assert tasks[null_id]["summary"] is None
+    assert "summary" not in tasks[malformed_id]
+
+
+@pytest.mark.parametrize(
+    ("result", "expected_summary"),
+    [
+        (
+            {
+                "metrics": {
+                    "total_return": 0.1,
+                    "annual_return": 0.2,
+                    "max_drawdown": -0.05,
+                    "total_trades": 3,
+                }
+            },
+            {"total_return": 0.1, "annual_return": 0.2, "max_drawdown": -0.05, "total_trades": 3},
+        ),
+        (
+            {
+                "hits": ["A"],
+                "total_scanned": 2,
+                "lookback_used": 30,
+                "date_range": {"start": "2026-01-01", "end": "2026-02-01"},
+            },
+            {"hit_count": 1, "total_scanned": 2, "lookback_used": 30},
+        ),
+        ({"screened_symbols": ["A", "B"]}, {"screened_count": 2}),
+    ],
+)
+def test_task_manager_preserves_full_scan_and_screener_shapes(
+    isolated_task_manager, result, expected_summary
+):
+    task_id = isolated_task_manager.create_task(strategy_class="Shape", params={})
+
+    isolated_task_manager.complete_task(task_id, result)
+
+    task = isolated_task_manager.get_result(task_id)
+    listed = isolated_task_manager.list_tasks()[0]
+    assert task["result"] == result
+    assert listed["summary"] == expected_summary

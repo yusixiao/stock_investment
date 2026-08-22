@@ -1,38 +1,29 @@
-import json
 import sqlite3
-import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
 
 from config import PORTFOLIO_DB
+from services.backtest.task_progress import TaskProgressStore
+from services.backtest.task_repository import TaskRepository
+from services.backtest.task_result_codec import TaskResultCodec
 
 
 class TaskManager:
     def __init__(self, db_path: str | None = None):
         self._db_path = db_path or str(PORTFOLIO_DB)
-        self._progress: dict[str, dict] = {}
-        self._lock = threading.Lock()
-        self._init_table()
+        self._progress_store = TaskProgressStore()
+        self._result_codec = TaskResultCodec()
+        self._repository = TaskRepository(self._db_path)
 
-    def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path, timeout=10)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def _init_table(self):
-        conn = self._get_conn()
-        try:
-            from services.db_schema import init_backtest_tables
-
-            init_backtest_tables(conn)
-            conn.execute(
-                "UPDATE backtest_tasks SET status = ?, error = ? WHERE status = ?",
-                ("failed", "服务重启，任务中断", "running"),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+    @classmethod
+    def _from_collaborators(cls, repository, result_codec, progress_store):
+        manager = cls.__new__(cls)
+        manager._db_path = getattr(repository, "_db_path", None)
+        manager._repository = repository
+        manager._result_codec = result_codec
+        manager._progress_store = progress_store
+        return manager
 
     def create_task(
         self,
@@ -65,34 +56,24 @@ class TaskManager:
             if market is not None:
                 pipeline_info["market"] = market
         pi_json = (
-            json.dumps(pipeline_info, ensure_ascii=False) if pipeline_info else None
+            self._result_codec.encode(pipeline_info) if pipeline_info else None
         )
         # log_dir 默认按 task_id 派生(可外部覆盖)
         effective_log_dir = (
             str(Path(log_dir) / task_id) if log_dir else f"logs/backtest/{task_id}/"
         )
-        conn = self._get_conn()
-        try:
-            conn.execute(
-                "INSERT INTO backtest_tasks (task_id, status, task_type, pipeline_info, start_date, end_date, source_task_id, created_at, log_dir, trigger_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    task_id,
-                    "running",
-                    task_type,
-                    pi_json,
-                    start_date,
-                    end_date,
-                    source_task_id,
-                    datetime.now().isoformat(),
-                    effective_log_dir,
-                    trigger_source,
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-        with self._lock:
-            self._progress[task_id] = None
+        self._repository.create_task_row(
+            task_id=task_id,
+            task_type=task_type,
+            pipeline_info=pi_json,
+            start_date=start_date,
+            end_date=end_date,
+            source_task_id=source_task_id,
+            created_at=datetime.now().isoformat(),
+            log_dir=effective_log_dir,
+            trigger_source=trigger_source,
+        )
+        self._progress_store.remove(task_id)
         return task_id
 
     def update_task_metadata(
@@ -103,159 +84,55 @@ class TaskManager:
         params: dict | None = None,
         frequency: str | None = None,
     ) -> None:
-        conn = self._get_conn()
-        try:
-            row = conn.execute(
-                "SELECT pipeline_info FROM backtest_tasks WHERE task_id = ?", (task_id,)
-            ).fetchone()
-            if row is None:
-                return
-            info = json.loads(row["pipeline_info"] or "{}")
-            if strategy_name is not None:
-                info["strategy_name"] = strategy_name
-            if params is not None:
-                info["params"] = params
-            if frequency is not None:
-                info["frequency"] = frequency
-            conn.execute(
-                "UPDATE backtest_tasks SET pipeline_info = ? WHERE task_id = ?",
-                (json.dumps(info, ensure_ascii=False), task_id),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        updates = {}
+        if strategy_name is not None:
+            updates["strategy_name"] = strategy_name
+        if params is not None:
+            updates["params"] = params
+        if frequency is not None:
+            updates["frequency"] = frequency
+        self._repository.update_task_metadata(task_id, updates)
 
     def update_progress(self, task_id: str, current: int, total: int, phase: str = ""):
-        with self._lock:
-            self._progress[task_id] = {
-                "current": current,
-                "total": total,
-                "phase": phase,
-            }
-
-    def _build_summary(self, result: dict) -> str:
-        if "hits" in result and "total_scanned" in result:
-            return json.dumps(
-                {
-                    "hit_count": len(result.get("hits") or []),
-                    "total_scanned": result.get("total_scanned"),
-                    "lookback_used": result.get("lookback_used"),
-                },
-                ensure_ascii=False,
-            )
-        if "screened_symbols" in result:
-            items = result["screened_symbols"]
-            count = len(items)
-            return json.dumps({"screened_count": count}, ensure_ascii=False)
-        if "metrics" in result:
-            m = result["metrics"]
-            return json.dumps(
-                {
-                    "total_return": m.get("total_return"),
-                    "annual_return": m.get("annual_return"),
-                    "max_drawdown": m.get("max_drawdown"),
-                    "total_trades": m.get("total_trades"),
-                },
-                ensure_ascii=False,
-            )
-        return ""
+        self._progress_store.update(task_id, current, total, phase)
 
     def complete_task(self, task_id: str, result: dict):
-        summary = self._build_summary(result)
+        summary = self._result_codec.build_summary(result)
         # 若 result 含 date_range(scan-radar 结果),回写到 start_date/end_date 列,
         # 让历史记录列表与一般回测任务统一展示
-        dr = result.get("date_range") if isinstance(result, dict) else None
-        date_start = (dr or {}).get("start") if isinstance(dr, dict) else None
-        date_end = (dr or {}).get("end") if isinstance(dr, dict) else None
-        conn = self._get_conn()
-        try:
-            if date_start and date_end:
-                conn.execute(
-                    "UPDATE backtest_tasks SET status = ?, result = ?, summary = ?, "
-                    "start_date = COALESCE(NULLIF(start_date, ''), ?), "
-                    "end_date = COALESCE(NULLIF(end_date, ''), ?) "
-                    "WHERE task_id = ?",
-                    (
-                        "success",
-                        json.dumps(result, ensure_ascii=False),
-                        summary,
-                        date_start,
-                        date_end,
-                        task_id,
-                    ),
-                )
-            else:
-                conn.execute(
-                    "UPDATE backtest_tasks SET status = ?, result = ?, summary = ? WHERE task_id = ?",
-                    (
-                        "success",
-                        json.dumps(result, ensure_ascii=False),
-                        summary,
-                        task_id,
-                    ),
-                )
-            conn.commit()
-        finally:
-            conn.close()
-        with self._lock:
-            self._progress.pop(task_id, None)
+        date_start, date_end = self._result_codec.date_range(result)
+        self._repository.update_task_result(
+            task_id,
+            result=self._result_codec.encode(result),
+            summary=summary,
+            date_start=date_start,
+            date_end=date_end,
+        )
+        self._progress_store.remove(task_id)
 
     def delete_task(self, task_id: str):
-        # 软删: 同步写 is_deleted 与遗留 deleted 列, 兼容旧查询
-        conn = self._get_conn()
-        try:
-            conn.execute(
-                "UPDATE backtest_tasks SET is_deleted = 1, deleted = 1 WHERE task_id = ?",
-                (task_id,),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        self._repository.delete_task(task_id)
+        self._progress_store.remove(task_id)
 
     def fail_task(self, task_id: str, error: str):
-        conn = self._get_conn()
-        try:
-            conn.execute(
-                "UPDATE backtest_tasks SET status = ?, error = ? WHERE task_id = ?",
-                ("failed", error, task_id),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-        with self._lock:
-            self._progress.pop(task_id, None)
+        self._repository.fail_task(task_id, error)
+        self._progress_store.remove(task_id)
 
     def get_status(self, task_id: str) -> dict | None:
-        conn = self._get_conn()
-        try:
-            row = conn.execute(
-                "SELECT status FROM backtest_tasks WHERE task_id = ?", (task_id,)
-            ).fetchone()
-        finally:
-            conn.close()
-        if row is None:
+        status = self._repository.get_status(task_id)
+        if status is None:
             return None
-        resp = {"task_id": task_id, "status": row["status"]}
-        with self._lock:
-            prog = self._progress.get(task_id)
-            if prog:
-                resp["progress"] = prog
+        resp = {"task_id": task_id, "status": status}
+        prog = self._progress_store.get(task_id)
+        if prog:
+            resp["progress"] = prog
         return resp
 
     def get_result(self, task_id: str, connection: sqlite3.Connection | None = None) -> dict | None:
-        owns_connection = connection is None
-        conn = connection or self._get_conn()
-        try:
-            row = conn.execute(
-                "SELECT status, result, error, pipeline_info, start_date, end_date, source_task_id, log_dir, trigger_source, execution_status, execution_account_id FROM backtest_tasks WHERE task_id = ?",
-                (task_id,),
-            ).fetchone()
-        finally:
-            if owns_connection:
-                conn.close()
+        row = self._repository.get_result_row(task_id, connection=connection)
         if row is None:
             return None
-        result = json.loads(row["result"]) if row["result"] else None
+        result = self._result_codec.decode(row["result"])
         resp = {
             "task_id": task_id,
             "status": row["status"],
@@ -266,10 +143,11 @@ class TaskManager:
             "trigger_source": row["trigger_source"],
         }
         if row["pipeline_info"]:
-            try:
-                resp["pipeline_info"] = json.loads(row["pipeline_info"])
-            except Exception:
-                pass
+            decoded, pipeline_info = self._result_codec.decode_with_status(
+                row["pipeline_info"]
+            )
+            if decoded:
+                resp["pipeline_info"] = pipeline_info
         if row["start_date"]:
             resp["start_date"] = row["start_date"]
         if row["end_date"]:
@@ -283,68 +161,12 @@ class TaskManager:
     def set_execution_account(
         self, task_id: str, account_id: int, connection: sqlite3.Connection | None = None
     ) -> dict:
-        """将任务标记为某账户的唯一活动策略关联。"""
-        owns_connection = connection is None
-        conn = connection or self._get_conn()
-        try:
-            try:
-                if owns_connection:
-                    conn.execute("BEGIN IMMEDIATE")
-                conflict = conn.execute(
-                    "SELECT task_id FROM backtest_tasks "
-                    "WHERE execution_account_id = ? AND execution_status = 'active' "
-                    "AND task_id != ?",
-                    (account_id, task_id),
-                ).fetchone()
-                if conflict:
-                    raise ValueError(
-                        f"account {account_id} is already associated with task {conflict['task_id']}"
-                    )
-                updated = conn.execute(
-                    "UPDATE backtest_tasks SET execution_status = 'active', "
-                    "execution_account_id = ? WHERE task_id = ?",
-                    (account_id, task_id),
-                )
-                if updated.rowcount == 0:
-                    raise ValueError(f"task {task_id} not found")
-                if owns_connection:
-                    conn.commit()
-            except Exception:
-                if owns_connection:
-                    conn.rollback()
-                raise
-        finally:
-            if owns_connection:
-                conn.close()
-        return {
-            "task_id": task_id,
-            "execution_status": "active",
-            "execution_account_id": account_id,
-        }
+        return self._repository.set_execution_account(task_id, account_id, connection)
 
     def clear_execution_account(
         self, task_id: str, connection: sqlite3.Connection | None = None
     ) -> dict:
-        owns_connection = connection is None
-        conn = connection or self._get_conn()
-        try:
-            updated = conn.execute(
-                "UPDATE backtest_tasks SET execution_status = 'inactive', "
-                "execution_account_id = NULL WHERE task_id = ?",
-                (task_id,),
-            )
-            if updated.rowcount == 0:
-                raise ValueError(f"task {task_id} not found")
-            if owns_connection:
-                conn.commit()
-        finally:
-            if owns_connection:
-                conn.close()
-        return {
-            "task_id": task_id,
-            "execution_status": "inactive",
-            "execution_account_id": None,
-        }
+        return self._repository.clear_execution_account(task_id, connection)
 
     def list_tasks(
         self,
@@ -353,23 +175,7 @@ class TaskManager:
     ) -> list[dict]:
         # include_deleted 为 plan 命名;show_deleted 是历史兼容别名,二者任一为真即返回全部
         effective_include = bool(show_deleted) or bool(include_deleted)
-        conn = self._get_conn()
-        try:
-            base_cols = "task_id, status, task_type, summary, created_at, source_task_id, is_deleted, pipeline_info, start_date, end_date, trigger_source, execution_status, execution_account_id"
-            # 旧版/测试任务: pipeline_info 为空(NULL 或 '') → 不在历史页展示
-            # show_deleted=True 时仍返回全部以便 debug
-            if effective_include:
-                rows = conn.execute(
-                    f"SELECT {base_cols} FROM backtest_tasks ORDER BY execution_status = 'active' DESC, created_at DESC"
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    f"SELECT {base_cols} FROM backtest_tasks "
-                    f"WHERE is_deleted = 0 AND pipeline_info IS NOT NULL AND pipeline_info != '' "
-                    f"ORDER BY execution_status = 'active' DESC, created_at DESC"
-                ).fetchall()
-        finally:
-            conn.close()
+        rows = self._repository.list_task_rows(include_deleted=effective_include)
         result = []
         for r in rows:
             item = {
@@ -387,15 +193,15 @@ class TaskManager:
             if r["source_task_id"]:
                 item["source_task_id"] = r["source_task_id"]
             if r["summary"]:
-                try:
-                    item["summary"] = json.loads(r["summary"])
-                except Exception:
-                    pass
+                decoded, summary = self._result_codec.decode_with_status(r["summary"])
+                if decoded:
+                    item["summary"] = summary
             if r["pipeline_info"]:
-                try:
-                    item["pipeline_info"] = json.loads(r["pipeline_info"])
-                except Exception:
-                    pass
+                decoded, pipeline_info = self._result_codec.decode_with_status(
+                    r["pipeline_info"]
+                )
+                if decoded:
+                    item["pipeline_info"] = pipeline_info
             result.append(item)
         return result
 
