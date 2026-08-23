@@ -1,5 +1,5 @@
 /**
- * 数据缓存状态浮动条(页面左下角全局可见)。
+ * 数据缓存状态栏(回测平台顶部标题行内)。
  *
  * 显示:[数据] 按钮 + A/H/US 三市场加载状态(已加载只数 + 数据截止日)。
  * 点击按钮(或任一市场 pill)→ 打开 DataCacheModal 加载/失效缓存。
@@ -71,11 +71,11 @@ const DataCacheStatusBar: React.FC = () => {
     return (
       <div
         key={m}
-        className="flex flex-col items-center gap-0.5 py-1 text-center leading-tight tabular-nums"
+        className="flex shrink-0 items-center gap-1.5 border-l border-border/50 pl-2 text-xs leading-tight tabular-nums"
       >
-        <span className="whitespace-nowrap text-sm font-medium text-secondary-text">{MARKET_LABELS[m]}</span>
-        <span className={`whitespace-nowrap text-sm ${color}`}>{statusText}</span>
-        <span className={`whitespace-nowrap text-sm ${color}`}>{dateText}</span>
+        <span className="whitespace-nowrap font-medium text-secondary-text">{MARKET_LABELS[m]}</span>
+        <span className={`whitespace-nowrap ${color}`}>{statusText}</span>
+        <span className={`hidden whitespace-nowrap xl:inline ${color}`}>{dateText}</span>
       </div>
     );
   };
@@ -83,7 +83,7 @@ const DataCacheStatusBar: React.FC = () => {
   return (
     <>
       <div
-        className="pointer-events-auto fixed bottom-3 left-3 z-30 hidden w-[132px] flex-col items-stretch gap-1.5 rounded-2xl border border-border/60 bg-card/85 px-2 py-2 text-sm shadow-soft-card backdrop-blur-md lg:flex"
+        className="pointer-events-auto flex min-w-0 flex-1 items-center justify-end gap-1 overflow-x-auto text-sm"
         aria-label="数据缓存状态"
       >
         <button
@@ -92,13 +92,13 @@ const DataCacheStatusBar: React.FC = () => {
             refresh();
             setModalOpen(true);
           }}
-          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-border/60 bg-elevated/60 px-3 text-sm font-medium text-secondary-text transition-all hover:border-border hover:bg-hover hover:text-foreground"
+          className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-elevated/60 px-2.5 text-xs font-medium text-secondary-text transition-colors hover:border-border hover:bg-hover hover:text-foreground"
           aria-label="打开数据缓存加载弹窗"
         >
-          <Database className="h-5 w-5" />
+          <Database className="h-5 w-5" aria-hidden="true" focusable="false" />
           <span>加载</span>
         </button>
-        <div className="flex flex-col">
+        <div className="flex min-w-max items-center">
           {(['A', 'HK', 'US'] as CacheMarket[]).map(renderBlock)}
         </div>
       </div>

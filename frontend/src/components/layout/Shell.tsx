@@ -16,6 +16,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
             <p className="text-sm font-semibold tracking-wide text-foreground">回测平台</p>
             <p className="text-xs text-secondary-text">策略研究与结果分析工作区</p>
           </div>
+          <DataCacheStatusBar />
           <ThemeToggle />
         </div>
       </header>
@@ -24,7 +25,6 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
           {children ?? <Outlet />}
       </main>
 
-      <DataCacheStatusBar />
     </div>
   );
 };

@@ -21,6 +21,8 @@ describe('Shell', () => {
     expect(screen.getByRole('button', { name: '切换主题' })).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: '主导航' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '退出' })).not.toBeInTheDocument();
-    expect(screen.getByTestId('data-cache-status-bar')).toBeInTheDocument();
+    const cacheStatus = screen.getByTestId('data-cache-status-bar');
+    expect(cacheStatus).toBeInTheDocument();
+    expect(cacheStatus.closest('header')).toBeInTheDocument();
   });
 });
