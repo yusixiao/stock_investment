@@ -21,34 +21,22 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-# 项目硬性约定:用户在 AGENTS.md 明确 MACD bar = 2 × (DIF - DEA)
-MACD_HIST_MULTIPLIER = 2.0
+from services.market_data.indicator_semantics import (
+    DEFAULT_MACD_PARAMS,
+    MACD_HIST_MULTIPLIER,
+    STANDARD_EMA_WINDOWS,
+    STANDARD_MA_WINDOWS,
+    ema,
+    macd,
+)
 
-STANDARD_MA_WINDOWS: tuple[int, ...] = (5, 10, 20, 30)
 STANDARD_VOL_MA_WINDOWS: tuple[int, ...] = (5, 10)
-STANDARD_EMA_WINDOWS: tuple[int, ...] = (12, 26)
-DEFAULT_MACD_PARAMS: tuple[int, int, int] = (12, 26, 9)
 DEFAULT_VOLATILITY_WINDOW: int = 20
 
 
 def _ema(values: np.ndarray, window: int) -> np.ndarray:
-    """与 strategies/utils/kline._ema 等价的 numpy 实现。
-
-    - 前 window-1 位置填 NaN,第 window 位置 = 前 window 个 SMA,之后递推
-      out[i] = out[i-1] + alpha * (values[i] - out[i-1]),alpha = 2/(N+1)
-    - 旧实现把前 window 个位置都填成同一个 SMA,新实现保持值序列一致但开头用 NaN
-      标记不可用区(避免被误用作有效值),get_macd 比较时仍只看末尾值,行为不变。
-    """
-    n = len(values)
-    out = np.full(n, np.nan, dtype=float)
-    if n < window:
-        return out
-    sma = float(values[:window].mean())
-    out[window - 1] = sma
-    alpha = 2.0 / (window + 1)
-    for i in range(window, n):
-        out[i] = out[i - 1] + alpha * (values[i] - out[i - 1])
-    return out
+    """兼容旧内部调用，实际语义集中在 indicator_semantics。"""
+    return ema(values, window)
 
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -80,19 +68,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # ---- MACD(默认 12/26/9,DIF=EMA_fast - EMA_slow,DEA=EMA(DIF, signal),
     #          HIST = 2 × (DIF - DEA))----
     fast, slow, signal = DEFAULT_MACD_PARAMS
-    ema_fast = out[f"ema{fast}"].to_numpy()
-    ema_slow = out[f"ema{slow}"].to_numpy()
-    dif = ema_fast - ema_slow  # NaN 自然传播
-    # DEA 在 DIF 上做 EMA,但开头 NaN 段需先剔除再算;_ema 不接受 NaN,用掩码实现
-    valid_mask = ~np.isnan(dif)
-    dea = np.full_like(dif, np.nan)
-    if valid_mask.any():
-        first_valid = int(np.argmax(valid_mask))
-        dif_valid = dif[first_valid:]
-        # dif_valid 内部不应再含 NaN(EMA 一旦有效就连续)
-        dea_valid = _ema(dif_valid, signal)
-        dea[first_valid:] = dea_valid
-    hist = MACD_HIST_MULTIPLIER * (dif - dea)
+    dif, dea, hist = macd(closes, fast, slow, signal)
     out["macd_dif"] = dif
     out["macd_dea"] = dea
     out["macd_hist"] = hist

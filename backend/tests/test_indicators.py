@@ -61,6 +61,25 @@ def test_ema_and_macd_columns_match_legacy_ema():
     assert hist_last == pytest.approx(2.0 * (dif_last - dea_last))
 
 
+def test_market_and_backtest_macd_share_the_same_semantics():
+    from services.market_data.indicator import calc_macd
+
+    closes = [10.0 + 0.1 * i for i in range(60)]
+    frame = _make_df(closes)
+    market_result = calc_macd(frame)
+    backtest_result = compute_indicators(frame)
+
+    np.testing.assert_allclose(
+        market_result["dif"].to_numpy(), backtest_result["macd_dif"].to_numpy(), equal_nan=True
+    )
+    np.testing.assert_allclose(
+        market_result["dea"].to_numpy(), backtest_result["macd_dea"].to_numpy(), equal_nan=True
+    )
+    np.testing.assert_allclose(
+        market_result["macd"].to_numpy(), backtest_result["macd_hist"].to_numpy(), equal_nan=True
+    )
+
+
 def test_volume_ma_only_when_volume_present():
     closes = [1.0] * 20
     df_no_vol = compute_indicators(_make_df(closes))

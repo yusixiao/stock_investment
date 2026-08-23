@@ -119,6 +119,22 @@ def test_successful_market_advances_its_version(tmp_path, dependencies):
     assert dependencies.metadata == [("A", record.refresh_id, 1, False)]
 
 
+def test_refreshes_duckdb_views_once_for_multiple_markets(tmp_path, dependencies):
+    view_calls = []
+    runner = RefreshRunner(
+        tmp_path / "refresh.db",
+        update_market=dependencies.update_market,
+        refresh_views=lambda markets: view_calls.append(markets) or {"status": "success"},
+        refresh_cache=dependencies.refresh_cache,
+        auto_start=False,
+    )
+
+    record = runner.start("manual", ["A", "HK", "US"])
+    runner.run(record.refresh_id, ["A", "HK", "US"])
+
+    assert view_calls == [["A", "HK", "US"]]
+
+
 def test_precache_return_value_limits_markets_entering_derived_stages(
     tmp_path, dependencies
 ):

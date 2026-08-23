@@ -75,6 +75,7 @@ class RefreshRunner:
         update_market: Callable[[str], Any] = _default_update_market,
         update_markets: Callable[[], list[Any]] | None = None,
         refresh_view: Callable[[str], dict[str, Any]] = _default_refresh_view,
+        refresh_views: Callable[[list[str]], dict[str, Any]] | None = None,
         refresh_cache: Callable[[str, str | None], dict[str, Any]] = _default_refresh_cache,
         refresh_before_cache: Callable[[list[str]], Any] | None = None,
         set_market_metadata: Callable[[str, str | None, int | None, bool], None]
@@ -86,6 +87,7 @@ class RefreshRunner:
         self.update_market = update_market
         self.update_markets = update_markets
         self.refresh_view = refresh_view
+        self.refresh_views = refresh_views
         self.refresh_cache = refresh_cache
         self.refresh_before_cache = refresh_before_cache
         self.set_market_metadata = set_market_metadata
@@ -151,7 +153,8 @@ class RefreshRunner:
                     self._record_stale(refresh_id, market, str(exc))
                 successes.clear()
 
-        for market in successes:
+        view_ready_markets = self._refresh_views(refresh_id, sorted(successes), failures)
+        for market in view_ready_markets:
             self._refresh_derived(refresh_id, market, failures)
 
         status = "completed" if not failures else "partial"
@@ -167,12 +170,15 @@ class RefreshRunner:
         successes: set[str],
         failures: dict[str, str],
     ) -> None:
+        update_markets = self.update_markets
+        if update_markets is None:
+            return
         for market in markets:
             self.store.record_market_stage(refresh_id, market, "update", "running")
         try:
             results = {
                 result.market: result
-                for result in self.update_markets()
+                for result in update_markets()
             }
         except Exception as exc:  # noqa: BLE001
             for market in markets:
@@ -231,22 +237,40 @@ class RefreshRunner:
             )
             return False
 
-    def _refresh_derived(
-        self, refresh_id: str, market: str, failures: dict[str, str]
-    ) -> None:
-        self.store.record_market_stage(refresh_id, market, "view", "running")
+    def _refresh_views(
+        self, refresh_id: str, markets: list[str], failures: dict[str, str]
+    ) -> list[str]:
+        if not markets:
+            return []
+        for market in markets:
+            self.store.record_market_stage(refresh_id, market, "view", "running")
         try:
-            view_detail = self.refresh_view(market)
+            # DuckDB views are global; the legacy adapter receives the first
+            # market only for compatibility, while the new adapter sees the
+            # complete successful market set once.
+            view_detail = (
+                self.refresh_views(markets)
+                if self.refresh_views is not None
+                else self.refresh_view(markets[0])
+            )
+        except Exception as exc:  # noqa: BLE001
+            for market in markets:
+                failures[market] = f"view: {exc}"
+                self.store.record_market_stage(
+                    refresh_id, market, "view", "failed", {"error": str(exc)}
+                )
+                self._record_stale(refresh_id, market, str(exc))
+            return []
+
+        for market in markets:
             self.store.record_market_stage(
                 refresh_id, market, "view", "success", view_detail
             )
-        except Exception as exc:  # noqa: BLE001
-            failures[market] = f"view: {exc}"
-            self.store.record_market_stage(
-                refresh_id, market, "view", "failed", {"error": str(exc)}
-            )
-            self._record_stale(refresh_id, market, str(exc))
-            return
+        return markets
+
+    def _refresh_derived(
+        self, refresh_id: str, market: str, failures: dict[str, str]
+    ) -> None:
 
         self.store.record_market_stage(refresh_id, market, "cache", "running")
         try:

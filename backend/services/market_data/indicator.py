@@ -1,6 +1,12 @@
 import pandas as pd
 import numpy as np
 
+from services.market_data.indicator_semantics import (
+    DEFAULT_MACD_PARAMS,
+    STANDARD_MA_WINDOWS,
+    macd,
+)
+
 
 def _ensure_ascending(df: pd.DataFrame) -> pd.DataFrame:
     return df.sort_values("date").reset_index(drop=True)
@@ -12,9 +18,9 @@ def _restore_order(df: pd.DataFrame, original: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def calc_ma(df: pd.DataFrame, windows: list[int] = None) -> pd.DataFrame:
+def calc_ma(df: pd.DataFrame, windows: list[int] | None = None) -> pd.DataFrame:
     if windows is None:
-        windows = [5, 10, 20, 60]
+        windows = list(STANDARD_MA_WINDOWS)
     asc = _ensure_ascending(df.copy())
     for w in windows:
         asc[f"ma{w}"] = asc["close"].rolling(w).mean()
@@ -23,16 +29,15 @@ def calc_ma(df: pd.DataFrame, windows: list[int] = None) -> pd.DataFrame:
 
 def calc_macd(
     df: pd.DataFrame,
-    fast: int = 12,
-    slow: int = 26,
-    signal: int = 9,
+    fast: int = DEFAULT_MACD_PARAMS[0],
+    slow: int = DEFAULT_MACD_PARAMS[1],
+    signal: int = DEFAULT_MACD_PARAMS[2],
 ) -> pd.DataFrame:
     asc = _ensure_ascending(df.copy())
-    ema_fast = asc["close"].ewm(span=fast, adjust=False).mean()
-    ema_slow = asc["close"].ewm(span=slow, adjust=False).mean()
-    asc["dif"] = ema_fast - ema_slow
-    asc["dea"] = asc["dif"].ewm(span=signal, adjust=False).mean()
-    asc["macd"] = (asc["dif"] - asc["dea"]) * 2
+    dif, dea, hist = macd(asc["close"].to_numpy(dtype=float), fast, slow, signal)
+    asc["dif"] = dif
+    asc["dea"] = dea
+    asc["macd"] = hist
     return _restore_order(asc, df)
 
 
