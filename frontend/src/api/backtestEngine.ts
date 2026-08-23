@@ -25,7 +25,7 @@ export interface RunBacktestRequest {
 
 export interface TaskStatus {
   task_id: string;
-  status: 'running' | 'success' | 'failed';
+  status: 'running' | 'success' | 'failed' | 'interrupted';
   progress?: { current: number; total: number; phase: string };
 }
 
@@ -198,7 +198,7 @@ export interface ScanRadarPayload {
 
 export interface ScanRadarTaskResult {
   task_id: string;
-  status: 'running' | 'success' | 'failed';
+  status: 'running' | 'success' | 'failed' | 'interrupted';
   result: ScanRadarPayload | null;
   error?: string;
 }

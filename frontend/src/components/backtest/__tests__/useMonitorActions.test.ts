@@ -20,10 +20,11 @@ const strategy = { filepath: 'value.py', className: 'ValueStrategy', name: '价�
 const stock = { id: 2, market: 'A' as const, symbol: '600000', name: null, threshold_price: 10, is_active: true, state: 'armed' as const, last_price: null, last_price_date: null, last_triggered_at: null, created_at: '2026-08-21T00:00:00Z', updated_at: '2026-08-21T00:00:00Z' };
 
 function setup() {
-  return renderHook(() => useMonitorActions({
-    onStrategyChanged: vi.fn(),
-    onStockChanged: vi.fn(),
+  const onRefresh = vi.fn();
+  const { result } = renderHook(() => useMonitorActions({
+    onRefresh,
   }));
+  return { result, onRefresh };
 }
 
 describe('useMonitorActions', () => {
@@ -91,5 +92,15 @@ describe('useMonitorActions', () => {
     expect(result.current.strategyActionError).toBe('删除策略监控失败，请稍后重试');
     await act(async () => { await result.current.confirmAction(action); });
     expect(result.current.strategyActionError).toBeNull();
+  });
+
+  it('refreshes the center after a successful monitor action', async () => {
+    const { result, onRefresh } = setup();
+
+    await act(async () => {
+      await result.current.confirmAction({ kind: 'delete-stock', id: stock.id, label: stock.symbol });
+    });
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 });

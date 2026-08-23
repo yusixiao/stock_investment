@@ -171,6 +171,50 @@ class MonitoringRepository:
         rows = self.conn.execute("SELECT * FROM monitoring_strategy_runs WHERE monitor_id = ? ORDER BY scheduled_date DESC, id DESC", (monitor_id,)).fetchall()
         return [self._run(row) for row in rows]
 
+    def get_monitor_center(self, recent_limit: int = 5) -> dict[str, Any]:
+        if recent_limit < 1:
+            raise ValueError("recent_limit must be positive")
+
+        strategies = self.list_strategy_monitors()
+        stocks = self.list_stock_monitors()
+        strategy_runs: dict[int, list[StrategyRun]] = {monitor.id: [] for monitor in strategies}
+        stock_events: dict[int, list[dict[str, Any]]] = {monitor.id: [] for monitor in stocks}
+
+        if strategies:
+            placeholders = ", ".join("?" for _ in strategies)
+            rows = self.conn.execute(
+                "SELECT * FROM (SELECT monitoring_strategy_runs.*, "
+                "ROW_NUMBER() OVER (PARTITION BY monitor_id ORDER BY scheduled_date DESC, id DESC) AS row_number "
+                "FROM monitoring_strategy_runs "
+                f"WHERE monitor_id IN ({placeholders}) "
+                ") WHERE row_number <= ? ORDER BY scheduled_date DESC, id DESC",
+                (*[monitor.id for monitor in strategies], recent_limit),
+            ).fetchall()
+            for row in rows:
+                strategy_runs[row["monitor_id"]].append(self._run(row))
+
+        if stocks:
+            placeholders = ", ".join("?" for _ in stocks)
+            rows = self.conn.execute(
+                "SELECT * FROM (SELECT monitoring_stock_events.*, "
+                "ROW_NUMBER() OVER (PARTITION BY monitor_id ORDER BY observed_date DESC, id DESC) AS row_number "
+                "FROM monitoring_stock_events "
+                f"WHERE monitor_id IN ({placeholders}) "
+                ") WHERE row_number <= ? ORDER BY observed_date DESC, id DESC",
+                (*[monitor.id for monitor in stocks], recent_limit),
+            ).fetchall()
+            for row in rows:
+                event = dict(row)
+                event.pop("row_number", None)
+                stock_events[row["monitor_id"]].append(event)
+
+        return {
+            "strategies": strategies,
+            "strategy_runs": strategy_runs,
+            "stocks": stocks,
+            "stock_events": stock_events,
+        }
+
     def create_stock_monitor(self, market: str, symbol: str, threshold_price: float, name: str | None = None) -> StockPriceMonitor:
         now = _now()
         cur = self.conn.execute(

@@ -47,22 +47,10 @@ const MarketMonitor: React.FC = () => {
   const [stockSymbol, setStockSymbol] = useState('');
   const [threshold, setThreshold] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
-  const { strategies, strategyRuns, stocks, stockEvents, strategyLoading, strategyCatalog, strategyCatalogLoading, strategyCatalogError, stockLoading, loadStrategyError, loadStockError, loadStrategies, loadStocks } = center;
+  const { strategies, strategyRuns, stocks, stockEvents, strategyLoading, strategyCatalog, strategyCatalogLoading, strategyCatalogError, stockLoading, loadStrategyError, loadStockError, refresh } = center;
   const stockError = loadStockError;
   const selectedStrategy = strategyCatalog.find((strategy) => strategy.name === strategyName);
-  const { stockFormErrors, saving, runningStrategyId, createStrategyError, strategyActionError, stockActionError, saveStrategy: saveStrategyAction, runStrategy, saveStock: saveStockAction, confirmAction: confirmMonitorAction } = useMonitorActions({
-    onStrategyChanged: ({ createdStrategy, updatedStrategies, deletedStrategyId, strategyRuns: changedRuns }) => {
-      if (createdStrategy) center.setStrategies((current) => [createdStrategy, ...current]);
-      if (updatedStrategies) center.setStrategies(updatedStrategies);
-      if (deletedStrategyId !== undefined) center.setStrategies((current) => current.filter((monitor) => monitor.id !== deletedStrategyId));
-      if (changedRuns) center.setStrategyRuns((current) => ({ ...current, ...changedRuns }));
-    },
-    onStockChanged: ({ createdStock, updatedStock, deletedStockId }) => {
-      if (createdStock) center.setStocks((current) => [createdStock, ...current]);
-      if (updatedStock) center.setStocks((current) => current.map((monitor) => monitor.id === updatedStock.id ? updatedStock : monitor));
-      if (deletedStockId !== undefined) center.setStocks((current) => current.filter((monitor) => monitor.id !== deletedStockId));
-    },
-  });
+  const { stockFormErrors, saving, runningStrategyId, createStrategyError, strategyActionError, stockActionError, saveStrategy: saveStrategyAction, runStrategy, saveStock: saveStockAction, confirmAction: confirmMonitorAction } = useMonitorActions({ onRefresh: refresh });
   const saveStrategy = async () => {
     const saved = await saveStrategyAction({ name: strategyName, selectedStrategy, market: strategyMarket, frequency, symbols: strategySymbols });
     if (saved) { setStrategyName(''); setStrategySymbols(''); setShowStrategyForm(false); }
@@ -82,7 +70,7 @@ const MarketMonitor: React.FC = () => {
           <h2 className="text-base font-semibold text-foreground">监控中心</h2>
           <p className="mt-1 text-xs text-muted-text">策略运行与价格触发各自独立管理</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => { void loadStrategies(); void loadStocks(); }} aria-label="刷新监控">
+         <Button variant="ghost" size="sm" onClick={() => { void refresh(); }} aria-label="刷新监控">
           <RiRefreshLine className="h-4 w-4" />刷新
         </Button>
       </div>

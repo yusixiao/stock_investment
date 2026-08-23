@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 import re
 from pathlib import Path
 from typing import Any, Literal
@@ -106,6 +106,14 @@ class StockEventPage(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class MonitorCenterResponse(BaseModel):
+    strategies: list[StrategyMonitorResponse]
+    strategy_runs: dict[int, list[StrategyRunResponse]]
+    stocks: list[StockMonitorResponse]
+    stock_events: dict[int, list[StockEventResponse]]
+    generated_at: str
 
 
 class StrategyMonitorCreate(BaseModel):
@@ -279,6 +287,25 @@ def list_strategy_monitors(include_inactive: bool = False, limit: int = Query(50
     conn, repo = _repo()
     try:
         return _page([_dump(item) for item in repo.list_strategy_monitors(include_inactive)], limit, offset)
+    finally:
+        _close_connection(conn)
+
+
+@router.get("/center", response_model=MonitorCenterResponse)
+def get_monitor_center(history_limit: int = Query(5, ge=1, le=50)):
+    conn, repo = _repo()
+    try:
+        snapshot = repo.get_monitor_center(recent_limit=history_limit)
+        return {
+            "strategies": [_dump(item) for item in snapshot["strategies"]],
+            "strategy_runs": {
+                monitor_id: [_dump(run) for run in runs]
+                for monitor_id, runs in snapshot["strategy_runs"].items()
+            },
+            "stocks": [_dump(item) for item in snapshot["stocks"]],
+            "stock_events": snapshot["stock_events"],
+            "generated_at": datetime.now().isoformat(),
+        }
     finally:
         _close_connection(conn)
 

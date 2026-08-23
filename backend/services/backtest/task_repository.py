@@ -22,7 +22,12 @@ class TaskRepository:
             init_backtest_tables(conn)
             conn.execute(
                 "UPDATE backtest_tasks SET status = ?, error = ? WHERE status = ?",
-                ("failed", "服务重启，任务中断", "running"),
+                ("interrupted", "服务重启，任务中断", "running"),
+            )
+            # 将旧版本已经写成 failed 的服务重启记录恢复为真实的中断语义。
+            conn.execute(
+                "UPDATE backtest_tasks SET status = ? WHERE status = ? AND error = ?",
+                ("interrupted", "failed", "服务重启，任务中断"),
             )
             conn.commit()
         finally:

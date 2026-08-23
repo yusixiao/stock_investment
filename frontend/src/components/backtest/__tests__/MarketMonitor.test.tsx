@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MarketMonitor from '../MarketMonitor';
 
 const monitoringApi = vi.hoisted(() => ({
+  getCenter: vi.fn(),
   listStrategyMonitors: vi.fn(),
   createStrategyMonitor: vi.fn(),
   runStrategyMonitor: vi.fn(),
@@ -20,15 +21,12 @@ const backtestEngineApi = vi.hoisted(() => ({ listStrategies: vi.fn() }));
 vi.mock('../../../api/monitoring', () => ({ monitoringApi }));
 vi.mock('../../../api/backtestEngine', () => ({ backtestEngineApi }));
 
-const emptyPage = { items: [], total: 0, limit: 50, offset: 0 };
+const emptySnapshot = { strategies: [], strategy_runs: {}, stocks: [], stock_events: {}, generated_at: '' };
 
 describe('MarketMonitor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    monitoringApi.listStrategyMonitors.mockResolvedValue(emptyPage);
-    monitoringApi.listStockMonitors.mockResolvedValue(emptyPage);
-    monitoringApi.listStrategyRuns.mockResolvedValue(emptyPage);
-    monitoringApi.listStockEvents.mockResolvedValue(emptyPage);
+    monitoringApi.getCenter.mockResolvedValue(emptySnapshot);
     backtestEngineApi.listStrategies.mockResolvedValue([{ filepath: 'strategies/value.py', className: 'ValueStrategy', name: '价值策略', strategyType: 'strategy', frequency: 'daily', frequencyOverridable: true, params: {} }]);
   });
 
@@ -45,28 +43,23 @@ describe('MarketMonitor', () => {
     expect(screen.queryByText(/从策略选择股票/)).not.toBeInTheDocument();
   });
 
-  it('loads the three monitor lists and binds strategy and stock errors independently', async () => {
-    let rejectStrategies!: (reason: unknown) => void;
-    let resolveStocks!: (value: typeof emptyPage) => void;
-    monitoringApi.listStrategyMonitors.mockReturnValueOnce(new Promise((_, reject) => { rejectStrategies = reject; }));
-    monitoringApi.listStockMonitors.mockReturnValueOnce(new Promise((resolve) => { resolveStocks = resolve; }));
+  it('loads the monitor center snapshot and binds aggregate errors to both sections', async () => {
+    let rejectCenter!: (reason: unknown) => void;
+    monitoringApi.getCenter.mockReturnValueOnce(new Promise((_, reject) => { rejectCenter = reject; }));
 
     render(<MarketMonitor />);
 
     await waitFor(() => {
-      expect(monitoringApi.listStrategyMonitors).toHaveBeenCalledTimes(1);
-      expect(monitoringApi.listStockMonitors).toHaveBeenCalledTimes(1);
+      expect(monitoringApi.getCenter).toHaveBeenCalledTimes(1);
       expect(backtestEngineApi.listStrategies).toHaveBeenCalledTimes(1);
     });
     expect(screen.getByText('加载策略监控…')).toBeInTheDocument();
     expect(screen.getByText('加载股票监控…')).toBeInTheDocument();
-    rejectStrategies(new Error('strategy unavailable'));
-    resolveStocks(emptyPage);
-    expect(await screen.findByRole('alert')).toHaveTextContent('策略监控加载失败，请稍后重试');
-    expect(await screen.findByText('暂无股票价格监控')).toBeInTheDocument();
+    rejectCenter(new Error('monitor center unavailable'));
+    expect(await screen.findByText('策略监控加载失败，请稍后重试')).toBeInTheDocument();
+    expect(screen.getByText('股票价格监控加载失败，请稍后重试')).toBeInTheDocument();
 
-    expect(monitoringApi.listStrategyMonitors).toHaveBeenCalledTimes(1);
-    expect(monitoringApi.listStockMonitors).toHaveBeenCalledTimes(1);
+    expect(monitoringApi.getCenter).toHaveBeenCalledTimes(1);
     expect(backtestEngineApi.listStrategies).toHaveBeenCalledTimes(1);
   });
 
@@ -75,10 +68,7 @@ describe('MarketMonitor', () => {
     await screen.findByRole('heading', { name: '策略监控' });
     fireEvent.click(screen.getByRole('button', { name: '刷新监控' }));
 
-    await waitFor(() => {
-      expect(monitoringApi.listStrategyMonitors).toHaveBeenCalledTimes(2);
-      expect(monitoringApi.listStockMonitors).toHaveBeenCalledTimes(2);
-    });
+    await waitFor(() => expect(monitoringApi.getCenter).toHaveBeenCalledTimes(2));
     expect(backtestEngineApi.listStrategies).toHaveBeenCalledTimes(1);
   });
 
@@ -111,9 +101,9 @@ describe('MarketMonitor', () => {
   });
 
   it('shows stock state and confirms pause and delete actions', async () => {
-    monitoringApi.listStockMonitors.mockResolvedValue({
-      ...emptyPage,
-      items: [{
+    monitoringApi.getCenter.mockResolvedValue({
+      ...emptySnapshot,
+      stocks: [{
         id: 2, market: 'HK', symbol: '00005', name: '腾讯', threshold_price: 100,
         is_active: true, state: 'armed', last_price: 98, last_price_date: '2026-08-21',
         last_triggered_at: null, created_at: '2026-08-20', updated_at: '2026-08-21',
@@ -132,13 +122,12 @@ describe('MarketMonitor', () => {
   });
 
   it('shows strategy run history separately from stock price events', async () => {
-    monitoringApi.listStrategyMonitors.mockResolvedValue({
-      ...emptyPage,
-      items: [{ id: 1, name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'value.py', params: {}, market: 'A', frequency: 'daily', symbols: ['600000'], is_active: true, next_run_date: '2026-08-22', last_run_at: '2026-08-21', last_run_status: 'success', last_error: null, created_at: '2026-08-20', updated_at: '2026-08-21' }],
+    monitoringApi.getCenter.mockResolvedValue({ ...emptySnapshot,
+      strategies: [{ id: 1, name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'value.py', params: {}, market: 'A', frequency: 'daily', symbols: ['600000'], is_active: true, next_run_date: '2026-08-22', last_run_at: '2026-08-21', last_run_status: 'success', last_error: null, created_at: '2026-08-20', updated_at: '2026-08-21' }],
+      strategy_runs: { 1: [{ id: 11, monitor_id: 1, scheduled_date: '2026-08-21', started_at: '2026-08-21T09:00:00', finished_at: '2026-08-21T09:01:00', status: 'success', task_id: null, result: null, error: null }] },
+      stocks: [{ id: 2, market: 'HK', symbol: '00005', name: null, threshold_price: 100, is_active: true, state: 'triggered', last_price: 98, last_price_date: '2026-08-21', last_triggered_at: '2026-08-21T10:00:00', created_at: '2026-08-20', updated_at: '2026-08-21' }],
+      stock_events: { 2: [{ id: 21, monitor_id: 2, market: 'HK', symbol: '00005', observed_price: 98, threshold_price: 100, observed_date: '2026-08-21', triggered_at: '2026-08-21T10:00:00', status: 'recorded' }] },
     });
-    monitoringApi.listStrategyRuns.mockResolvedValue({ ...emptyPage, items: [{ id: 11, monitor_id: 1, scheduled_date: '2026-08-21', started_at: '2026-08-21T09:00:00', finished_at: '2026-08-21T09:01:00', status: 'success', task_id: null, result: null, error: null }] });
-    monitoringApi.listStockMonitors.mockResolvedValue({ ...emptyPage, items: [{ id: 2, market: 'HK', symbol: '00005', name: null, threshold_price: 100, is_active: true, state: 'triggered', last_price: 98, last_price_date: '2026-08-21', last_triggered_at: '2026-08-21T10:00:00', created_at: '2026-08-20', updated_at: '2026-08-21' }] });
-    monitoringApi.listStockEvents.mockResolvedValue({ ...emptyPage, items: [{ id: 21, monitor_id: 2, market: 'HK', symbol: '00005', observed_price: 98, threshold_price: 100, observed_date: '2026-08-21', triggered_at: '2026-08-21T10:00:00', status: 'recorded' }] });
 
     render(<MarketMonitor />);
 
@@ -184,27 +173,27 @@ describe('MarketMonitor', () => {
   });
 
   it('reports run failures and refreshes strategy history after a successful run', async () => {
-    monitoringApi.listStrategyMonitors.mockResolvedValue({ ...emptyPage, items: [{ id: 1, name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'value.py', params: {}, market: 'A', frequency: 'daily', symbols: null, is_active: true, next_run_date: null, last_run_at: null, last_run_status: 'pending', last_error: null, created_at: '', updated_at: '' }] });
+    monitoringApi.getCenter.mockResolvedValue({ ...emptySnapshot, strategies: [{ id: 1, name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'value.py', params: {}, market: 'A', frequency: 'daily', symbols: null, is_active: true, next_run_date: null, last_run_at: null, last_run_status: 'pending', last_error: null, created_at: '', updated_at: '' }] });
     monitoringApi.runStrategyMonitor.mockResolvedValue({ id: 11 });
     render(<MarketMonitor />);
     fireEvent.click(await screen.findByRole('button', { name: '立即运行' }));
     await waitFor(() => expect(monitoringApi.runStrategyMonitor).toHaveBeenCalledWith(1, expect.any(String)));
-    await waitFor(() => expect(monitoringApi.listStrategyRuns).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(monitoringApi.getCenter).toHaveBeenCalledTimes(2));
     expect(screen.queryByText('运行失败')).not.toBeInTheDocument();
   });
 
   it('refreshes strategy history and shows an error when a run fails', async () => {
-    monitoringApi.listStrategyMonitors.mockResolvedValue({ ...emptyPage, items: [{ id: 1, name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'value.py', params: {}, market: 'A', frequency: 'daily', symbols: null, is_active: true, next_run_date: null, last_run_at: null, last_run_status: 'pending', last_error: null, created_at: '', updated_at: '' }] });
+    monitoringApi.getCenter.mockResolvedValue({ ...emptySnapshot, strategies: [{ id: 1, name: '价值策略', strategy_class: 'ValueStrategy', filepath: 'value.py', params: {}, market: 'A', frequency: 'daily', symbols: null, is_active: true, next_run_date: null, last_run_at: null, last_run_status: 'pending', last_error: null, created_at: '', updated_at: '' }] });
     monitoringApi.runStrategyMonitor.mockRejectedValueOnce(new Error('execution failed'));
     render(<MarketMonitor />);
     fireEvent.click(await screen.findByRole('button', { name: '立即运行' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('运行策略监控失败');
-    await waitFor(() => expect(monitoringApi.listStrategyRuns).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(monitoringApi.getCenter).toHaveBeenCalledTimes(1));
   });
 
   it('shows an action error when pausing a stock monitor fails', async () => {
-    monitoringApi.listStockMonitors.mockResolvedValue({ ...emptyPage, items: [{ id: 2, market: 'HK', symbol: '00005', name: null, threshold_price: 100, is_active: true, state: 'armed', last_price: null, last_price_date: null, last_triggered_at: null, created_at: '', updated_at: '' }] });
+    monitoringApi.getCenter.mockResolvedValue({ ...emptySnapshot, stocks: [{ id: 2, market: 'HK', symbol: '00005', name: null, threshold_price: 100, is_active: true, state: 'armed', last_price: null, last_price_date: null, last_triggered_at: null, created_at: '', updated_at: '' }] });
     monitoringApi.pauseStockMonitor.mockRejectedValueOnce(new Error('pause failed'));
     render(<MarketMonitor />);
     fireEvent.click(await screen.findByRole('button', { name: '暂停 00005' }));

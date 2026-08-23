@@ -25,6 +25,7 @@ RETAINED_API_PATHS = {
     "/api/backtest/strategies",
     "/api/backtest/tasks",
     "/api/backtest/tasks/{task_id}",
+    "/api/v1/monitoring/center",
     "/api/v1/monitoring/stock-monitors",
     "/api/v1/monitoring/stock-monitors/{monitor_id}",
     "/api/v1/monitoring/stock-monitors/{monitor_id}/events",

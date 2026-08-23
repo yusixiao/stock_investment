@@ -9,7 +9,7 @@ export type BacktestMode = 'single' | 'market';
 
 export interface BacktestTask {
   taskId: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'interrupted';
   executionStatus?: 'inactive' | 'active';
   executionAccountId?: number | null;
   mode: BacktestMode;

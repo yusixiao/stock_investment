@@ -155,7 +155,21 @@ def test_repository_recovers_running_tasks_at_startup(tmp_path):
 
     second = TaskRepository(db_path)
     row = second.get_result_row("task-1")
-    assert row["status"] == "failed"
+    assert row["status"] == "interrupted"
+    assert row["error"] == "服务重启，任务中断"
+
+
+def test_repository_reclassifies_legacy_restart_failures_as_interrupted(tmp_path):
+    from services.backtest.task_repository import TaskRepository
+
+    db_path = str(tmp_path / "tasks.db")
+    first = TaskRepository(db_path)
+    _create_task(first, '{"strategy_class":"Example"}')
+    first.fail_task("task-1", "服务重启，任务中断")
+
+    second = TaskRepository(db_path)
+    row = second.get_result_row("task-1")
+    assert row["status"] == "interrupted"
     assert row["error"] == "服务重启，任务中断"
 
 

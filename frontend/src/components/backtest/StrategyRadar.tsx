@@ -91,9 +91,9 @@ const StrategyRadar: React.FC = () => {
           pollRef.current = window.setTimeout(() => pollResult(taskId), 1000);
           return;
         }
-        if (status.status === 'failed') {
+        if (status.status === 'failed' || status.status === 'interrupted') {
           backtestEngineApi.getScanRadarResult(taskId).then((r) => {
-            setScanError(r.error || '扫描失败');
+            setScanError(r.error || (status.status === 'interrupted' ? '服务重启，任务中断' : '扫描失败'));
             setIsScanning(false);
           });
           return;

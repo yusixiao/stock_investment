@@ -115,7 +115,13 @@ export function buildBacktestTask(item: TaskListItem, detail: TaskResult): Backt
 
   return {
     taskId: item.task_id,
-    status: item.status === 'success' ? 'completed' : item.status === 'failed' ? 'failed' : 'running',
+    status: item.status === 'success'
+      ? 'completed'
+      : item.status === 'failed'
+        ? 'failed'
+        : item.status === 'interrupted'
+          ? 'interrupted'
+          : 'running',
     executionStatus: item.execution_status,
     executionAccountId: item.execution_account_id,
     mode: symbols && symbols.length === 1 ? 'single' : 'market',

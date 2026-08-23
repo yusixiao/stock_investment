@@ -133,6 +133,31 @@ def test_monitoring_rejects_invalid_enum_values():
         )
 
 
+def test_monitor_center_batches_recent_history_and_groups_by_monitor():
+    repo = make_repository()
+    first_strategy = repo.create_strategy_monitor("first", "Strategy", "x.py", {}, "A", "daily")
+    second_strategy = repo.create_strategy_monitor("second", "Strategy", "x.py", {}, "A", "daily")
+    first_stock = repo.create_stock_monitor("A", "600000", 10)
+    second_stock = repo.create_stock_monitor("A", "600001", 10)
+
+    for scheduled_date in ("2026-08-20", "2026-08-21", "2026-08-22"):
+        repo.create_strategy_run(first_strategy.id, scheduled_date)
+    repo.create_strategy_run(second_strategy.id, "2026-08-22")
+    for observed_date in ("2026-08-20", "2026-08-21", "2026-08-22"):
+        repo.claim_price_trigger(first_stock.id, 9, observed_date, f"{observed_date}T16:00:00")
+        repo.rearm_price_monitor(first_stock.id)
+    repo.claim_price_trigger(second_stock.id, 9, "2026-08-22", "2026-08-22T16:00:00")
+
+    snapshot = repo.get_monitor_center(recent_limit=2)
+
+    assert [monitor.id for monitor in snapshot["strategies"]] == [second_strategy.id, first_strategy.id]
+    assert [run.scheduled_date for run in snapshot["strategy_runs"][first_strategy.id]] == ["2026-08-22", "2026-08-21"]
+    assert [run.scheduled_date for run in snapshot["strategy_runs"][second_strategy.id]] == ["2026-08-22"]
+    assert [monitor.id for monitor in snapshot["stocks"]] == [second_stock.id, first_stock.id]
+    assert [event["observed_date"] for event in snapshot["stock_events"][first_stock.id]] == ["2026-08-22", "2026-08-21"]
+    assert [event["observed_date"] for event in snapshot["stock_events"][second_stock.id]] == ["2026-08-22"]
+
+
 def test_finish_strategy_run_is_terminal_and_does_not_overwrite_latest_monitor_status():
     repo = make_repository()
     monitor = repo.create_strategy_monitor("strategy", "Strategy", "x.py", {}, "A", "daily")
