@@ -1,25 +1,14 @@
 import { useState } from 'react';
 import type { StrategyInfo } from '../../api/backtestEngine';
 import { monitoringApi } from '../../api/monitoring';
-import type { MonitoringFrequency, MonitoringMarket, StockMonitor, StrategyMonitor, StrategyRun } from '../../api/monitoring';
+import type { MonitoringFrequency, MonitoringMarket, StockMonitor } from '../../api/monitoring';
 
 type PendingAction =
   | { kind: 'pause' | 'resume'; monitor: StockMonitor }
   | { kind: 'delete-stock' | 'delete-strategy'; id: number; label: string };
 
-interface MonitorChange {
-  createdStrategy?: StrategyMonitor;
-  updatedStrategies?: StrategyMonitor[];
-  deletedStrategyId?: number;
-  strategyRuns?: Record<number, StrategyRun[]>;
-  createdStock?: StockMonitor;
-  updatedStock?: StockMonitor;
-  deletedStockId?: number;
-}
-
-export const useMonitorActions = ({ onStrategyChanged, onStockChanged }: {
-  onStrategyChanged: (change: MonitorChange) => void;
-  onStockChanged: (change: MonitorChange) => void;
+export const useMonitorActions = ({ onRefresh }: {
+  onRefresh: () => void | Promise<void>;
 }) => {
   const [stockFormErrors, setStockFormErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -35,8 +24,8 @@ export const useMonitorActions = ({ onStrategyChanged, onStockChanged }: {
     setSaving(true);
     try {
       const symbolList = symbols.split(',').map((symbol) => symbol.trim()).filter(Boolean);
-      const created = await monitoringApi.createStrategyMonitor({ name: trimmedName, strategy_class: selectedStrategy.className, filepath: selectedStrategy.filepath, params: {}, market, frequency, symbols: symbolList.length > 0 ? symbolList : undefined });
-      onStrategyChanged({ createdStrategy: created, strategyRuns: { [created.id]: [] } });
+      await monitoringApi.createStrategyMonitor({ name: trimmedName, strategy_class: selectedStrategy.className, filepath: selectedStrategy.filepath, params: {}, market, frequency, symbols: symbolList.length > 0 ? symbolList : undefined });
+      await onRefresh();
       setCreateStrategyError(null);
       return true;
     } catch {
@@ -52,17 +41,8 @@ export const useMonitorActions = ({ onStrategyChanged, onStockChanged }: {
     setStrategyActionError(null);
     try {
       await monitoringApi.runStrategyMonitor(monitorId, new Date().toISOString().slice(0, 10));
-      const page = await monitoringApi.listStrategyRuns(monitorId);
-      onStrategyChanged({ strategyRuns: { [monitorId]: page.items } });
-      const monitors = await monitoringApi.listStrategyMonitors();
-      onStrategyChanged({ updatedStrategies: monitors.items });
+      await onRefresh();
     } catch {
-      try {
-        const page = await monitoringApi.listStrategyRuns(monitorId);
-        onStrategyChanged({ strategyRuns: { [monitorId]: page.items } });
-      } catch {
-        // Keep the run error visible even if the follow-up history request also fails.
-      }
       setStrategyActionError('运行策略监控失败，请稍后重试');
     } finally {
       setRunningStrategyId(null);
@@ -80,8 +60,8 @@ export const useMonitorActions = ({ onStrategyChanged, onStockChanged }: {
     if (Object.keys(errors).length > 0) return false;
     setSaving(true);
     try {
-      const created = await monitoringApi.createStockMonitor({ market: market as MonitoringMarket, symbol: symbol.trim().toUpperCase(), threshold_price: price });
-      onStockChanged({ createdStock: created });
+      await monitoringApi.createStockMonitor({ market: market as MonitoringMarket, symbol: symbol.trim().toUpperCase(), threshold_price: price });
+      await onRefresh();
       setStockFormErrors({});
       setStockActionError(null);
       return true;
@@ -100,14 +80,14 @@ export const useMonitorActions = ({ onStrategyChanged, onStockChanged }: {
     else setStrategyActionError(null);
     try {
       if (action.kind === 'pause' || action.kind === 'resume') {
-        const updated = action.kind === 'pause' ? await monitoringApi.pauseStockMonitor(action.monitor.id) : await monitoringApi.resumeStockMonitor(action.monitor.id);
-        onStockChanged({ updatedStock: updated });
+        await (action.kind === 'pause' ? monitoringApi.pauseStockMonitor(action.monitor.id) : monitoringApi.resumeStockMonitor(action.monitor.id));
+        await onRefresh();
       } else if (action.kind === 'delete-stock') {
         await monitoringApi.deleteStockMonitor(action.id);
-        onStockChanged({ deletedStockId: action.id });
+        await onRefresh();
       } else if (action.kind === 'delete-strategy') {
         await monitoringApi.deleteStrategyMonitor(action.id);
-        onStrategyChanged({ deletedStrategyId: action.id });
+        await onRefresh();
       }
       if (isStockAction) setStockActionError(null);
       else setStrategyActionError(null);

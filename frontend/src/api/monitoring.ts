@@ -71,6 +71,14 @@ export interface MonitorPage<T> {
   offset: number;
 }
 
+export interface MonitorCenterSnapshot {
+  strategies: StrategyMonitor[];
+  strategy_runs: Record<number, StrategyRun[]>;
+  stocks: StockMonitor[];
+  stock_events: Record<number, StockEvent[]>;
+  generated_at: string;
+}
+
 export interface CreateStrategyMonitorRequest {
   name: string;
   strategy_class: string;
@@ -109,6 +117,11 @@ export interface UpdateStockMonitorRequest {
 const pageParams = { limit: 50, offset: 0 };
 
 export const monitoringApi = {
+  async getCenter(): Promise<MonitorCenterSnapshot> {
+    const response = await apiClient.get('/api/v1/monitoring/center', { params: { history_limit: 5 } });
+    return response.data;
+  },
+
   async listStrategyMonitors(): Promise<MonitorPage<StrategyMonitor>> {
     const response = await apiClient.get('/api/v1/monitoring/strategy-monitors', { params: pageParams });
     return response.data;

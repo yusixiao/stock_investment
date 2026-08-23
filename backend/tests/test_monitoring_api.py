@@ -241,6 +241,38 @@ def test_monitoring_routes_publish_typed_response_contracts(client):
     assert "StockEventPage" in components
 
 
+def test_monitor_center_returns_grouped_recent_history_with_limit(client):
+    http, conn = client
+    strategy = http.post("/api/v1/monitoring/strategy-monitors", json=strategy_payload()).json()
+    stock = http.post(
+        "/api/v1/monitoring/stock-monitors",
+        json={"market": "HK", "symbol": "00005", "threshold_price": 100},
+    ).json()
+    conn.execute(
+        "INSERT INTO monitoring_strategy_runs (monitor_id, scheduled_date, started_at, status) VALUES (?, ?, ?, ?)",
+        (strategy["id"], "2026-08-21", "now", "running"),
+    )
+    conn.execute(
+        "INSERT INTO monitoring_strategy_runs (monitor_id, scheduled_date, started_at, status) VALUES (?, ?, ?, ?)",
+        (strategy["id"], "2026-08-22", "now", "running"),
+    )
+    for observed_date in ("2026-08-21", "2026-08-22"):
+        conn.execute(
+            "INSERT INTO monitoring_stock_events (monitor_id, market, symbol, observed_price, threshold_price, observed_date, triggered_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (stock["id"], "HK", "00005", 98, 100, observed_date, f"{observed_date}T16:00:00"),
+        )
+    conn.commit()
+
+    response = http.get("/api/v1/monitoring/center", params={"history_limit": 1})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["generated_at"]
+    assert [item["id"] for item in body["strategies"]] == [strategy["id"]]
+    assert [item["scheduled_date"] for item in body["strategy_runs"][str(strategy["id"])]] == ["2026-08-22"]
+    assert [item["observed_date"] for item in body["stock_events"][str(stock["id"])]] == ["2026-08-22"]
+
+
 def test_manual_strategy_run_persists_run_and_strategy_endpoint_has_no_stock_import(client):
     http, conn = client
     monitor = http.post("/api/v1/monitoring/strategy-monitors", json=strategy_payload()).json()

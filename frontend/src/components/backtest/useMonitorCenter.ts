@@ -1,49 +1,42 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { backtestEngineApi } from '../../api/backtestEngine';
 import type { StrategyInfo } from '../../api/backtestEngine';
 import { monitoringApi } from '../../api/monitoring';
-import type { StockEvent, StockMonitor, StrategyMonitor, StrategyRun } from '../../api/monitoring';
+import type { MonitorCenterSnapshot } from '../../api/monitoring';
+
+const emptySnapshot: MonitorCenterSnapshot = {
+  strategies: [],
+  strategy_runs: {},
+  stocks: [],
+  stock_events: {},
+  generated_at: '',
+};
 
 export const useMonitorCenter = () => {
-  const [strategies, setStrategies] = useState<StrategyMonitor[]>([]);
-  const [strategyRuns, setStrategyRuns] = useState<Record<number, StrategyRun[]>>({});
-  const [stocks, setStocks] = useState<StockMonitor[]>([]);
-  const [stockEvents, setStockEvents] = useState<Record<number, StockEvent[]>>({});
-  const [strategyLoading, setStrategyLoading] = useState(true);
+  const [snapshot, setSnapshot] = useState<MonitorCenterSnapshot>(emptySnapshot);
+  const requestSequence = useRef(0);
   const [strategyCatalog, setStrategyCatalog] = useState<StrategyInfo[]>([]);
   const [strategyCatalogLoading, setStrategyCatalogLoading] = useState(true);
   const [strategyCatalogError, setStrategyCatalogError] = useState<string | null>(null);
-  const [stockLoading, setStockLoading] = useState(true);
+  const [monitorLoading, setMonitorLoading] = useState(true);
   const [loadStrategyError, setLoadStrategyError] = useState<string | null>(null);
   const [loadStockError, setLoadStockError] = useState<string | null>(null);
 
-  const loadStrategies = async () => {
-    setStrategyLoading(true);
+  const refresh = async () => {
+    const sequence = ++requestSequence.current;
+    setMonitorLoading(true);
     try {
-      const page = await monitoringApi.listStrategyMonitors();
-      setStrategies(page.items);
+      const nextSnapshot = await monitoringApi.getCenter();
+      if (sequence !== requestSequence.current) return;
+      setSnapshot(nextSnapshot);
       setLoadStrategyError(null);
-      const runs = await Promise.all(page.items.map(async (monitor) => [monitor.id, (await monitoringApi.listStrategyRuns(monitor.id)).items] as const));
-      setStrategyRuns(Object.fromEntries(runs));
-    } catch {
-      setLoadStrategyError('策略监控加载失败，请稍后重试');
-    } finally {
-      setStrategyLoading(false);
-    }
-  };
-
-  const loadStocks = async () => {
-    setStockLoading(true);
-    try {
-      const page = await monitoringApi.listStockMonitors();
-      setStocks(page.items);
       setLoadStockError(null);
-      const events = await Promise.all(page.items.map(async (monitor) => [monitor.id, (await monitoringApi.listStockEvents(monitor.id)).items] as const));
-      setStockEvents(Object.fromEntries(events));
     } catch {
+      if (sequence !== requestSequence.current) return;
+      setLoadStrategyError('策略监控加载失败，请稍后重试');
       setLoadStockError('股票价格监控加载失败，请稍后重试');
     } finally {
-      setStockLoading(false);
+      if (sequence === requestSequence.current) setMonitorLoading(false);
     }
   };
 
@@ -62,15 +55,21 @@ export const useMonitorCenter = () => {
 
   /* eslint-disable react-hooks/set-state-in-effect -- initial data load synchronizes remote monitor collections. */
   useEffect(() => {
-    void loadStrategies();
-    void loadStocks();
+    void refresh();
     void loadStrategyCatalog();
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   return {
-    strategies, setStrategies, strategyRuns, setStrategyRuns, stocks, setStocks, stockEvents, setStockEvents,
-    strategyLoading, strategyCatalog, strategyCatalogLoading, strategyCatalogError, stockLoading, loadStrategyError, loadStockError,
-    loadStrategies, loadStocks,
+    strategies: snapshot.strategies,
+    strategyRuns: snapshot.strategy_runs,
+    stocks: snapshot.stocks,
+    stockEvents: snapshot.stock_events,
+    strategyLoading: monitorLoading,
+    strategyCatalog, strategyCatalogLoading, strategyCatalogError,
+    stockLoading: monitorLoading, loadStrategyError, loadStockError,
+    refresh,
+    loadStrategies: refresh,
+    loadStocks: refresh,
   };
 };

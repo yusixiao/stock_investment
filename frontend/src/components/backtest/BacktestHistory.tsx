@@ -286,6 +286,8 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                               ? 'text-success'
                               : task.status === 'failed'
                                 ? 'text-danger'
+                                : task.status === 'interrupted'
+                                  ? 'text-warning'
                                 : 'text-muted-text',
                           )}
                         >
@@ -293,6 +295,8 @@ const BacktestHistory: React.FC<Props> = ({ onSelect }) => {
                             ? '完成'
                             : task.status === 'failed'
                               ? '失败'
+                              : task.status === 'interrupted'
+                                ? '服务中断'
                               : '运行中'}
                         </span>
                       </td>

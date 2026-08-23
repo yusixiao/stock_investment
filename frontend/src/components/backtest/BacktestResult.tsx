@@ -91,6 +91,17 @@ const BacktestResult: React.FC<Props> = ({ task }) => {
     );
   }
 
+  if (task.status === 'interrupted') {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <Badge variant="default">服务中断</Badge>
+          <p className="mt-2 text-sm text-secondary-text">{task.error || '服务重启，任务中断'}</p>
+        </div>
+      </div>
+    );
+  }
+
   const result = task.result;
   if (!result) {
     return (

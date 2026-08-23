@@ -90,6 +90,22 @@ describe('BacktestHistory execution ordering', () => {
     expect(within(row.closest('tr') as HTMLElement).getByText('监控触发')).toBeInTheDocument();
   });
 
+  it('labels tasks interrupted by a service restart separately from failures', async () => {
+    listTasks.mockResolvedValue([
+      {
+        ...tasks[0],
+        task_id: 'interrupted-task',
+        status: 'interrupted',
+      },
+    ]);
+
+    render(<BacktestHistory />);
+
+    const row = await screen.findByText('interrupted-task');
+    expect(within(row.closest('tr') as HTMLElement).getByText('服务中断')).toBeInTheDocument();
+    expect(within(row.closest('tr') as HTMLElement).queryByText('失败')).not.toBeInTheDocument();
+  });
+
   it('uses the monitor strategy name when the task name field is absent', async () => {
     listTasks.mockResolvedValue([
       {
@@ -243,5 +259,35 @@ describe('BacktestHistory execution ordering', () => {
     expect(screen.getByText('监控触发')).toBeInTheDocument();
     expect(screen.getByText('2026-02-20 ~ 2026-08-21')).toBeInTheDocument();
     expect(screen.getAllByText('000001.SZ')).toHaveLength(2);
+  });
+
+  it('preserves interrupted status when opening a service-restarted task', async () => {
+    const interruptedTask = {
+      ...tasks[0],
+      task_id: 'interrupted-task',
+      status: 'interrupted',
+      pipeline_info: { strategy_name: '中断策略', symbols: ['000001.SZ'] },
+    };
+    listTasks.mockResolvedValue([interruptedTask]);
+    getResult.mockResolvedValue({
+      task_id: interruptedTask.task_id,
+      status: 'interrupted',
+      task_type: 'backtest',
+      pipeline_info: interruptedTask.pipeline_info,
+      start_date: null,
+      end_date: null,
+      result: null,
+      error: '服务重启，任务中断',
+      created_at: interruptedTask.created_at,
+      execution_status: 'inactive',
+      execution_account_id: null,
+    });
+    const selected = vi.fn();
+
+    render(<BacktestHistory onSelect={selected} />);
+    fireEvent.click(await screen.findByText('中断策略'));
+
+    await waitFor(() => expect(selected).toHaveBeenCalled());
+    expect(selected.mock.calls[0][0]).toMatchObject({ status: 'interrupted', error: '服务重启，任务中断' });
   });
 });

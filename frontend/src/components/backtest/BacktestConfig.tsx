@@ -157,8 +157,14 @@ const BacktestConfig: React.FC<Props> = ({ mode, onRun, onTaskUpdate, cacheStatu
               } else {
                 onTaskUpdate(realTaskId, { status: 'completed', progress: 100 });
               }
-            } else {
-              onTaskUpdate(realTaskId, { status: 'failed', error: 'Backtest failed' });
+              } else if (status.status === 'interrupted') {
+                const result = await backtestEngineApi.getResult(realTaskId);
+                onTaskUpdate(realTaskId, {
+                  status: 'interrupted',
+                  error: result.error || '服务重启，任务中断',
+                });
+              } else {
+                onTaskUpdate(realTaskId, { status: 'failed', error: 'Backtest failed' });
             }
             setIsRunning(false);
           }

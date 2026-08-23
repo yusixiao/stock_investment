@@ -72,4 +72,13 @@ describe('monitoringApi', () => {
     expect(patch).toHaveBeenNthCalledWith(1, '/api/v1/monitoring/strategy-monitors/1', { frequency: 'weekly' });
     expect(patch).toHaveBeenNthCalledWith(2, '/api/v1/monitoring/stock-monitors/2', { threshold_price: 101 });
   });
+
+  it('loads the monitor center snapshot in one request', async () => {
+    get.mockResolvedValue({ data: { strategies: [], strategy_runs: {}, stocks: [], stock_events: {}, generated_at: '2026-08-22T00:00:00Z' } });
+
+    const snapshot = await monitoringApi.getCenter();
+
+    expect(snapshot.generated_at).toBe('2026-08-22T00:00:00Z');
+    expect(get).toHaveBeenCalledWith('/api/v1/monitoring/center', expect.any(Object));
+  });
 });
