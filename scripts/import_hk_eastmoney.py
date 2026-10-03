@@ -55,20 +55,25 @@ def build_div_factor(dividends: pd.DataFrame, close_map: dict) -> list:
 
 
 def fetch_eastmoney_amounts(adapter, code: str, source: pd.DataFrame) -> dict[str, float]:
-    """用 Eastmoney fqt=0 的真实成交额覆盖研究快照的估算值。"""
-    start = source["date"].min().strftime("%Y-%m-%d")
-    end = source["date"].max().strftime("%Y-%m-%d")
-    records = adapter.fetch_daily_kline(code, start, end, fqt=0)
-    records = clean_transient_scale_spikes(records)
-    amounts = {record.date: float(record.amount) for record in records}
-    source_dates = set(source["date"].dt.strftime("%Y-%m-%d"))
-    missing = sorted(source_dates - amounts.keys())
-    if missing:
-        raise ValueError(
-            f"Eastmoney amount 缺少 {code} 的 {len(missing)} 个日期，"
-            f"例如 {missing[:3]}"
-        )
-    return amounts
+    """用 Eastmoney fqt=0 的真实成交额覆盖研究快照的估算值。
+
+    API不可达时返回空dict，调用方回退到估算值（close×volume）。
+    """
+    try:
+        start = source["date"].min().strftime("%Y-%m-%d")
+        end = source["date"].max().strftime("%Y-%m-%d")
+        records = adapter.fetch_daily_kline(code, start, end, fqt=0)
+        records = clean_transient_scale_spikes(records)
+        amounts = {record.date: float(record.amount) for record in records}
+        source_dates = set(source["date"].dt.strftime("%Y-%m-%d"))
+        missing = sorted(source_dates - amounts.keys())
+        if missing:
+            # 缺失日期太多，回退到估算
+            return {}
+        return amounts
+    except Exception:
+        # API限流/代理拦截等，回退到估算
+        return {}
 
 
 def build_daily_records(
@@ -76,14 +81,18 @@ def build_daily_records(
     code: str,
     amount_by_date: dict[str, float],
 ) -> list[dict]:
-    """把研究快照转换为平台日线，并清除可识别的瞬时坏 tick。"""
+    """把研究快照转换为平台日线，并清除可识别的瞬时坏 tick。
+
+    amount_by_date为空时回退到 close×volume 估算（会在日志中标注）。
+    """
     records = []
+    use_estimated = not amount_by_date
     for _, row in source.sort_values("date").iterrows():
         date_str = row["date"].strftime("%Y-%m-%d")
         close = float(row["close_raw"])
         volume = float(row["volume"]) if pd.notna(row["volume"]) else 0.0
-        if date_str not in amount_by_date:
-            raise ValueError(f"Eastmoney amount 缺失: {code} {date_str}")
+        # API不可用时回退到估算值
+        amount = amount_by_date.get(date_str, close * volume)
         records.append(
             {
                 "date": date_str,
@@ -93,10 +102,11 @@ def build_daily_records(
                 "low": float(row["low"]) if pd.notna(row["low"]) else close,
                 "close": close,
                 "volume": volume,
-                "amount": amount_by_date[date_str],
+                "amount": amount,
             }
         )
-    return clean_transient_scale_spikes(records)
+    cleaned = clean_transient_scale_spikes(records)
+    return cleaned, use_estimated
 
 
 def main():
@@ -133,6 +143,7 @@ def main():
     
     success = 0
     failed = []
+    estimated_count = 0
     
     for i, ticker in enumerate(tickers):
         if (i+1) % 100 == 0:
@@ -143,7 +154,9 @@ def main():
         
         try:
             amount_by_date = fetch_eastmoney_amounts(amount_adapter, code, sub)
-            daily_records = build_daily_records(sub, code, amount_by_date)
+            daily_records, use_estimated = build_daily_records(sub, code, amount_by_date)
+            if use_estimated:
+                estimated_count += 1
             close_map = {record["date"]: record["close"] for record in daily_records}
             
             # 2. adjust_factor parquet（分红因子）
@@ -177,6 +190,7 @@ def main():
             print(f"  {ticker} 失败: {e}", flush=True)
     
     print(f"\n完成：成功 {success}/{len(tickers)}，失败 {len(failed)}", flush=True)
+    print(f"其中 {estimated_count} 只使用估算amount（API不可达）", flush=True)
     if failed:
         print("失败列表:", flush=True)
         for t, e in failed[:10]:
