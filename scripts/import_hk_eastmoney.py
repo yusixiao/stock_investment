@@ -1,18 +1,18 @@
-"""将研究侧Eastmoney HK数据导入平台data/market/HK/格式
+"""将研究侧 HK 数据导入平台 data/market/HK/ 格式。
 
 研究数据：~/workspace/港股回测/data/raw/all_20150101-20260930_v1.parquet
   - 列：date, ticker, open, high, low, close_raw, close_adj, volume, dividends, splits
-  - close_raw：拆股已调整到2026（出厂）
+  - close_raw：研究侧不复权价格快照
   - dividends：分红金额
 
 目标格式：
   - data/market/HK/daily/{code}.parquet：DailyKlineRecord列表
     - code格式：00700.HK（5位+后缀）
-    - close = close_raw（拆股已调，分红未调）
-    - amount = close * volume（估算）
+    - close = close_raw（不复权）
+    - amount = Eastmoney fqt=0 返回的真实成交额
   - data/market/HK/adjust_factor/{code}.parquet：AdjustFactorRecord列表
     - div_factor = ∏(1 - D/P)，锚定最新=1.0
-    - 只含分红事件（拆股已在close_raw中）
+    - 只含现金分红事件，其他公司行为不在该因子中补造
 
 用法：
     python scripts/import_hk_eastmoney.py [--limit N] [--codes 00700,00005]
@@ -22,16 +22,17 @@ import sys
 from pathlib import Path
 
 # 平台根目录
-PLATFORM_ROOT = Path("/home/hatch/workspace/stock_investment")
+PLATFORM_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLATFORM_ROOT))
 sys.path.insert(0, str(PLATFORM_ROOT / "backend"))
 
 import pandas as pd
-import numpy as np
-from datetime import datetime
+
+from backend.services.market_data.hk_adjust_factor import build_dividend_factor_rows
+from backend.services.market_data.hk_price_cleaner import clean_transient_scale_spikes
 
 # 研究数据路径
-RESEARCH_PARQUET = Path("/home/hatch/workspace/港股回测/data/raw/all_20150101-20260930_v1.parquet")
+RESEARCH_PARQUET = Path.home() / "workspace/港股回测/data/raw/all_20150101-20260930_v1.parquet"
 
 
 def ticker_to_code(ticker: str) -> str:
@@ -40,68 +41,74 @@ def ticker_to_code(ticker: str) -> str:
 
 
 def build_div_factor(dividends: pd.DataFrame, close_map: dict) -> list:
-    """构建分红调整因子
-    
-    Args:
-        dividends: DataFrame[date, dividends]，按日期升序
-        close_map: {date_str: close_raw}，用于计算D/P的分母
-    
-    Returns:
-        [(date_str, factor)]，按日期升序，锚定最新=1.0
-    """
-    if len(dividends) == 0:
-        return []
-    
-    # 按日期倒序累乘
-    events = []  # [(date_str, factor_change)]
+    """构建分红因子，并补齐首个事件前的历史基准因子。"""
+    events = []
     for _, row in dividends.iterrows():
-        date_str = row["date"].strftime("%Y-%m-%d") if hasattr(row["date"], "strftime") else str(row["date"])[:10]
-        amount = float(row["dividends"])
-        if amount <= 0:
-            continue
-        
-        # 找除权日前一个交易日的收盘价
-        prev_dates = [d for d in close_map.keys() if d < date_str]
-        if not prev_dates:
-            continue
-        prev_date = max(prev_dates)
-        prev_close = close_map[prev_date]
-        if prev_close <= 0:
-            continue
-        
-        factor_change = (prev_close - amount) / prev_close
-        if factor_change <= 0 or factor_change > 1:
-            continue
-        events.append((date_str, factor_change))
-    
-    if not events:
-        return []
-    
-    # 同日合并
-    merged = {}
-    for d, c in events:
-        merged[d] = merged.get(d, 1.0) * c
-    events = sorted(merged.items())
-    
-    # 从后往前累乘，锚定最新=1.0
-    n = len(events)
-    factors = [0.0] * n
-    factors[n-1] = 1.0
-    for i in range(n-2, -1, -1):
-        factors[i] = factors[i+1] * events[i+1][1]
-    
-    return [(d, round(f, 6)) for (d, _), f in zip(events, factors)]
+        date_value = row["date"]
+        date_str = (
+            date_value.strftime("%Y-%m-%d")
+            if hasattr(date_value, "strftime")
+            else str(date_value)[:10]
+        )
+        events.append((date_str, row["dividends"]))
+    return build_dividend_factor_rows(events, close_map)
+
+
+def fetch_eastmoney_amounts(adapter, code: str, source: pd.DataFrame) -> dict[str, float]:
+    """用 Eastmoney fqt=0 的真实成交额覆盖研究快照的估算值。"""
+    start = source["date"].min().strftime("%Y-%m-%d")
+    end = source["date"].max().strftime("%Y-%m-%d")
+    records = adapter.fetch_daily_kline(code, start, end, fqt=0)
+    records = clean_transient_scale_spikes(records)
+    amounts = {record.date: float(record.amount) for record in records}
+    source_dates = set(source["date"].dt.strftime("%Y-%m-%d"))
+    missing = sorted(source_dates - amounts.keys())
+    if missing:
+        raise ValueError(
+            f"Eastmoney amount 缺少 {code} 的 {len(missing)} 个日期，"
+            f"例如 {missing[:3]}"
+        )
+    return amounts
+
+
+def build_daily_records(
+    source: pd.DataFrame,
+    code: str,
+    amount_by_date: dict[str, float],
+) -> list[dict]:
+    """把研究快照转换为平台日线，并清除可识别的瞬时坏 tick。"""
+    records = []
+    for _, row in source.sort_values("date").iterrows():
+        date_str = row["date"].strftime("%Y-%m-%d")
+        close = float(row["close_raw"])
+        volume = float(row["volume"]) if pd.notna(row["volume"]) else 0.0
+        if date_str not in amount_by_date:
+            raise ValueError(f"Eastmoney amount 缺失: {code} {date_str}")
+        records.append(
+            {
+                "date": date_str,
+                "code": code,
+                "open": float(row["open"]) if pd.notna(row["open"]) else close,
+                "high": float(row["high"]) if pd.notna(row["high"]) else close,
+                "low": float(row["low"]) if pd.notna(row["low"]) else close,
+                "close": close,
+                "volume": volume,
+                "amount": amount_by_date[date_str],
+            }
+        )
+    return clean_transient_scale_spikes(records)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=0, help="只处理前N只（测试用）")
     parser.add_argument("--codes", type=str, default="", help="指定代码，逗号分隔")
+    parser.add_argument("--research-parquet", type=Path, default=RESEARCH_PARQUET)
     parser.add_argument("--dry-run", action="store_true", help="只打印不写入")
     args = parser.parse_args()
     
     print("加载研究数据...", flush=True)
-    df = pd.read_parquet(RESEARCH_PARQUET)
+    df = pd.read_parquet(args.research_parquet)
     df["date"] = pd.to_datetime(df["date"])
     print(f"共 {len(df):,} 条，{df['ticker'].nunique()} 只", flush=True)
     
@@ -112,6 +119,10 @@ def main():
         tickers = tickers[:args.limit]
     
     print(f"处理 {len(tickers)} 只", flush=True)
+
+    from backend.adapters.eastmoney_adapter import EastMoneyAdapter
+
+    amount_adapter = EastMoneyAdapter()
     
     # 目标目录
     daily_dir = PLATFORM_ROOT / "data" / "market" / "HK" / "daily"
@@ -131,30 +142,13 @@ def main():
         sub = df[df["ticker"] == ticker].sort_values("date").copy()
         
         try:
-            # 1. daily parquet
-            daily_records = []
-            close_map = {}
-            for _, row in sub.iterrows():
-                date_str = row["date"].strftime("%Y-%m-%d")
-                close = float(row["close_raw"])
-                volume = float(row["volume"]) if pd.notna(row["volume"]) else 0.0
-                # amount估算：close * volume
-                amount = close * volume
-                
-                daily_records.append({
-                    "date": date_str,
-                    "code": code,
-                    "open": float(row["open"]) if pd.notna(row["open"]) else close,
-                    "high": float(row["high"]) if pd.notna(row["high"]) else close,
-                    "low": float(row["low"]) if pd.notna(row["low"]) else close,
-                    "close": close,
-                    "volume": volume,
-                    "amount": amount,
-                })
-                close_map[date_str] = close
+            amount_by_date = fetch_eastmoney_amounts(amount_adapter, code, sub)
+            daily_records = build_daily_records(sub, code, amount_by_date)
+            close_map = {record["date"]: record["close"] for record in daily_records}
             
             # 2. adjust_factor parquet（分红因子）
             divs = sub[sub["dividends"].notna() & (sub["dividends"] != 0)][["date", "dividends"]]
+            divs = divs[divs["date"].dt.strftime("%Y-%m-%d").isin(close_map)]
             factors = build_div_factor(divs, close_map)
             
             adjust_records = [

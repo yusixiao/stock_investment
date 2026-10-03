@@ -86,6 +86,25 @@ def test_kline_request_params():
     assert params["klt"] == 101
 
 
+def test_hk_long_history_is_split_into_at_most_one_year_requests():
+    """港股历史请求按不超过 12 个月切片，避免 Eastmoney 截断结果。"""
+    session = _mock_session(_SAMPLE_PAYLOAD)
+    with patch(
+        "backend.adapters.eastmoney_adapter.requests.Session", return_value=session
+    ):
+        EastMoneyAdapter().fetch_daily_kline(
+            "00700.HK", "2025-01-01", "2026-06-19"
+        )
+
+    assert session.get.call_count == 2
+    first_params = session.get.call_args_list[0].kwargs["params"]
+    second_params = session.get.call_args_list[1].kwargs["params"]
+    assert first_params["beg"] == "20250101"
+    assert first_params["end"] == "20251231"
+    assert second_params["beg"] == "20260101"
+    assert second_params["end"] == "20260619"
+
+
 def test_kline_secid_resolution():
     assert _to_kline_secid("00700.HK") == "116.00700"
     assert _to_kline_secid("0700.HK") == "116.00700"  # 4位补齐到5位

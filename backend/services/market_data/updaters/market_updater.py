@@ -18,6 +18,7 @@ from typing import Optional, Callable
 from zoneinfo import ZoneInfo
 
 from config import DATA_DIR
+from services.market_data.hk_price_cleaner import clean_transient_scale_spikes
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,7 @@ def _last_closed_trading_date(market: str) -> str:
 
 
 def _get_adapter(market: str):
-    """延迟导入 adapter，避免模块级 backend.xxx 前缀冲突
-
-    2026-10-03: HK从YFinanceAdapter切换到EastMoneyAdapter
-    （双源验收证明Eastmoney在2015年后更可靠，见docs/dual_source_audit）
-    """
+    """延迟导入 adapter，避免模块级 backend.xxx 前缀冲突"""
     if market == "A":
         from backend.adapters.baostock_adapter import BaoStockAdapter
 
@@ -59,7 +56,7 @@ def _get_adapter(market: str):
         from backend.adapters.eastmoney_adapter import EastMoneyAdapter
 
         return EastMoneyAdapter()
-    else:  # US
+    else:
         from backend.adapters.yfinance_adapter import YFinanceAdapter
 
         return YFinanceAdapter()
@@ -85,7 +82,7 @@ RETRY_BACKOFF_CAP = 30
 # 连续计数清零,故间歇性/零星失败不会误触发。中止后交由调度层限次延迟重跑。
 CONSECUTIVE_FAILURE_LIMIT = 20
 
-# 单股拉取间节流(秒),用于缓解 yfinance 的 Yahoo 限流。
+# 单股拉取间节流(秒),用于缓解外部行情接口限流。
 # A 股走 BaoStock 不需要节流。
 THROTTLE_SEC_BY_MARKET = {
     "A": 0.0,
@@ -95,7 +92,7 @@ THROTTLE_SEC_BY_MARKET = {
 
 
 def _is_rate_limit_error(err: Exception) -> bool:
-    """识别 yfinance / 通用网络层的限流错误,用于针对性长退避"""
+    """识别行情接口 / 通用网络层的限流错误,用于针对性长退避"""
     msg = str(err).lower()
     return (
         "too many requests" in msg
@@ -209,22 +206,23 @@ def _update_market_kline(
                 result.skipped += 1
                 continue
 
-            start = (
-                latest
-                if not latest
-                else (
-                    datetime.strptime(latest, "%Y-%m-%d") + timedelta(days=1)
-                ).strftime("%Y-%m-%d")
-            )
-
             if not latest:
                 start = "2010-01-01"
+            elif market == "HK":
+                # 保留上一根日线作为清洗窗口左邻居,并由 repository 去重覆盖。
+                start = latest
+            else:
+                start = (
+                    datetime.strptime(latest, "%Y-%m-%d") + timedelta(days=1)
+                ).strftime("%Y-%m-%d")
 
             if start > end_date:
                 result.skipped += 1
                 continue
 
             records = _fetch_with_retry(adapter, code, start, end_date)
+            if market == "HK":
+                records = clean_transient_scale_spikes(records)
             # fetch 成功(即使返回空)即证明数据源会话健康 → 重置熔断计数
             consecutive_failures = 0
 
@@ -277,7 +275,7 @@ def _update_market_adjust_factor(market: str) -> int:
     复用 K线更新同款基建:单 session 复用 + 限流重试 + 节流 + 进度日志。
     - baostock(A):若不在此登录,fetch_adjust_factor 会对每只股票各自
       login/logout(数千次),既慢又易被封;此处统一登录复用一个 session。
-    - yfinance(HK/US):数千只全量极易触发 Yahoo 429,故逐只 throttle + 重试。
+    - Eastmoney(HK) / yfinance(US):数千只全量极易触发限流,故逐只 throttle + 重试。
     """
     adapter = _get_adapter(market)
     repo = _get_repo(market)
