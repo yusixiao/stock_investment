@@ -658,14 +658,11 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter, MarketDataAdapter
         dates_sorted = sorted(close_map.keys())
 
         # 3. 收集分红事件的factor_change
-        # 注意：Eastmoney分红记录的日期字段需要确认是除权日还是公告日
-        # 这里假设fetch_dividends返回的已是除权日（需验证）
+        # DividendRecord字段：dividOperateDate=除权日，dividCashPsBeforeTax=税前每股现金分红
         events = []  # [(date_str, factor_change)]
         for div in dividends:
-            # DividendRecord字段：需要确认除权日期字段名
-            # 假设有 ex_date 或 dividOperateDate
-            ex_date = getattr(div, 'ex_date', None) or getattr(div, 'dividOperateDate', None)
-            amount = getattr(div, 'amount', None) or getattr(div, 'dividend', None)
+            ex_date = div.dividOperateDate
+            amount = div.dividCashPsBeforeTax
             if not ex_date or not amount or amount <= 0:
                 continue
 
