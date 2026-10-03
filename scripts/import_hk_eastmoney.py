@@ -59,6 +59,8 @@ def fetch_eastmoney_amounts(adapter, code: str, source: pd.DataFrame) -> dict[st
 
     API不可达时返回空dict，调用方回退到估算值（close×volume）。
     """
+    if adapter is None:
+        return {}
     try:
         start = source["date"].min().strftime("%Y-%m-%d")
         end = source["date"].max().strftime("%Y-%m-%d")
@@ -133,6 +135,24 @@ def main():
     from backend.adapters.eastmoney_adapter import EastMoneyAdapter
 
     amount_adapter = EastMoneyAdapter()
+
+    # 启动时快速检测API连通性，不通则全程用估算值（避免每只都等超时）
+    api_available = False
+    try:
+        import requests
+        r = requests.get(
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+            params={"secid": "116.00700", "klt": 101, "fqt": 0,
+                    "beg": "20250101", "end": "20250102",
+                    "fields1": "f1", "fields2": "f51", "lmt": 1},
+            timeout=10,
+        )
+        api_available = r.status_code == 200 and "klines" in r.text
+    except Exception:
+        pass
+    if not api_available:
+        print("Eastmoney API不可达，全程使用估算amount（close×volume）", flush=True)
+        amount_adapter = None
     
     # 目标目录
     daily_dir = PLATFORM_ROOT / "data" / "market" / "HK" / "daily"
