@@ -317,7 +317,70 @@ backend/services/backtest/strategies/deployed/hk_garp_opt64_strategy.py
 
 ---
 
-## 十、演进历史（供理解）
+## 十、前复权 vs 后复权：数据口径修复说明
+
+### 10.1 背景
+
+迁移过程中发现研究侧与平台侧的复权口径不一致，必须显式处理：
+
+| | 研究侧 | 平台侧 |
+|---|---|---|
+| 口径 | **后复权** | **前复权** |
+| 锚点 | 2026-09-30 | 最新交易日 |
+| 因子语义 | `div_factor`：历史价格 × 因子 = 锚点口径价 | `foreAdjustFactor`：历史价格 × 因子 = 当前口径价 |
+| 因子方向 | 越早的因子越小 | 越早的因子越小（同向）|
+
+### 10.2 关键结论
+
+- **收益率序列一致**：两种口径只是差一个常数倍数，`pct_change()` 完全一致
+- **验证数据**：00700的2892天中，收益率平均差异仅0.20bp
+- **绝对价格不可比**：不要直接对比 `close_adj` vs `qfq` 的绝对值
+
+### 10.3 Eastmoney数据的特殊性
+
+Eastmoney的 `close_raw` **出厂已处理拆股**（调整到2026），但**分红未调**：
+
+```
+close_raw = 真实交易价 × 拆股累计因子（出厂已调）
+qfq = close_raw × 分红因子 ∏(1 - D/P)
+```
+
+因此平台的 `foreAdjustFactor` **只含分红因子**，不含拆股因子。这与A股（BaoStock因子含拆股+分红）不同，搬运时注意。
+
+### 10.4 因子计算公式
+
+```python
+# 对每次分红（除权日为ex_date）：
+# 1. 找ex_date前一个交易日的收盘价 P_prev
+# 2. factor_change = (P_prev - D) / P_prev，其中D为每股分红
+# 3. 同日多次分红：factor_change连乘
+# 4. 从后往前累乘，锚定最新=1.0：
+#    factor[i] = factor[i+1] × factor_change[i+1]
+```
+
+### 10.5 已知边界问题
+
+- **2015-05-15**（00700首次分红除权日）：ASOF JOIN边界有1天5.9%的收益率差异
+- 影响：2892天中仅1天（0.03%），可接受
+- 原因：因子在除权日当天生效 vs 前一日生效的边界处理差异
+- **搬运时**：确保DuckDB的ASOF JOIN方向与因子语义一致（`query_qfq_kline`用backward join）
+
+### 10.6 平台查询示例
+
+```python
+# 前复权查询（平台标准）
+df = store.query_qfq_kline("00700.HK", "2024-01-01", "2024-12-31")
+# 返回的close列已是前复权价，可直接用于动量/MA计算
+
+# 验证收益率一致性
+research_ret = research_close_adj.pct_change()
+platform_ret = df["close"].pct_change()
+assert (research_ret - platform_ret).abs().max() < 0.001
+```
+
+---
+
+## 十一、演进历史（供理解）
 
 ```
 opt23 (24.81%) → GARP + 6个月>20%强动量
