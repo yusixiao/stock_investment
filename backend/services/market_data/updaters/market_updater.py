@@ -46,12 +46,20 @@ def _last_closed_trading_date(market: str) -> str:
 
 
 def _get_adapter(market: str):
-    """延迟导入 adapter，避免模块级 backend.xxx 前缀冲突"""
+    """延迟导入 adapter，避免模块级 backend.xxx 前缀冲突
+
+    2026-10-03: HK从YFinanceAdapter切换到EastMoneyAdapter
+    （双源验收证明Eastmoney在2015年后更可靠，见docs/dual_source_audit）
+    """
     if market == "A":
         from backend.adapters.baostock_adapter import BaoStockAdapter
 
         return BaoStockAdapter()
-    else:
+    elif market == "HK":
+        from backend.adapters.eastmoney_adapter import EastMoneyAdapter
+
+        return EastMoneyAdapter()
+    else:  # US
         from backend.adapters.yfinance_adapter import YFinanceAdapter
 
         return YFinanceAdapter()

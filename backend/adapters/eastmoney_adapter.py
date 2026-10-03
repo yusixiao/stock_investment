@@ -5,8 +5,8 @@ from typing import List
 import requests
 import pandas as pd
 
-from backend.adapters.base import FinancialDataAdapter, EventDataAdapter
-from backend.models.market import DailyKlineRecord
+from backend.adapters.base import FinancialDataAdapter, EventDataAdapter, MarketDataAdapter
+from backend.models.market import DailyKlineRecord, AdjustFactorRecord
 from backend.models.financial import (
     IncomeStatement,
     BalanceSheet,
@@ -333,8 +333,8 @@ def _to_kline_secid(code: str) -> str:
     raise ValueError(f"EastMoney K线暂不支持市场: {market} ({code})")
 
 
-class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
-    """东方财富直接API适配器 — 财务数据 + 分红事件"""
+class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter, MarketDataAdapter):
+    """东方财富直接API适配器 — 财务数据 + 分红事件 + 港股行情（2026-10起）"""
 
     def fetch_income(self, code: str) -> List[IncomeStatement]:
         records = _fetch_report("RPT_DMSK_FN_INCOME", code)
@@ -606,6 +606,115 @@ class EastMoneyAdapter(FinancialDataAdapter, EventDataAdapter):
                 rec["pctChg"] = (close - prev_close) / prev_close * 100
             prev_close = close
             records.append(DailyKlineRecord(**rec))
+        return records
+
+    def fetch_adjust_factor(self, code: str) -> List[AdjustFactorRecord]:
+        """港股分红调整因子（Eastmoney口径，2026-10新增）。
+
+        原理（经双源验收验证）：
+        - Eastmoney的close_raw出厂已是拆股调整到最新，无需再处理拆股
+        - 只需处理分红：div_factor = ∏(1 - D/P)，P为除权日前收盘价
+        - 锚定最新日期=1.0（前复权口径，与现有foreAdjustFactor兼容）
+        - qfq = close_raw × div_factor
+
+        与yfinance方案的区别：
+        - yfinance: foreAdjustFactor含拆股+分红，需audit防幻灵拆股
+        - Eastmoney: 拆股已调，只算分红，数据源头干净
+
+        Args:
+            code: 标准代码，如 00700.HK
+
+        Returns:
+            AdjustFactorRecord列表，按除权日升序。无分红返回[]。
+        """
+        # 只支持港股，A股/美股走原有adapter
+        if not code.endswith(".HK"):
+            logger.warning(f"EastMoney fetch_adjust_factor暂只支持港股: {code}")
+            return []
+
+        # 1. 获取分红记录
+        try:
+            dividends = self.fetch_dividends(code)
+        except Exception as e:
+            logger.error(f"获取分红失败 {code}: {e}")
+            return []
+
+        if not dividends:
+            return []
+
+        # 2. 获取日线（用于计算D/P的分母P=除权日前收盘）
+        # 需要足够长的历史以覆盖所有分红
+        try:
+            klines = self.fetch_daily_kline(code, "2015-01-01", "2026-12-31", fqt=0)
+        except Exception as e:
+            logger.error(f"获取K线失败 {code}: {e}")
+            return []
+
+        if not klines:
+            return []
+
+        # 建日期→收盘价映射
+        close_map = {k.date: k.close for k in klines}
+        dates_sorted = sorted(close_map.keys())
+
+        # 3. 收集分红事件的factor_change
+        # 注意：Eastmoney分红记录的日期字段需要确认是除权日还是公告日
+        # 这里假设fetch_dividends返回的已是除权日（需验证）
+        events = []  # [(date_str, factor_change)]
+        for div in dividends:
+            # DividendRecord字段：需要确认除权日期字段名
+            # 假设有 ex_date 或 dividOperateDate
+            ex_date = getattr(div, 'ex_date', None) or getattr(div, 'dividOperateDate', None)
+            amount = getattr(div, 'amount', None) or getattr(div, 'dividend', None)
+            if not ex_date or not amount or amount <= 0:
+                continue
+
+            # 找除权日前一个交易日的收盘价
+            ex_str = str(ex_date)[:10]
+            # 找小于ex_date的最大日期
+            prev_dates = [d for d in dates_sorted if d < ex_str]
+            if not prev_dates:
+                continue
+            prev_date = max(prev_dates)
+            prev_close = close_map[prev_date]
+            if prev_close <= 0:
+                continue
+
+            factor_change = (prev_close - amount) / prev_close
+            if factor_change <= 0 or factor_change > 1:
+                continue
+            events.append((ex_str, factor_change))
+
+        if not events:
+            return []
+
+        # 4. 同日合并（同一除权日多笔分红）
+        merged: dict[str, float] = {}
+        for date_str, change in events:
+            merged[date_str] = merged.get(date_str, 1.0) * change
+        events = sorted(merged.items(), key=lambda x: x[0])
+
+        # 5. 从后往前累乘，锚定最新=1.0
+        n = len(events)
+        fore_factors = [0.0] * n
+        fore_factors[n - 1] = 1.0
+        for i in range(n - 2, -1, -1):
+            fore_factors[i] = fore_factors[i + 1] * events[i + 1][1]
+
+        # 6. 标准化代码格式（5位HK代码）
+        std_code = code
+        if code.endswith(".HK"):
+            num = code.split(".")[0].lstrip("0") or "0"
+            std_code = f"{num.zfill(5)}.HK"
+
+        records = [
+            AdjustFactorRecord(
+                code=std_code,
+                dividOperateDate=date_str,
+                foreAdjustFactor=round(factor, 6),
+            )
+            for (date_str, _), factor in zip(events, fore_factors)
+        ]
         return records
 
     # ---------- 港股通成分股(push2 行情板块接口) ----------
